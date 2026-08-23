@@ -3,15 +3,29 @@ import pandas as pd
 import json
 import requests
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 import re
 from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# --- URL GOOGLE APPS SCRIPT KAMU ---
+# --- 1. KONFIGURASI URL & WAKTU WIB ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
+
+def dapatkan_waktu_wib():
+    return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
+
+# --- 2. CACHE FETCH DATA UNTUK PERFORMA LEBIH CEPAT ---
+@st.cache_data(ttl=60)
+def fetch_data_from_gsheet(url):
+    try:
+        res = requests.get(url, timeout=5)
+        return res.json()
+    except Exception as e:
+        st.error(f"Gagal mengambil data dari server: {e}")
+        return {}
 
 # --- DATA DEFAULT AWAL ---
 STOK_DEFAULT = {
@@ -110,37 +124,33 @@ if dark_mode:
     )
 
 def load_data():
-    try:
-        res = requests.get(URL_GSHEET_API)
-        data = res.json()
+    data = fetch_data_from_gsheet(URL_GSHEET_API)
+    
+    raw_stok = data.get("stok", [])
+    stok_dict = {}
+    if len(raw_stok) > 1:
+        for row in raw_stok[1:]:
+            if len(row) >= 2 and str(row[1]).isdigit():
+                stok_dict[row[0]] = int(row[1])
+    
+    raw_riwayat = data.get("riwayat", [])
+    riwayat_list = []
+    if len(raw_riwayat) > 1:
+        for row in raw_riwayat[1:]:
+            if len(row) >= 4:
+                pembeli = row[4] if len(row) >= 5 else "-"
+                riwayat_list.append({
+                    "Waktu": row[0], 
+                    "Tipe": row[1], 
+                    "Barang": row[2], 
+                    "Jumlah": row[3],
+                    "Pembeli / Keterangan": pembeli
+                })
+                
+    if not stok_dict:
+        stok_dict = STOK_DEFAULT.copy()
         
-        raw_stok = data.get("stok", [])
-        stok_dict = {}
-        if len(raw_stok) > 1:
-            for row in raw_stok[1:]:
-                if len(row) >= 2 and str(row[1]).isdigit():
-                    stok_dict[row[0]] = int(row[1])
-        
-        raw_riwayat = data.get("riwayat", [])
-        riwayat_list = []
-        if len(raw_riwayat) > 1:
-            for row in raw_riwayat[1:]:
-                if len(row) >= 4:
-                    pembeli = row[4] if len(row) >= 5 else "-"
-                    riwayat_list.append({
-                        "Waktu": row[0], 
-                        "Tipe": row[1], 
-                        "Barang": row[2], 
-                        "Jumlah": row[3],
-                        "Pembeli / Keterangan": pembeli
-                    })
-                    
-        if not stok_dict:
-            stok_dict = STOK_DEFAULT.copy()
-            
-        return stok_dict, riwayat_list
-    except Exception:
-        return STOK_DEFAULT.copy(), []
+    return stok_dict, riwayat_list
 
 def save_data():
     payload = {
@@ -148,7 +158,8 @@ def save_data():
         "riwayat": st.session_state.riwayat
     }
     try:
-        requests.post(URL_GSHEET_API, json=payload)
+        requests.post(URL_GSHEET_API, json=payload, timeout=5)
+        st.cache_data.clear()  # Bersihkan cache setelah ada simpan data baru
     except Exception as e:
         st.error(f"Gagal menyimpan data: {e}")
 
@@ -167,10 +178,6 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📅 Laporan Bulanan",
     "⚙️ Reset & Backup Data"
 ])
-
-def dapatkan_waktu_wib():
-    waktu_wib = datetime.utcnow() + timedelta(hours=7)
-    return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
 # 1. LIHAT STOK
 if menu == "📊 Lihat Semua Stok":
@@ -408,7 +415,7 @@ elif menu == "📜 Riwayat Transaksi":
                 use_container_width=True
             )
 
-# 6. LAPORAN MINGGUAN (FITUR BARU)
+# 6. LAPORAN MINGGUAN
 elif menu == "📆 Laporan Mingguan":
     st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
     
@@ -417,7 +424,6 @@ elif menu == "📆 Laporan Mingguan":
     else:
         df_rw_minggu = pd.DataFrame(st.session_state.riwayat)
         
-        # Ekstrak tanggal dan hitung Nomor Minggu (Week Number)
         def konversi_minggu(waktu_str):
             try:
                 dt = datetime.strptime(waktu_str[:10], "%d-%m-%Y")
