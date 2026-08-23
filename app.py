@@ -15,7 +15,7 @@ if "stok" not in st.session_state:
 if "riwayat" not in st.session_state:
     st.session_state.riwayat = []
 
-st.title("📦 Sistem Gudang Mikrosemen")
+st.title("📦 Sistem Gudang Microcement")
 
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
