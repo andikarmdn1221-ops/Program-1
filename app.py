@@ -91,9 +91,79 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
         
     return bytes(pdf.output())
 
-# --- FITUR DARK MODE / LIGHT MODE & STYLING ---
+# --- STYLING MODERN (DARK & LIGHT MODE RAPI) ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
-dark_mode = st.sidebar.toggle("🌙 Mode Gelap (Dark Mode)", value=False)
+dark_mode = st.sidebar.toggle("🌙 Mode Gelap Premium", value=True)
+
+if dark_mode:
+    # Custom CSS untuk Dark Mode Profesional (Teks terang, Card kontras, Tabel Elegan)
+    st.markdown(
+        """
+        <style>
+        /* Background Utama & Font */
+        .stApp {
+            background-color: #0F172A !important;
+            color: #F8FAFC !important;
+        }
+        .stSidebar {
+            background-color: #1E293B !important;
+        }
+        
+        /* Metric Card styling */
+        div[data-testid="stMetric"] {
+            background-color: #1E293B !important;
+            border: 1px solid #334155 !important;
+            border-radius: 10px !important;
+            padding: 15px !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+        div[data-testid="stMetricLabel"] p {
+            color: #94A3B8 !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+        }
+        div[data-testid="stMetricValue"] div {
+            color: #38BDF8 !important;
+            font-size: 28px !important;
+            font-weight: 700 !important;
+        }
+
+        /* Styling Input, Selectbox & Sidebar Text */
+        .stTextInput input, .stSelectbox div[role="combobox"] {
+            background-color: #1E293B !important;
+            color: #F8FAFC !important;
+            border: 1px solid #475569 !important;
+            border-radius: 8px !important;
+        }
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span {
+            color: #F8FAFC !important;
+        }
+
+        /* Tabel Styling */
+        div[data-testid="stDataFrame"] {
+            border: 1px solid #334155 !important;
+            border-radius: 8px !important;
+            overflow: hidden;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+else:
+    # Light Mode Rapi
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stMetric"] {
+            background-color: #F8FAFC !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 10px !important;
+            padding: 15px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
 st.markdown(
     """
@@ -111,17 +181,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-if dark_mode:
-    st.markdown(
-        """
-        <style>
-        .stApp { background-color: #0E1117; color: #FAFAFA; }
-        .stSidebar { background-color: #161B22; }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
 
 def load_data():
     data = fetch_data_from_gsheet(URL_GSHEET_API)
@@ -171,6 +230,15 @@ if "stok" not in st.session_state or "riwayat" not in st.session_state:
 
 st.title("📦 Sistem Gudang Mikrosemen")
 
+# --- BANNER ALERT NOTIFIKASI BARANG HABIS/KRITIS ---
+item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
+item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
+
+if item_habis:
+    st.error(f"⚠️ **PERHATIAN:** Ada {len(item_habis)} item habis: {', '.join(item_habis[:3])}{'...' if len(item_habis) > 3 else ''}")
+elif item_kritis:
+    st.warning(f"🔔 **INFORMASI:** Ada {len(item_kritis)} item kritis (<5 pcs): {', '.join(item_kritis[:3])}{'...' if len(item_kritis) > 3 else ''}")
+
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
     "📥 Restok Barang Masuk", 
@@ -188,19 +256,14 @@ if menu == "📊 Lihat Semua Stok":
     
     total_jenis = len(st.session_state.stok)
     total_unit = sum(st.session_state.stok.values())
-    jumlah_kritis = sum(1 for qty in st.session_state.stok.values() if 0 < qty < 5)
-    jumlah_habis = sum(1 for qty in st.session_state.stok.values() if qty == 0)
+    jumlah_kritis = len(item_kritis)
+    jumlah_habis = len(item_habis)
     
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("📦 Total Jenis Barang", f"{total_jenis} Item")
     col2.metric("📊 Total Stok Fisik", f"{total_unit} pcs")
     col3.metric("🟡 Stok Kritis (<5)", f"{jumlah_kritis} Item")
     col4.metric("🔴 Stok Habis (0)", f"{jumlah_habis} Item")
-    
-    if jumlah_habis > 0:
-        st.error(f"🚨 **PERHATIAN:** Ada **{jumlah_habis} jenis barang HABIS!** Segera lakukan restok.")
-    elif jumlah_kritis > 0:
-        st.warning(f"🔔 **INFORMASI:** Ada **{jumlah_kritis} jenis barang STOK KRITIS!** Lakukan re-order dalam waktu dekat.")
     
     st.divider()
     
@@ -285,14 +348,16 @@ if menu == "📊 Lihat Semua Stok":
         st.subheader("📈 Visualisasi & Analisis Stok")
         col_chart1, col_chart2 = st.columns(2)
         
+        theme_plotly = "plotly_dark" if dark_mode else "plotly"
+        
         with col_chart1:
             st.markdown("##### 📊 Perbandingan Stok per Item")
             fig_bar = px.bar(
                 df_stok, x="Nama Barang", y="Jumlah Stok (pcs)", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
-                text="Jumlah Stok (pcs)"
+                text="Jumlah Stok (pcs)", template=theme_plotly
             )
-            fig_bar.update_layout(xaxis_tickangle=-45, showlegend=True)
+            fig_bar.update_layout(xaxis_tickangle=-45, showlegend=True, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
@@ -300,8 +365,9 @@ if menu == "📊 Lihat Semua Stok":
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
-                hole=0.4
+                hole=0.4, template=theme_plotly
             )
+            fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_pie, use_container_width=True)
 
 # 2. RESTOK
@@ -330,13 +396,18 @@ elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
     list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
     barang = st.selectbox("Pilih Barang", list_pilihan)
-    jumlah = st.number_input("Jumlah Keluar", min_value=1, step=1)
+    stok_saat_ini = st.session_state.stok.get(barang, 0)
+    
+    st.caption(f"Sisa stok tersedia untuk {barang}: **{stok_saat_ini} pcs**")
+    jumlah = st.number_input("Jumlah Keluar", min_value=1, max_value=max(1, stok_saat_ini), step=1)
     pembeli = st.text_input("👤 Nama Pembeli / Nama Proyek / Klien", placeholder="Misal: Pak Budi / Proyek Villa Bali")
     
     if st.button("Proses Pengiriman"):
         if pembeli.strip() == "":
             st.warning("⚠️ Mohon isi nama pembeli atau nama proyek terlebih dahulu!")
-        elif jumlah <= st.session_state.stok[barang]:
+        elif stok_saat_ini == 0:
+            st.error("❌ Barang ini sedang habis, tidak bisa melakukan pengiriman!")
+        elif jumlah <= stok_saat_ini:
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[barang] -= jumlah
             st.session_state.riwayat.append({
@@ -378,19 +449,27 @@ elif menu == "📜 Riwayat Transaksi":
         st.info("Belum ada riwayat transaksi.")
     else:
         df_riwayat = pd.DataFrame(st.session_state.riwayat)
-        df_riwayat.index = range(1, len(df_riwayat) + 1)
         
-        if "Pembeli / Keterangan" not in df_riwayat.columns:
-            df_riwayat["Pembeli / Keterangan"] = "-"
+        col_filter1, col_filter2 = st.columns([2, 2])
+        with col_filter1:
+            filter_tipe = st.multiselect("Filter Tipe Transaksi:", ["MASUK", "KELUAR", "TAMBAH BARU"], default=["MASUK", "KELUAR", "TAMBAH BARU"])
+        with col_filter2:
+            filter_item = st.selectbox("Filter Spesifik Barang:", ["Semua Barang"] + sorted(list(st.session_state.stok.keys()), key=kunci_urut_nama))
+        
+        df_filtered_rw = df_riwayat[df_riwayat["Tipe"].isin(filter_tipe)]
+        if filter_item != "Semua Barang":
+            df_filtered_rw = df_filtered_rw[df_filtered_rw["Barang"] == filter_item]
             
+        df_filtered_rw.index = range(1, len(df_filtered_rw) + 1)
+        
         st.dataframe(
-            df_riwayat[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]], 
+            df_filtered_rw[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]], 
             use_container_width=True
         )
         
         col_rw1, col_rw2 = st.columns(2)
         with col_rw1:
-            csv_riwayat = df_riwayat.to_csv(index=False).encode('utf-8')
+            csv_riwayat = df_filtered_rw.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Excel / CSV",
                 data=csv_riwayat,
@@ -400,7 +479,7 @@ elif menu == "📜 Riwayat Transaksi":
             )
         with col_rw2:
             data_pdf_rw = []
-            for idx, row in df_riwayat.iterrows():
+            for idx, row in df_filtered_rw.iterrows():
                 data_pdf_rw.append([row["Waktu"], row["Tipe"], row["Barang"], row["Jumlah"], row["Pembeli / Keterangan"]])
             
             pdf_bytes_rw = buat_pdf_tabel(
