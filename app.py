@@ -29,7 +29,7 @@ def kirim_notifikasi_telegram(pesan):
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": TELEGRAM_CHAT_ID,  # Pastikan TANPA tanda kutip ("")
         "text": pesan,
         "parse_mode": "Markdown"
     }
@@ -37,7 +37,6 @@ def kirim_notifikasi_telegram(pesan):
         requests.post(url, json=payload, timeout=5)
     except Exception as e:
         print(f"Gagal kirim notif Telegram: {e}")
-
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
 
