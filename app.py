@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
@@ -25,6 +25,11 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📜 Riwayat Transaksi"
 ])
 
+# Fungsi untuk mendapatkan waktu WIB (UTC + 7)
+def dapatkan_waktu_wib():
+    waktu_wib = datetime.utcnow() + timedelta(hours=7)
+    return waktu_wib.strftime("%d-%m-%Y %H:%M")
+
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Daftar Stok Gudang")
     data_tabel = []
@@ -39,7 +44,7 @@ elif menu == "📥 Restok Barang Masuk":
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
     
     if st.button("Simpan Barang Masuk"):
-        waktu_sekarang = datetime.now().strftime("%d-%m-%Y %H:%M")
+        waktu_sekarang = dapatkan_waktu_wib()
         st.session_state.stok[barang] += jumlah
         st.session_state.riwayat.append(f"[{waktu_sekarang}] MASUK: {barang} (+{jumlah} pcs)")
         st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
@@ -51,7 +56,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
     
     if st.button("Proses Pengiriman"):
         if jumlah <= st.session_state.stok[barang]:
-            waktu_sekarang = datetime.now().strftime("%d-%m-%Y %H:%M")
+            waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[barang] -= jumlah
             st.session_state.riwayat.append(f"[{waktu_sekarang}] KELUAR: {barang} (-{jumlah} pcs)")
             st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} pada {waktu_sekarang}!")
@@ -67,7 +72,7 @@ elif menu == "➕ Tambah Jenis Barang":
         if nama_baru in st.session_state.stok:
             st.warning("Barang sudah ada di dalam sistem!")
         elif nama_baru.strip() != "":
-            waktu_sekarang = datetime.now().strftime("%d-%m-%Y %H:%M")
+            waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[nama_baru] = stok_awal
             st.session_state.riwayat.append(f"[{waktu_sekarang}] TAMBAH BARU: {nama_baru} ({stok_awal} pcs)")
             st.success(f"{nama_baru} berhasil didaftarkan!")
@@ -79,4 +84,4 @@ elif menu == "📜 Riwayat Transaksi":
     else:
         for log in reversed(st.session_state.riwayat):
             st.write(f"- {log}")
-        
+            
