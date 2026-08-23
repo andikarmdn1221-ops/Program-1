@@ -48,11 +48,17 @@ def panggil_confetti():
     """
     components.html(confetti_html, height=0, width=0)
 
-# --- FUNGSI GENERATOR PDF ---
+# FUNGSI MEMBERSIHKAN EMOJI AGAR PDF TIDAK ERROR
+def bersihkan_teks_pdf(teks):
+    # Menghapus karakter non-ASCII (termasuk emoji)
+    teks_bersih = re.sub(r'[^\x00-\x7F]+', '', str(teks))
+    return teks_bersih.strip()
+
+# --- FUNGSI GENERATOR PDF AMAN ---
 def buat_pdf_tabel(judul, headers, data, col_widths):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, judul, ln=True, align="C")
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(0, 8, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
@@ -69,8 +75,9 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
     pdf.set_font("Helvetica", "", 9)
     for row in data:
         for i, val in enumerate(row):
+            teks_bersih = bersihkan_teks_pdf(val)
             align_text = "C" if i == 0 or i == len(row)-1 else "L"
-            pdf.cell(col_widths[i], 7, str(val), border=1, align=align_text)
+            pdf.cell(col_widths[i], 7, teks_bersih, border=1, align=align_text)
         pdf.ln()
         
     return bytes(pdf.output())
@@ -248,7 +255,6 @@ if menu == "📊 Lihat Semua Stok":
                 use_container_width=True
             )
         with col_dl2:
-            # PROSES EXPORT STOK KE PDF
             data_pdf = []
             for idx, row in df_stok.iterrows():
                 data_pdf.append([idx, row["Nama Barang"], f"{row['Jumlah Stok (pcs)']} pcs", row["Status"]])
@@ -386,7 +392,6 @@ elif menu == "📜 Riwayat Transaksi":
                 use_container_width=True
             )
         with col_rw2:
-            # PROSES EXPORT RIWAYAT KE PDF
             data_pdf_rw = []
             for idx, row in df_riwayat.iterrows():
                 data_pdf_rw.append([row["Waktu"], row["Tipe"], row["Barang"], row["Jumlah"], row["Pembeli / Keterangan"]])
