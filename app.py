@@ -17,7 +17,7 @@ STOK_DEFAULT = {
     "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
     "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
     "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
-    "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
+    "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0, "Mwtallic glaze wax": 0
 }
 
 # --- FUNGSI EFEK ANIMASI CONFETTI 🎉 ---
@@ -103,7 +103,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-st.title("📦 Sistem Gudang Mikrosemen")
+st.title("📦 Sistem Gudang Microcement")
 
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
@@ -180,7 +180,7 @@ if menu == "📊 Lihat Semua Stok":
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
-            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
+            st.markdown("##### 📦 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
