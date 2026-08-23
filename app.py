@@ -21,7 +21,7 @@ def dapatkan_waktu_wib():
 @st.cache_data(ttl=60)
 def fetch_data_from_gsheet(url):
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=8)
         return res.json()
     except Exception as e:
         st.error(f"Gagal mengambil data dari server: {e}")
@@ -158,8 +158,11 @@ def save_data():
         "riwayat": st.session_state.riwayat
     }
     try:
-        requests.post(URL_GSHEET_API, json=payload, timeout=5)
-        st.cache_data.clear()  # Bersihkan cache setelah ada simpan data baru
+        res = requests.post(URL_GSHEET_API, json=payload, timeout=12)
+        res.raise_for_status()
+        st.cache_data.clear()
+    except requests.exceptions.Timeout:
+        st.error("⏰ Koneksi server timeout. Coba klik simpan kembali.")
     except Exception as e:
         st.error(f"Gagal menyimpan data: {e}")
 
@@ -426,11 +429,11 @@ elif menu == "📆 Laporan Mingguan":
         
         def konversi_minggu(waktu_str):
             try:
-                dt = datetime.strptime(waktu_str[:10], "%d-%m-%Y")
+                dt = datetime.strptime(str(waktu_str)[:10], "%d-%m-%Y")
                 minggu_ke = dt.isocalendar()[1]
                 tahun = dt.year
-                return f"Minggu ke-{minggu_ke} ({tahun})"
-            except:
+                return f"Tahun {tahun} - Minggu ke-{minggu_ke:02d}"
+            except Exception:
                 return "Lainnya"
 
         df_rw_minggu["Minggu_Tahun"] = df_rw_minggu["Waktu"].apply(konversi_minggu)
@@ -493,8 +496,15 @@ elif menu == "📅 Laporan Bulanan":
         st.info("Belum ada transaksi yang tercatat untuk dibuatkan laporan bulanan.")
     else:
         df_rw_bulan = pd.DataFrame(st.session_state.riwayat)
-        df_rw_bulan["Bulan_Tahun"] = df_rw_bulan["Waktu"].apply(lambda x: str(x)[3:10] if len(str(x)) >= 10 else "Lainnya")
         
+        def ekstrak_bulan_tahun(waktu_str):
+            try:
+                dt = datetime.strptime(str(waktu_str)[:10], "%d-%m-%Y")
+                return dt.strftime("%m-%Y")
+            except Exception:
+                return "Lainnya"
+
+        df_rw_bulan["Bulan_Tahun"] = df_rw_bulan["Waktu"].apply(ekstrak_bulan_tahun)
         daftar_bulan = sorted(list(df_rw_bulan["Bulan_Tahun"].unique()), reverse=True)
         bulan_pilihan = st.selectbox("📆 Pilih Bulan & Tahun Laporan:", daftar_bulan)
         
