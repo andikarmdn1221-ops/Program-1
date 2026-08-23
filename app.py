@@ -2,8 +2,29 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Microcensus Warehouse", page_icon="📦", layout="wide")
 
+# --- FITUR DARK MODE / LIGHT MODE ---
+st.sidebar.title("⚙️ Pengaturan Tampilan")
+dark_mode = st.sidebar.toggle("🌙 Mode Gelap (Dark Mode)", value=False)
+
+if dark_mode:
+    st.markdown(
+        """
+        <style>
+        .stApp {
+            background-color: #0E1117;
+            color: #FAFAFA;
+        }
+        .stSidebar {
+            background-color: #161B22;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+# --- INISIALISASI DATA ---
 if "stok" not in st.session_state:
     st.session_state.stok = {
         "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
@@ -26,7 +47,7 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📜 Riwayat Transaksi"
 ])
 
-# Fungsi untuk mendapatkan waktu WIB (UTC + 7)
+# Fungsi Waktu WIB
 def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
@@ -35,7 +56,6 @@ def dapatkan_waktu_wib():
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Daftar Stok Gudang")
     
-    # Fitur Search Bar
     kata_kunci = st.text_input("🔍 Cari Nama Barang...", "")
     
     data_tabel = []
@@ -48,7 +68,6 @@ if menu == "📊 Lihat Semua Stok":
         df_stok = pd.DataFrame(data_tabel)
         st.dataframe(df_stok, use_container_width=True)
         
-        # Tombol Download Excel/CSV Stok
         csv_stok = df_stok.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Laporan Stok (CSV/Excel)",
@@ -110,7 +129,6 @@ elif menu == "📜 Riwayat Transaksi":
         df_riwayat = pd.DataFrame(st.session_state.riwayat)
         st.dataframe(df_riwayat, use_container_width=True)
         
-        # Tombol Download Excel/CSV Riwayat
         csv_riwayat = df_riwayat.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Riwayat Transaksi (CSV/Excel)",
