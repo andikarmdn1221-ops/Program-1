@@ -9,7 +9,7 @@ if "stok" not in st.session_state:
         "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
         "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
         "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
-        "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
+        "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0, "Metallic glaze wax": 0
     }
 
 if "riwayat" not in st.session_state:
