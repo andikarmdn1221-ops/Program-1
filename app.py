@@ -24,7 +24,6 @@ STOK_DEFAULT = {
 
 # --- FUNGSI URUTKAN NAMA BARANG BERDASARKAN ANGKA DI BELAKANGNYA (NATURAL SORT) ---
 def kunci_urut_nama(nama):
-    # Memisahkan teks dan angka agar "Pewarna no 2" berada sebelum "Pewarna no 10"
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # --- FUNGSI EFEK ANIMASI CONFETTI 🎉 ---
@@ -182,7 +181,9 @@ if menu == "📊 Lihat Semua Stok":
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
         
-        # TABEL DENGAN FORMAT PENYELARASAN ANGKA RATA KANAN (RIGHT-ALIGNED)
+        # --- MENGUBAH INDEKS NOMOR URUT AGAR DIMULAI DARI 1 BUKAN 0 ---
+        df_stok.index = range(1, len(df_stok) + 1)
+        
         st.dataframe(
             df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], 
             use_container_width=True,
@@ -232,7 +233,6 @@ if menu == "📊 Lihat Semua Stok":
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
     
-    # PILIHAN DROP DOWN JUGA SUDAH OTOMATIS TERURUT SESUAI NOMOR
     list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
     barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
@@ -294,6 +294,7 @@ elif menu == "📜 Riwayat Transaksi":
         st.info("Belum ada riwayat transaksi.")
     else:
         df_riwayat = pd.DataFrame(st.session_state.riwayat)
+        df_riwayat.index = range(1, len(df_riwayat) + 1)
         st.dataframe(df_riwayat, use_container_width=True)
 
 # 6. RESET & BACKUP DATA
