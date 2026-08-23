@@ -48,13 +48,10 @@ def panggil_confetti():
     """
     components.html(confetti_html, height=0, width=0)
 
-# FUNGSI MEMBERSIHKAN EMOJI AGAR PDF TIDAK ERROR
 def bersihkan_teks_pdf(teks):
-    # Menghapus karakter non-ASCII (termasuk emoji)
     teks_bersih = re.sub(r'[^\x00-\x7F]+', '', str(teks))
     return teks_bersih.strip()
 
-# --- FUNGSI GENERATOR PDF AMAN ---
 def buat_pdf_tabel(judul, headers, data, col_widths):
     pdf = FPDF()
     pdf.add_page()
@@ -64,14 +61,12 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
     pdf.cell(0, 8, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
     pdf.ln(5)
     
-    # Header Tabel
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(230, 230, 230)
     for i, h in enumerate(headers):
         pdf.cell(col_widths[i], 8, h, border=1, align="C", fill=True)
     pdf.ln()
     
-    # Isi Data
     pdf.set_font("Helvetica", "", 9)
     for row in data:
         for i, val in enumerate(row):
@@ -168,6 +163,8 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📤 Pengiriman Barang Keluar", 
     "➕ Tambah Jenis Barang", 
     "📜 Riwayat Transaksi",
+    "📆 Laporan Mingguan",
+    "📅 Laporan Bulanan",
     "⚙️ Reset & Backup Data"
 ])
 
@@ -411,7 +408,139 @@ elif menu == "📜 Riwayat Transaksi":
                 use_container_width=True
             )
 
-# 6. RESET & BACKUP DATA
+# 6. LAPORAN MINGGUAN (FITUR BARU)
+elif menu == "📆 Laporan Mingguan":
+    st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
+    
+    if not st.session_state.riwayat:
+        st.info("Belum ada transaksi yang tercatat untuk dibuatkan laporan mingguan.")
+    else:
+        df_rw_minggu = pd.DataFrame(st.session_state.riwayat)
+        
+        # Ekstrak tanggal dan hitung Nomor Minggu (Week Number)
+        def konversi_minggu(waktu_str):
+            try:
+                dt = datetime.strptime(waktu_str[:10], "%d-%m-%Y")
+                minggu_ke = dt.isocalendar()[1]
+                tahun = dt.year
+                return f"Minggu ke-{minggu_ke} ({tahun})"
+            except:
+                return "Lainnya"
+
+        df_rw_minggu["Minggu_Tahun"] = df_rw_minggu["Waktu"].apply(konversi_minggu)
+        daftar_minggu = sorted(list(df_rw_minggu["Minggu_Tahun"].unique()), reverse=True)
+        
+        minggu_pilihan = st.selectbox("📆 Pilih Minggu Laporan:", daftar_minggu)
+        df_filtered_mg = df_rw_minggu[df_rw_minggu["Minggu_Tahun"] == minggu_pilihan].copy()
+        
+        total_masuk_mg = sum(1 for t in df_filtered_mg["Tipe"] if t == "MASUK")
+        total_keluar_mg = sum(1 for t in df_filtered_mg["Tipe"] if t == "KELUAR")
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("📋 Transaksi Minggu Ini", f"{len(df_filtered_mg)} Transaksi")
+        c2.metric("📥 Barang Masuk", f"{total_masuk_mg} Kali")
+        c3.metric("📤 Barang Keluar", f"{total_keluar_mg} Kali")
+        
+        st.divider()
+        df_filtered_mg.index = range(1, len(df_filtered_mg) + 1)
+        
+        st.dataframe(
+            df_filtered_mg[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]],
+            use_container_width=True
+        )
+        
+        col_mg1, col_mg2 = st.columns(2)
+        with col_mg1:
+            csv_filtered_mg = df_filtered_mg[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"📥 Download Excel Laporan {minggu_pilihan}",
+                data=csv_filtered_mg,
+                file_name=f"Laporan_{minggu_pilihan.replace(' ', '_')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with col_mg2:
+            data_pdf_mg = []
+            for idx, row in df_filtered_mg.iterrows():
+                data_pdf_mg.append([row["Waktu"], row["Tipe"], row["Barang"], row["Jumlah"], row["Pembeli / Keterangan"]])
+            
+            pdf_bytes_mg = buat_pdf_tabel(
+                f"LAPORAN TRANSAKSI {minggu_pilihan.upper()}", 
+                ["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
+                data_pdf_mg, 
+                [30, 20, 50, 25, 65]
+            )
+            
+            st.download_button(
+                label=f"📄 Download PDF Laporan {minggu_pilihan}",
+                data=pdf_bytes_mg,
+                file_name=f"Laporan_{minggu_pilihan.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+# 7. LAPORAN BULANAN
+elif menu == "📅 Laporan Bulanan":
+    st.header("📅 Rekapitulasi Laporan Bulanan Gudang")
+    
+    if not st.session_state.riwayat:
+        st.info("Belum ada transaksi yang tercatat untuk dibuatkan laporan bulanan.")
+    else:
+        df_rw_bulan = pd.DataFrame(st.session_state.riwayat)
+        df_rw_bulan["Bulan_Tahun"] = df_rw_bulan["Waktu"].apply(lambda x: str(x)[3:10] if len(str(x)) >= 10 else "Lainnya")
+        
+        daftar_bulan = sorted(list(df_rw_bulan["Bulan_Tahun"].unique()), reverse=True)
+        bulan_pilihan = st.selectbox("📆 Pilih Bulan & Tahun Laporan:", daftar_bulan)
+        
+        df_filtered = df_rw_bulan[df_rw_bulan["Bulan_Tahun"] == bulan_pilihan].copy()
+        
+        total_masuk = sum(1 for t in df_filtered["Tipe"] if t == "MASUK")
+        total_keluar = sum(1 for t in df_filtered["Tipe"] if t == "KELUAR")
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("📋 Total Transaksi Bulan Ini", f"{len(df_filtered)} Transaksi")
+        c2.metric("📥 Barang Masuk", f"{total_masuk} Kali")
+        c3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
+        
+        st.divider()
+        df_filtered.index = range(1, len(df_filtered) + 1)
+        
+        st.dataframe(
+            df_filtered[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]],
+            use_container_width=True
+        )
+        
+        col_bl1, col_bl2 = st.columns(2)
+        with col_bl1:
+            csv_filtered = df_filtered[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"📥 Download Excel Laporan {bulan_pilihan}",
+                data=csv_filtered,
+                file_name=f"Laporan_Bulanan_{bulan_pilihan}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with col_bl2:
+            data_pdf_bln = []
+            for idx, row in df_filtered.iterrows():
+                data_pdf_bln.append([row["Waktu"], row["Tipe"], row["Barang"], row["Jumlah"], row["Pembeli / Keterangan"]])
+            
+            pdf_bytes_bln = buat_pdf_tabel(
+                f"LAPORAN TRANSAKSI BULAN {bulan_pilihan}", 
+                ["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
+                data_pdf_bln, 
+                [30, 20, 50, 25, 65]
+            )
+            
+            st.download_button(
+                label=f"📄 Download PDF Laporan {bulan_pilihan}",
+                data=pdf_bytes_bln,
+                file_name=f"Laporan_Bulanan_{bulan_pilihan}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+# 8. RESET & BACKUP DATA
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Pengelolaan Backup & Reset Sistem")
     col1, col2 = st.columns(2)
