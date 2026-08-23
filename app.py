@@ -11,6 +11,15 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 # --- URL GOOGLE APPS SCRIPT KAMU ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
+# --- DATA DEFAULT AWAL ---
+STOK_DEFAULT = {
+    "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
+    "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
+    "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
+    "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
+    "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
+}
+
 # --- FUNGSI EFEK ANIMASI CONFETTI 🎉 ---
 def panggil_confetti():
     confetti_html = """
@@ -74,23 +83,11 @@ def load_data():
                     })
                     
         if not stok_dict:
-            stok_dict = {
-                "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
-                "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
-                "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
-                "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
-                "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
-            }
+            stok_dict = STOK_DEFAULT.copy()
             
         return stok_dict, riwayat_list
     except Exception:
-        return {
-            "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
-            "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
-            "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
-            "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
-            "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
-        }, []
+        return STOK_DEFAULT.copy(), []
 
 def save_data():
     payload = {
@@ -106,7 +103,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-st.title("📦 Sistem Gudang Microcement")
+st.title("📦 Sistem Gudang Mikrosemen")
 
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
@@ -183,7 +180,7 @@ if menu == "📊 Lihat Semua Stok":
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
-            st.markdown("##### 📦 Proporsi Status Stok Gudang")
+            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
@@ -203,7 +200,6 @@ elif menu == "📥 Restok Barang Masuk":
         st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang, "Jumlah": f"+{jumlah} pcs"})
         save_data()
         
-        # MENAMPILKAN ANIMASI CONFETTI & NOTIFIKASI TOAST KEREN
         panggil_confetti()
         st.toast(f"Restok Berhasil! +{jumlah} {barang}", icon="🎉")
         st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang} dan tersimpan di Google Sheets!")
@@ -221,7 +217,6 @@ elif menu == "📤 Pengiriman Barang Keluar":
             st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang, "Jumlah": f"-{jumlah} pcs"})
             save_data()
             
-            # MENAMPILKAN ANIMASI CONFETTI & NOTIFIKASI TOAST KEREN
             panggil_confetti()
             st.toast(f"Pengiriman Diproses! -{jumlah} {barang}", icon="🚀")
             st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} dan tersimpan di Google Sheets!")
@@ -243,7 +238,6 @@ elif menu == "➕ Tambah Jenis Barang":
             st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs"})
             save_data()
             
-            # MENAMPILKAN ANIMASI CONFETTI & NOTIFIKASI TOAST KEREN
             panggil_confetti()
             st.toast(f"Item Baru Terdaftar: {nama_baru}", icon="✨")
             st.success(f"{nama_baru} berhasil didaftarkan ke Google Sheets!")
@@ -271,3 +265,15 @@ elif menu == "⚙️ Reset & Backup Data":
             file_name=f"backup_gudang_{dapatkan_waktu_wib()[:10]}.json",
             mime="application/json"
         )
+
+    with col2:
+        st.subheader("⚠️ Reset Sistem Ke Awal")
+        st.write("Fitur ini akan mengembalikan stok ke nilai standar dan mengosongkan riwayat transaksi baik di aplikasi maupun di Google Sheets.")
+        
+        konfirmasi = st.checkbox("Saya yakin ingin mereset seluruh data gudang")
+        if st.button("🚨 Reset Semua Data", disabled=not konfirmasi):
+            st.session_state.stok = STOK_DEFAULT.copy()
+            st.session_state.riwayat = []
+            save_data()
+            st.success("✅ Seluruh data gudang berhasil di-reset ke awalan dan tersimpan di Google Sheets!")
+            st.rerun()
