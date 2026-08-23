@@ -11,16 +11,20 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# --- 1. KONFIGURASI URL, WAKTU & BOT TELEGRAM ---
+# --- 1. KONFIGURASI URL, WAKTU & SECRETS TELEGRAM ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
-# Masukkan Bot Token & Chat ID Telegram Anda di sini
-TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV8lzQpE"
-TELEGRAM_CHAT_ID = "2106196278"
+# Mengambil token & chat_id secara aman dari st.secrets
+try:
+    TELEGRAM_BOT_TOKEN = st.secrets["telegram"]["bot_token"]
+    TELEGRAM_CHAT_ID = st.secrets["telegram"]["chat_id"]
+except Exception:
+    TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV8lzQpE"
+    TELEGRAM_CHAT_ID = "2106196278"
 
 def kirim_notifikasi_telegram(pesan):
     """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
-    if TELEGRAM_BOT_TOKEN == "ISI_DENGAN_BOT_TOKEN_KAMU" or not TELEGRAM_BOT_TOKEN:
+    if not TELEGRAM_BOT_TOKEN:
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -555,7 +559,7 @@ elif menu == "📅 Laporan Bulanan":
         c1, c2, c3 = st.columns(3)
         c1.metric("📋 Total Transaksi Bulan Ini", f"{len(df_filtered)} Transaksi")
         c2.metric("📥 Barang Masuk", f"{total_masuk} Kali")
-        c3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
+        c3.setItem = c3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
         
         st.divider()
         df_filtered.index = range(1, len(df_filtered) + 1)
@@ -582,7 +586,7 @@ elif menu == "📅 Laporan Bulanan":
             
             pdf_bytes_bln = buat_pdf_tabel(
                 f"LAPORAN TRANSAKSI BULAN {bulan_pilihan}", 
-                ["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
+                ["Wupan", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
                 data_pdf_bln, 
                 [30, 20, 50, 25, 65]
             )
