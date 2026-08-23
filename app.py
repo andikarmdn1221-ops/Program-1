@@ -4,11 +4,35 @@ import json
 import requests
 import plotly.express as px
 from datetime import datetime, timedelta
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
 # --- URL GOOGLE APPS SCRIPT KAMU ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
+
+# --- FUNGSI EFEK ANIMASI CONFETTI 🎉 ---
+def panggil_confetti():
+    confetti_html = """
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script>
+        var count = 200;
+        var defaults = { origin: { y: 0.7 } };
+
+        function fire(particleRatio, opts) {
+          confetti(Object.assign({}, defaults, opts, {
+            particleCount: Math.floor(count * particleRatio)
+          }));
+        }
+
+        fire(0.25, { spread: 26, startVelocity: 55, });
+        fire(0.2, { spread: 60, });
+        fire(0.35, { spread: 100, decay: 0.91, scalar: 0.8 });
+        fire(0.1, { spread: 120, startVelocity: 25, decay: 0.92, scalar: 1.2 });
+        fire(0.1, { spread: 120, startVelocity: 45, });
+    </script>
+    """
+    components.html(confetti_html, height=0, width=0)
 
 # --- FITUR DARK MODE / LIGHT MODE ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
@@ -178,6 +202,10 @@ elif menu == "📥 Restok Barang Masuk":
         st.session_state.stok[barang] += jumlah
         st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang, "Jumlah": f"+{jumlah} pcs"})
         save_data()
+        
+        # MENAMPILKAN ANIMASI CONFETTI & NOTIFIKASI TOAST KEREN
+        panggil_confetti()
+        st.toast(f"Restok Berhasil! +{jumlah} {barang}", icon="🎉")
         st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang} dan tersimpan di Google Sheets!")
 
 # 3. BARANG KELUAR
@@ -192,6 +220,10 @@ elif menu == "📤 Pengiriman Barang Keluar":
             st.session_state.stok[barang] -= jumlah
             st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang, "Jumlah": f"-{jumlah} pcs"})
             save_data()
+            
+            # MENAMPILKAN ANIMASI CONFETTI & NOTIFIKASI TOAST KEREN
+            panggil_confetti()
+            st.toast(f"Pengiriman Diproses! -{jumlah} {barang}", icon="🚀")
             st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} dan tersimpan di Google Sheets!")
         else:
             st.error("Stok tidak mencukupi!")
@@ -210,6 +242,10 @@ elif menu == "➕ Tambah Jenis Barang":
             st.session_state.stok[nama_baru] = stok_awal
             st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs"})
             save_data()
+            
+            # MENAMPILKAN ANIMASI CONFETTI & NOTIFIKASI TOAST KEREN
+            panggil_confetti()
+            st.toast(f"Item Baru Terdaftar: {nama_baru}", icon="✨")
             st.success(f"{nama_baru} berhasil didaftarkan ke Google Sheets!")
 
 # 5. RIWAYAT
