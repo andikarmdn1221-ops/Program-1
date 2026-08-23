@@ -28,8 +28,16 @@ def kirim_notifikasi_telegram(pesan):
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    
+    # Amankan chat_id agar aman dari error ValueError
+    try:
+        chat_id_clean = int(str(TELEGRAM_CHAT_ID).strip())
+    except ValueError:
+        print("Chat ID Telegram tidak valid atau kosong!")
+        return
+
     payload = {
-        "chat_id": int(TELEGRAM_CHAT_ID),
+        "chat_id": chat_id_clean,
         "text": pesan,
     }
     try:
