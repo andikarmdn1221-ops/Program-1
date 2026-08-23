@@ -181,20 +181,28 @@ if menu == "📊 Lihat Semua Stok":
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
         
-        # --- MENGUBAH INDEKS NOMOR URUT AGAR DIMULAI DARI 1 BUKAN 0 ---
+        # Penomoran baris dimulai dari angka 1
         df_stok.index = range(1, len(df_stok) + 1)
         
+        # TABEL DENGAN PENGATURAN LEBAR KOLOM (COLUMN WIDTH) AGAR PROPORSIONAL & TIDAK ADA WHITESPACE BERLEBIHAN
         st.dataframe(
             df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], 
             use_container_width=True,
             column_config={
-                "Nama Barang": st.column_config.TextColumn("Nama Barang"),
+                "Nama Barang": st.column_config.TextColumn(
+                    "Nama Barang",
+                    width="large"
+                ),
                 "Jumlah Stok (pcs)": st.column_config.NumberColumn(
                     "Jumlah Stok (pcs)",
                     format="%d",
+                    width="medium",
                     help="Jumlah unit fisik yang tersedia di gudang"
                 ),
-                "Status": st.column_config.TextColumn("Status")
+                "Status": st.column_config.TextColumn(
+                    "Status",
+                    width="small"
+                )
             }
         )
         
