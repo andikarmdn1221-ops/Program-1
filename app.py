@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Microcensus Warehouse", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
 # --- FITUR DARK MODE / LIGHT MODE ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
@@ -24,15 +25,18 @@ if dark_mode:
         unsafe_allow_html=True
     )
 
-# --- INISIALISASI DATA ---
+# --- DATA DEFAULT AWAL ---
+STOK_DEFAULT = {
+    "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
+    "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
+    "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
+    "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
+    "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
+}
+
+# --- INISIALISASI SESSION STATE ---
 if "stok" not in st.session_state:
-    st.session_state.stok = {
-        "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
-        "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
-        "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
-        "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
-        "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
-    }
+    st.session_state.stok = STOK_DEFAULT.copy()
 
 if "riwayat" not in st.session_state:
     st.session_state.riwayat = []
@@ -44,7 +48,8 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📥 Restok Barang Masuk", 
     "📤 Pengiriman Barang Keluar", 
     "➕ Tambah Jenis Barang", 
-    "📜 Riwayat Transaksi"
+    "📜 Riwayat Transaksi",
+    "⚙️ Reset & Backup Data"
 ])
 
 # Fungsi Waktu WIB
@@ -52,10 +57,9 @@ def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
-# 1. LIHAT STOK & PENCARIAN & DOWNLOAD
+# 1. LIHAT STOK
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Daftar Stok Gudang")
-    
     kata_kunci = st.text_input("🔍 Cari Nama Barang...", "")
     
     data_tabel = []
@@ -120,7 +124,7 @@ elif menu == "➕ Tambah Jenis Barang":
             st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs"})
             st.success(f"{nama_baru} berhasil didaftarkan!")
 
-# 5. RIWAYAT & DOWNLOAD
+# 5. RIWAYAT
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi & Tanggal")
     if not st.session_state.riwayat:
@@ -136,3 +140,50 @@ elif menu == "📜 Riwayat Transaksi":
             file_name=f"Riwayat_Transaksi_{dapatkan_waktu_wib()[:10]}.csv",
             mime="text/csv"
         )
+
+# 6. RESET & BACKUP DATA
+elif menu == "⚙️ Reset & Backup Data":
+    st.header("⚙️ Pengelolaan Backup & Reset Sistem")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("💾 Backup & Restore Data")
+        
+        # Download Backup JSON
+        data_backup = {
+            "stok": st.session_state.stok,
+            "riwayat": st.session_state.riwayat
+        }
+        json_string = json.dumps(data_backup, indent=4)
+        
+        st.download_button(
+            label="📥 Unduh File Backup (JSON)",
+            data=json_string,
+            file_name=f"backup_gudang_{dapatkan_waktu_wib()[:10]}.json",
+            mime="application/json"
+        )
+        
+        st.divider()
+        
+        # Upload Restore Data
+        st.write(" Upload File Backup untuk Mengembalikan Data:")
+        file_upload = st.file_uploader("Pilih file .json backup", type=["json"])
+        if file_upload is not None:
+            if st.button("Restore Data Sekarang"):
+                data_restored = json.load(file_upload)
+                st.session_state.stok = data_restored.get("stok", {})
+                st.session_state.riwayat = data_restored.get("riwayat", [])
+                st.success(" Data berhasil dipulihkan dari file backup!")
+                st.rerun()
+
+    with col2:
+        st.subheader("⚠️ Reset Sistem Ke Awalan")
+        st.write("Fitur ini akan menghapus seluruh data transaksi dan mengembalikan stok ke angka default awal.")
+        
+        konfirmasi = st.checkbox("Saya yakin ingin mereset seluruh data gudang")
+        if st.button("🚨 Reset Semua Data", disabled=not konfirmasi):
+            st.session_state.stok = STOK_DEFAULT.copy()
+            st.session_state.riwayat = []
+            st.success(" Seluruh sistem gudang berhasil di-reset!")
+            st.rerun()
