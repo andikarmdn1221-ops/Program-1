@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# --- URL GOOGLE APPS SCRIPT KAMU ---
+# --- URL GOOGLE APPS SCRIPT ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
 # --- FITUR DARK MODE / LIGHT MODE ---
@@ -25,6 +25,11 @@ if dark_mode:
         unsafe_allow_html=True
     )
 
+# --- IDENTITAS PETUGAS / PENGGUNA ---
+st.sidebar.divider()
+st.sidebar.subheader("👤 Identitas Pengguna")
+nama_petugas = st.sidebar.text_input("Nama Petugas / Pengguna", value="Admin Gudang")
+
 # --- FUNGSI LOAD & SAVE DATA VIA API GOOGLE APPS SCRIPT ---
 def load_data():
     try:
@@ -39,14 +44,20 @@ def load_data():
                 if len(row) >= 2 and str(row[1]).isdigit():
                     stok_dict[row[0]] = int(row[1])
         
-        # Ambil data dari Sheet riwayat
+        # Ambil data dari Sheet riwayat / Audit Trail
         raw_riwayat = data.get("riwayat", [])
         riwayat_list = []
         if len(raw_riwayat) > 1:
             for row in raw_riwayat[1:]:
                 if len(row) >= 4:
+                    # Menyesuaikan kolom jika ada data lama
+                    petugas = row[4] if len(row) >= 5 else "Sistem"
                     riwayat_list.append({
-                        "Waktu": row[0], "Tipe": row[1], "Barang": row[2], "Jumlah": row[3]
+                        "Waktu": row[0], 
+                        "Petugas": petugas,
+                        "Tipe": row[1], 
+                        "Barang": row[2], 
+                        "Jumlah": row[3]
                     })
                     
         if not stok_dict:
@@ -78,7 +89,7 @@ def save_data():
     except Exception as e:
         st.error(f"Gagal menyimpan data: {e}")
 
-# Inisialisasi Data awal dari Cloud
+# Inisialisasi Data
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
@@ -89,15 +100,15 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📥 Restok Barang Masuk", 
     "📤 Pengiriman Barang Keluar", 
     "➕ Tambah Jenis Barang", 
-    "📜 Riwayat Transaksi",
+    "🕵️ Audit Log / Activity Log",
     "⚙️ Reset & Backup Data"
 ])
 
 def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
-    return waktu_wib.strftime("%d-%m-%Y %H:%M")
+    return waktu_wib.strftime("%d-%m-%Y %H:%M:%S")
 
-# 1. LIHAT STOK & DASHBOARD STATISTIK & GRAFIK
+# 1. LIHAT STOK
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Ringkasan Dashboard & Stok Gudang")
     
@@ -176,9 +187,17 @@ elif menu == "📥 Restok Barang Masuk":
     if st.button("Simpan Barang Masuk"):
         waktu_sekarang = dapatkan_waktu_wib()
         st.session_state.stok[barang] += jumlah
-        st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang, "Jumlah": f"+{jumlah} pcs"})
+        
+        # Pencatatan Activity Log / Audit Trail
+        st.session_state.riwayat.append({
+            "Waktu": waktu_sekarang, 
+            "Petugas": nama_petugas,
+            "Tipe": "RESTOK MASUK", 
+            "Barang": barang, 
+            "Jumlah": f"+{jumlah} pcs"
+        })
         save_data()
-        st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang} dan tersimpan di Google Sheets!")
+        st.success(f"Berhasil ditambahkan oleh {nama_petugas}: +{jumlah} pcs {barang}!")
 
 # 3. BARANG KELUAR
 elif menu == "📤 Pengiriman Barang Keluar":
@@ -190,9 +209,17 @@ elif menu == "📤 Pengiriman Barang Keluar":
         if jumlah <= st.session_state.stok[barang]:
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[barang] -= jumlah
-            st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang, "Jumlah": f"-{jumlah} pcs"})
+            
+            # Pencatatan Activity Log / Audit Trail
+            st.session_state.riwayat.append({
+                "Waktu": waktu_sekarang, 
+                "Petugas": nama_petugas,
+                "Tipe": "BARANG KELUAR", 
+                "Barang": barang, 
+                "Jumlah": f"-{jumlah} pcs"
+            })
             save_data()
-            st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} dan tersimpan di Google Sheets!")
+            st.success(f"Berhasil diproses oleh {nama_petugas}: -{jumlah} pcs {barang}!")
         else:
             st.error("Stok tidak mencukupi!")
 
@@ -208,18 +235,45 @@ elif menu == "➕ Tambah Jenis Barang":
         elif nama_baru.strip() != "":
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[nama_baru] = stok_awal
-            st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs"})
+            
+            # Pencatatan Activity Log / Audit Trail
+            st.session_state.riwayat.append({
+                "Waktu": waktu_sekarang, 
+                "Petugas": nama_petugas,
+                "Tipe": "ITEM BARU", 
+                "Barang": nama_baru, 
+                "Jumlah": f"{stok_awal} pcs"
+            })
             save_data()
-            st.success(f"{nama_baru} berhasil didaftarkan ke Google Sheets!")
+            st.success(f"{nama_baru} berhasil didaftarkan oleh {nama_petugas}!")
 
-# 5. RIWAYAT
-elif menu == "📜 Riwayat Transaksi":
-    st.header("📜 Catatan Riwayat Transaksi & Tanggal")
+# 5. AUDIT LOG / ACTIVITY LOG
+elif menu == "🕵️ Audit Log / Activity Log":
+    st.header("🕵️ Catatan Aktivitas Pengguna (Audit Trail)")
+    st.write("Melacak riwayat siapa yang melakukan perubahan data, kapan, dan jenis transaksinya.")
+    
     if not st.session_state.riwayat:
-        st.info("Belum ada riwayat transaksi.")
+        st.info("Belum ada catatan aktivitas pengguna.")
     else:
-        df_riwayat = pd.DataFrame(st.session_state.riwayat)
-        st.dataframe(df_riwayat, use_container_width=True)
+        df_log = pd.DataFrame(st.session_state.riwayat)
+        
+        # Filter berdasarkan Nama Petugas
+        list_petugas = ["Semua Petugas"] + list(df_log["Petugas"].unique()) if "Petugas" in df_log.columns else ["Semua Petugas"]
+        pilihan_filter = st.selectbox("🔍 Filter Berdasarkan Petugas:", list_petugas)
+        
+        if pilihan_filter != "Semua Petugas":
+            df_log = df_log[df_log["Petugas"] == pilihan_filter]
+            
+        # Urutkan dari aktivitas paling terbaru
+        st.dataframe(df_log.iloc[::-1], use_container_width=True)
+        
+        csv_log = df_log.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Audit Log (CSV/Excel)",
+            data=csv_log,
+            file_name=f"Audit_Log_Gudang_{dapatkan_waktu_wib()[:10]}.csv",
+            mime="text/csv"
+        )
 
 # 6. RESET & BACKUP DATA
 elif menu == "⚙️ Reset & Backup Data":
@@ -235,3 +289,4 @@ elif menu == "⚙️ Reset & Backup Data":
             file_name=f"backup_gudang_{dapatkan_waktu_wib()[:10]}.json",
             mime="application/json"
         )
+        
