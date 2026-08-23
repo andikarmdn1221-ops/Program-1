@@ -5,6 +5,7 @@ import requests
 import plotly.express as px
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
+import re
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
@@ -20,6 +21,11 @@ STOK_DEFAULT = {
     "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, 
     "Metal glaze wax": 0, "Metallic glaze wax": 0
 }
+
+# --- FUNGSI URUTKAN NAMA BARANG BERDASARKAN ANGKA DI BELAKANGNYA (NATURAL SORT) ---
+def kunci_urut_nama(nama):
+    # Memisahkan teks dan angka agar "Pewarna no 2" berada sebelum "Pewarna no 10"
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # --- FUNGSI EFEK ANIMASI CONFETTI 🎉 ---
 def panggil_confetti():
@@ -65,15 +71,13 @@ def load_data():
         res = requests.get(URL_GSHEET_API)
         data = res.json()
         
-        # Ambil data dari Sheet Stock
         raw_stok = data.get("stok", [])
         stok_dict = {}
         if len(raw_stok) > 1:
             for row in raw_stok[1:]:
                 if len(row) >= 2 and str(row[1]).isdigit():
-                    stok_dict[row[1]] = int(row[1])
+                    stok_dict[row[0]] = int(row[1])
         
-        # Ambil data dari Sheet riwayat
         raw_riwayat = data.get("riwayat", [])
         riwayat_list = []
         if len(raw_riwayat) > 1:
@@ -104,7 +108,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-st.title("📦 Sistem Gudang Microcement")
+st.title("📦 Sistem Gudang Mikrosemen")
 
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
@@ -140,10 +144,31 @@ if menu == "📊 Lihat Semua Stok":
         st.warning(f"🔔 **INFORMASI:** Ada **{jumlah_kritis} jenis barang STOK KRITIS!** Lakukan re-order dalam waktu dekat.")
     
     st.divider()
-    kata_kunci = st.text_input("🔍 Cari Nama Barang...", "")
     
+    col_search, col_sort = st.columns([3, 1])
+    with col_search:
+        kata_kunci = st.text_input("🔍 Cari Nama Barang...", "")
+    with col_sort:
+        opsi_urut = st.selectbox("🔀 Urutkan Berdasarkan", [
+            "Nama Barang (A-Z / Urut Angka)",
+            "Nama Barang (Z-A)",
+            "Stok Terbanyak",
+            "Stok Terkecil"
+        ])
+    
+    # PROSES SORTING / PENGURUTAN AUTOMATIS
+    list_barang_terurut = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
+    
+    if opsi_urut == "Nama Barang (Z-A)":
+        list_barang_terurut.reverse()
+    elif opsi_urut == "Stok Terbanyak":
+        list_barang_terurut = sorted(st.session_state.stok.keys(), key=lambda x: st.session_state.stok[x], reverse=True)
+    elif opsi_urut == "Stok Terkecil":
+        list_barang_terurut = sorted(st.session_state.stok.keys(), key=lambda x: st.session_state.stok[x])
+
     data_tabel = []
-    for barang, jumlah in st.session_state.stok.items():
+    for barang in list_barang_terurut:
+        jumlah = st.session_state.stok[barang]
         if kata_kunci.lower() in barang.lower():
             status_tabel = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
             status_grafik = "HABIS!" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
@@ -157,7 +182,7 @@ if menu == "📊 Lihat Semua Stok":
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
         
-        # --- TABEL DENGAN FORMAT PENYELARASAN ANGKA RATA KANAN (RIGHT-ALIGNED) ---
+        # TABEL DENGAN FORMAT PENYELARASAN ANGKA RATA KANAN (RIGHT-ALIGNED)
         st.dataframe(
             df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], 
             use_container_width=True,
@@ -195,7 +220,7 @@ if menu == "📊 Lihat Semua Stok":
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
-            st.markdown("##### 📦 Proporsi Status Stok Gudang")
+            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
@@ -206,7 +231,10 @@ if menu == "📊 Lihat Semua Stok":
 # 2. RESTOK
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
-    barang = st.selectbox("Pilih Barang", list(st.session_state.stok.keys()))
+    
+    # PILIHAN DROP DOWN JUGA SUDAH OTOMATIS TERURUT SESUAI NOMOR
+    list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
+    barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
     
     if st.button("Simpan Barang Masuk"):
@@ -222,7 +250,9 @@ elif menu == "📥 Restok Barang Masuk":
 # 3. BARANG KELUAR
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
-    barang = st.selectbox("Pilih Barang", list(st.session_state.stok.keys()))
+    
+    list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
+    barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Keluar", min_value=1, step=1)
     
     if st.button("Proses Pengiriman"):
