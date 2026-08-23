@@ -6,6 +6,7 @@ import plotly.express as px
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 import re
+from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
@@ -22,11 +23,9 @@ STOK_DEFAULT = {
     "Metal glaze wax": 0, "Metallic glaze wax": 0
 }
 
-# --- FUNGSI URUTKAN NAMA BARANG BERDASARKAN ANGKA DI BELAKANGNYA (NATURAL SORT) ---
 def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
-# --- FUNGSI EFEK ANIMASI CONFETTI 🎉 ---
 def panggil_confetti():
     confetti_html = """
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -49,7 +48,34 @@ def panggil_confetti():
     """
     components.html(confetti_html, height=0, width=0)
 
-# --- FITUR DARK MODE / LIGHT MODE & STYLING LEBAR TABEL ---
+# --- FUNGSI GENERATOR PDF ---
+def buat_pdf_tabel(judul, headers, data, col_widths):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, judul, ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 8, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Header Tabel
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_fill_color(230, 230, 230)
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 8, h, border=1, align="C", fill=True)
+    pdf.ln()
+    
+    # Isi Data
+    pdf.set_font("Helvetica", "", 9)
+    for row in data:
+        for i, val in enumerate(row):
+            align_text = "C" if i == 0 or i == len(row)-1 else "L"
+            pdf.cell(col_widths[i], 7, str(val), border=1, align=align_text)
+        pdf.ln()
+        
+    return bytes(pdf.output())
+
+# --- FITUR DARK MODE / LIGHT MODE & STYLING ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap (Dark Mode)", value=False)
 
@@ -81,7 +107,6 @@ if dark_mode:
         unsafe_allow_html=True
     )
 
-# --- FUNGSI LOAD & SAVE DATA VIA API GOOGLE APPS SCRIPT ---
 def load_data():
     try:
         res = requests.get(URL_GSHEET_API)
@@ -125,7 +150,6 @@ def save_data():
     except Exception as e:
         st.error(f"Gagal menyimpan data: {e}")
 
-# Inisialisasi Data awal dari Cloud
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
@@ -144,7 +168,7 @@ def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
-# 1. LIHAT STOK & DASHBOARD STATISTIK & GRAFIK
+# 1. LIHAT STOK
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Ringkasan Dashboard & Stok Gudang")
     
@@ -208,22 +232,41 @@ if menu == "📊 Lihat Semua Stok":
             use_container_width=True,
             column_config={
                 "Nama Barang": st.column_config.TextColumn("Nama Barang"),
-                "Jumlah Stok (pcs)": st.column_config.NumberColumn(
-                    "Jumlah Stok (pcs)",
-                    format="%d",
-                    help="Jumlah unit fisik yang tersedia di gudang"
-                ),
+                "Jumlah Stok (pcs)": st.column_config.NumberColumn("Jumlah Stok (pcs)", format="%d"),
                 "Status": st.column_config.TextColumn("Status")
             }
         )
         
-        csv_stok = df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]].to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Laporan Stok (CSV/Excel)",
-            data=csv_stok,
-            file_name=f"Laporan_Stok_{dapatkan_waktu_wib()[:10]}.csv",
-            mime="text/csv"
-        )
+        col_dl1, col_dl2 = st.columns(2)
+        with col_dl1:
+            csv_stok = df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Excel / CSV",
+                data=csv_stok,
+                file_name=f"Laporan_Stok_{dapatkan_waktu_wib()[:10]}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with col_dl2:
+            # PROSES EXPORT STOK KE PDF
+            data_pdf = []
+            for idx, row in df_stok.iterrows():
+                data_pdf.append([idx, row["Nama Barang"], f"{row['Jumlah Stok (pcs)']} pcs", row["Status"]])
+            
+            pdf_bytes = buat_pdf_tabel(
+                "LAPORAN STOK GUDANG MIKROSEMEN", 
+                ["No", "Nama Barang", "Jumlah Stok", "Status"], 
+                data_pdf, 
+                [15, 95, 40, 40]
+            )
+            
+            st.download_button(
+                label="📄 Download Laporan PDF",
+                data=pdf_bytes,
+                file_name=f"Laporan_Stok_{dapatkan_waktu_wib()[:10]}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
         
         st.divider()
         st.subheader("📈 Visualisasi & Analisis Stok")
@@ -251,7 +294,6 @@ if menu == "📊 Lihat Semua Stok":
 # 2. RESTOK
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
-    
     list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
     barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
@@ -262,27 +304,20 @@ elif menu == "📥 Restok Barang Masuk":
         st.session_state.stok[barang] += jumlah
         ket_simpan = keterangan if keterangan.strip() != "" else "Restok Masuk"
         st.session_state.riwayat.append({
-            "Waktu": waktu_sekarang, 
-            "Tipe": "MASUK", 
-            "Barang": barang, 
-            "Jumlah": f"+{jumlah} pcs",
-            "Pembeli / Keterangan": ket_simpan
+            "Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang, 
+            "Jumlah": f"+{jumlah} pcs", "Pembeli / Keterangan": ket_simpan
         })
         save_data()
-        
         panggil_confetti()
         st.toast(f"Restok Berhasil! +{jumlah} {barang}", icon="🎉")
         st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
 
-# 3. BARANG KELUAR (SUDAH DITAMBAHKAN INPUT NAMA PEMBELI)
+# 3. BARANG KELUAR
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
-    
     list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
     barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Keluar", min_value=1, step=1)
-    
-    # --- INPUT NAMA PEMBELI / PROYEK ---
     pembeli = st.text_input("👤 Nama Pembeli / Nama Proyek / Klien", placeholder="Misal: Pak Budi / Proyek Villa Bali")
     
     if st.button("Proses Pengiriman"):
@@ -292,14 +327,10 @@ elif menu == "📤 Pengiriman Barang Keluar":
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[barang] -= jumlah
             st.session_state.riwayat.append({
-                "Waktu": waktu_sekarang, 
-                "Tipe": "KELUAR", 
-                "Barang": barang, 
-                "Jumlah": f"-{jumlah} pcs",
-                "Pembeli / Keterangan": pembeli
+                "Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang, 
+                "Jumlah": f"-{jumlah} pcs", "Pembeli / Keterangan": pembeli
             })
             save_data()
-            
             panggil_confetti()
             st.toast(f"Pengiriman Diproses! -{jumlah} {barang} ke {pembeli}", icon="🚀")
             st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} untuk {pembeli}!")
@@ -319,19 +350,15 @@ elif menu == "➕ Tambah Jenis Barang":
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[nama_baru] = stok_awal
             st.session_state.riwayat.append({
-                "Waktu": waktu_sekarang, 
-                "Tipe": "TAMBAH BARU", 
-                "Barang": nama_baru, 
-                "Jumlah": f"{stok_awal} pcs",
-                "Pembeli / Keterangan": "Pendaftaran Barang Baru"
+                "Waktu": waktu_sekarang, "Tipe": "TAMBAH BARU", "Barang": nama_baru, 
+                "Jumlah": f"{stok_awal} pcs", "Pembeli / Keterangan": "Pendaftaran Barang Baru"
             })
             save_data()
-            
             panggil_confetti()
             st.toast(f"Item Baru Terdaftar: {nama_baru}", icon="✨")
             st.success(f"{nama_baru} berhasil didaftarkan!")
 
-# 5. RIWAYAT TRANSAKSI (MENAMPILKAN KOLOM PEMBELI)
+# 5. RIWAYAT TRANSAKSI
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi & Tanggal")
     if not st.session_state.riwayat:
@@ -340,7 +367,6 @@ elif menu == "📜 Riwayat Transaksi":
         df_riwayat = pd.DataFrame(st.session_state.riwayat)
         df_riwayat.index = range(1, len(df_riwayat) + 1)
         
-        # Memastikan kolom Pembeli / Keterangan ada di DataFrame
         if "Pembeli / Keterangan" not in df_riwayat.columns:
             df_riwayat["Pembeli / Keterangan"] = "-"
             
@@ -349,13 +375,36 @@ elif menu == "📜 Riwayat Transaksi":
             use_container_width=True
         )
         
-        csv_riwayat = df_riwayat.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Riwayat Transaksi (CSV/Excel)",
-            data=csv_riwayat,
-            file_name=f"Riwayat_Transaksi_{dapatkan_waktu_wib()[:10]}.csv",
-            mime="text/csv"
-        )
+        col_rw1, col_rw2 = st.columns(2)
+        with col_rw1:
+            csv_riwayat = df_riwayat.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Excel / CSV",
+                data=csv_riwayat,
+                file_name=f"Riwayat_Transaksi_{dapatkan_waktu_wib()[:10]}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        with col_rw2:
+            # PROSES EXPORT RIWAYAT KE PDF
+            data_pdf_rw = []
+            for idx, row in df_riwayat.iterrows():
+                data_pdf_rw.append([row["Waktu"], row["Tipe"], row["Barang"], row["Jumlah"], row["Pembeli / Keterangan"]])
+            
+            pdf_bytes_rw = buat_pdf_tabel(
+                "LAPORAN RIWAYAT TRANSAKSI GUDANG", 
+                ["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
+                data_pdf_rw, 
+                [30, 20, 50, 25, 65]
+            )
+            
+            st.download_button(
+                label="📄 Download Riwayat PDF",
+                data=pdf_bytes_rw,
+                file_name=f"Riwayat_Transaksi_{dapatkan_waktu_wib()[:10]}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
 
 # 6. RESET & BACKUP DATA
 elif menu == "⚙️ Reset & Backup Data":
