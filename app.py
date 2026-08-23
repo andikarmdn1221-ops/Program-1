@@ -24,19 +24,19 @@ except Exception:
 
 def kirim_notifikasi_telegram(pesan):
     """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
-    if not TELEGRAM_BOT_TOKEN:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,  # Pastikan TANPA tanda kutip ("")
+        "chat_id": int(TELEGRAM_CHAT_ID),
         "text": pesan,
-        "parse_mode": "Markdown"
     }
     try:
         requests.post(url, json=payload, timeout=5)
     except Exception as e:
         print(f"Gagal kirim notif Telegram: {e}")
+
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
 
@@ -372,10 +372,10 @@ elif menu == "📤 Pengiriman Barang Keluar":
             
             # CEK DAN KIRIM NOTIFIKASI TELEGRAM JIKA STOK HABIS ATAU KRITIS
             if sisa_stok == 0:
-                pesan_tg = f"🚨 *PERHATIAN: STOK HABIS!*\n\n📦 Barang: *{barang}*\n📉 Transaksi: Keluar {jumlah} pcs\n👤 Klien: {pembeli}\n⏰ Waktu: {waktu_sekarang}\n🔴 *Sisa Stok: 0 pcs*. Segera Restok!"
+                pesan_tg = f"PERHATIAN: STOK HABIS!\n\nBarang: {barang}\nTransaksi: Keluar {jumlah} pcs\nKlien: {pembeli}\nWaktu: {waktu_sekarang}\nSisa Stok: 0 pcs. Segera Restok!"
                 kirim_notifikasi_telegram(pesan_tg)
             elif sisa_stok < 5:
-                pesan_tg = f"🟡 *PERHATIAN: STOK KRITIS!*\n\n📦 Barang: *{barang}*\n📉 Transaksi: Keluar {jumlah} pcs\n👤 Klien: {pembeli}\n⏰ Waktu: {waktu_sekarang}\n⚠️ *Sisa Stok: {sisa_stok} pcs*. Harap re-order segera."
+                pesan_tg = f"PERHATIAN: STOK KRITIS!\n\nBarang: {barang}\nTransaksi: Keluar {jumlah} pcs\nKlien: {pembeli}\nWaktu: {waktu_sekarang}\nSisa Stok: {sisa_stok} pcs. Harap re-order segera."
                 kirim_notifikasi_telegram(pesan_tg)
             
             panggil_confetti()
@@ -558,7 +558,7 @@ elif menu == "📅 Laporan Bulanan":
         c1, c2, c3 = st.columns(3)
         c1.metric("📋 Total Transaksi Bulan Ini", f"{len(df_filtered)} Transaksi")
         c2.metric("📥 Barang Masuk", f"{total_masuk} Kali")
-        c3.setItem = c3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
+        c3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
         
         st.divider()
         df_filtered.index = range(1, len(df_filtered) + 1)
@@ -585,7 +585,7 @@ elif menu == "📅 Laporan Bulanan":
             
             pdf_bytes_bln = buat_pdf_tabel(
                 f"LAPORAN TRANSAKSI BULAN {bulan_pilihan}", 
-                ["Wupan", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
+                ["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"], 
                 data_pdf_bln, 
                 [30, 20, 50, 25, 65]
             )
