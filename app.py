@@ -1,40 +1,4 @@
-import streamlit as st
-
-st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
-
-if "stok" not in st.session_state:
-    st.session_state.stok = {
-        "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
-        "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
-        "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
-        "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
-        "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
-    }
-
-if "riwayat" not in st.session_state:
-    st.session_state.riwayat = []
-
-st.title("📦 Microcement Warehouse System")
-
-menu = st.sidebar.selectbox("Pilih Menu", [
-    "📊 Lihat Semua Stok", 
-    "📥 Restok Barang Masuk", 
-    "📤 Pengiriman Barang Keluar", 
-    "➕ Tambah Jenis Barang", 
-    "📜 Riwayat Transaksi"
-])
-
-if menu == "📊 Lihat Semua Stok":
-    st.header("📊 Daftar Stok Gudang")
-    data_tabel = []
-    for barang, jumlah in st.session_state.stok.items():
-        status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
-        data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
-    st.dataframe(data_tabel, use_container_width=True)
-
-elif menu == "📥 Restok Barang Masuk":
-    st.header("📥 Tambah Stok Barang")
-    barang = st.selectbox("Pilih Barang", list(st.session_state.stok.keys()))
+import    barang = st.selectbox("Pilih Barang", list(st.session_state.stok.keys()))
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
     if st.button("Simpan Barang Masuk"):
         st.session_state.stok[barang] += jumlah
