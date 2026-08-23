@@ -11,7 +11,7 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 # --- URL GOOGLE APPS SCRIPT KAMU ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
-# --- DATA DEFAULT AWAL (SUDAH DITAMBAHKAN METALLIC GLAZE WAX) ---
+# --- DATA DEFAULT AWAL ---
 STOK_DEFAULT = {
     "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
     "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
@@ -156,7 +156,21 @@ if menu == "📊 Lihat Semua Stok":
     
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
-        st.dataframe(df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], use_container_width=True)
+        
+        # --- TABEL DENGAN FORMAT PENYELARASAN ANGKA RATA KANAN (RIGHT-ALIGNED) ---
+        st.dataframe(
+            df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], 
+            use_container_width=True,
+            column_config={
+                "Nama Barang": st.column_config.TextColumn("Nama Barang"),
+                "Jumlah Stok (pcs)": st.column_config.NumberColumn(
+                    "Jumlah Stok (pcs)",
+                    format="%d",
+                    help="Jumlah unit fisik yang tersedia di gudang"
+                ),
+                "Status": st.column_config.TextColumn("Status")
+            }
+        )
         
         csv_stok = df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]].to_csv(index=False).encode('utf-8')
         st.download_button(
