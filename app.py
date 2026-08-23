@@ -11,16 +11,12 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# --- 1. KONFIGURASI URL, WAKTU & SECRETS TELEGRAM ---
+# --- 1. KONFIGURASI URL, WAKTU & TELEGRAM (DIRECT) ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
-# Mengambil token & chat_id secara aman dari st.secrets
-try:
-    TELEGRAM_BOT_TOKEN = st.secrets["telegram"]["bot_token"]
-    TELEGRAM_CHAT_ID = st.secrets["telegram"]["chat_id"]
-except Exception:
-    TELEGRAM_BOT_TOKEN = ""
-    TELEGRAM_CHAT_ID = ""
+# Token dan Chat ID dimasukkan langsung agar pasti terbaca
+TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV81ZqpE"
+TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
     """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
@@ -28,20 +24,13 @@ def kirim_notifikasi_telegram(pesan):
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    
-    # Amankan chat_id agar aman dari error ValueError
-    try:
-        chat_id_clean = int(str(TELEGRAM_CHAT_ID).strip())
-    except ValueError:
-        print("Chat ID Telegram tidak valid atau kosong!")
-        return
-
     payload = {
-        "chat_id": chat_id_clean,
+        "chat_id": TELEGRAM_CHAT_ID,
         "text": pesan,
     }
     try:
-        requests.post(url, json=payload, timeout=5)
+        response = requests.post(url, json=payload, timeout=5)
+        print("Response Telegram:", response.text)
     except Exception as e:
         print(f"Gagal kirim notif Telegram: {e}")
 
