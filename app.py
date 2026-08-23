@@ -49,9 +49,26 @@ def panggil_confetti():
     """
     components.html(confetti_html, height=0, width=0)
 
-# --- FITUR DARK MODE / LIGHT MODE ---
+# --- FITUR DARK MODE / LIGHT MODE & STYLING LEBAR TABEL ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap (Dark Mode)", value=False)
+
+st.markdown(
+    """
+    <style>
+    div[data-testid="stDataFrame"] div[role="grid"] div[role="columnheader"]:nth-child(2),
+    div[data-testid="stDataFrame"] div[role="grid"] div[role="gridcell"]:nth-child(2) {
+        min-width: 400px !important;
+    }
+    div[data-testid="stDataFrame"] div[role="grid"] div[role="columnheader"]:nth-child(3),
+    div[data-testid="stDataFrame"] div[role="grid"] div[role="gridcell"]:nth-child(3) {
+        min-width: 180px !important;
+        text-align: right !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 if dark_mode:
     st.markdown(
@@ -82,8 +99,13 @@ def load_data():
         if len(raw_riwayat) > 1:
             for row in raw_riwayat[1:]:
                 if len(row) >= 4:
+                    pembeli = row[4] if len(row) >= 5 else "-"
                     riwayat_list.append({
-                        "Waktu": row[0], "Tipe": row[1], "Barang": row[2], "Jumlah": row[3]
+                        "Waktu": row[0], 
+                        "Tipe": row[1], 
+                        "Barang": row[2], 
+                        "Jumlah": row[3],
+                        "Pembeli / Keterangan": pembeli
                     })
                     
         if not stok_dict:
@@ -107,7 +129,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-st.title("📦 Sistem Gudang Microcement")
+st.title("📦 Sistem Gudang Mikrosemen")
 
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
@@ -155,7 +177,6 @@ if menu == "📊 Lihat Semua Stok":
             "Stok Terkecil"
         ])
     
-    # PROSES SORTING / PENGURUTAN AUTOMATIS
     list_barang_terurut = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
     
     if opsi_urut == "Nama Barang (Z-A)":
@@ -180,29 +201,19 @@ if menu == "📊 Lihat Semua Stok":
     
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
-        
-        # Penomoran baris dimulai dari angka 1
         df_stok.index = range(1, len(df_stok) + 1)
         
-        # TABEL DENGAN PENGATURAN LEBAR KOLOM (COLUMN WIDTH) AGAR PROPORSIONAL & TIDAK ADA WHITESPACE BERLEBIHAN
         st.dataframe(
             df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], 
             use_container_width=True,
             column_config={
-                "Nama Barang": st.column_config.TextColumn(
-                    "Nama Barang",
-                    width="large"
-                ),
+                "Nama Barang": st.column_config.TextColumn("Nama Barang"),
                 "Jumlah Stok (pcs)": st.column_config.NumberColumn(
                     "Jumlah Stok (pcs)",
                     format="%d",
-                    width="medium",
                     help="Jumlah unit fisik yang tersedia di gudang"
                 ),
-                "Status": st.column_config.TextColumn(
-                    "Status",
-                    width="small"
-                )
+                "Status": st.column_config.TextColumn("Status")
             }
         )
         
@@ -229,7 +240,7 @@ if menu == "📊 Lihat Semua Stok":
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
-            st.markdown("##### 📦 Proporsi Status Stok Gudang")
+            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
@@ -244,18 +255,26 @@ elif menu == "📥 Restok Barang Masuk":
     list_pilihan = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
     barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
+    keterangan = st.text_input("Supplier / Keterangan (Opsional)", placeholder="Misal: PT Supplier Utama")
     
     if st.button("Simpan Barang Masuk"):
         waktu_sekarang = dapatkan_waktu_wib()
         st.session_state.stok[barang] += jumlah
-        st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang, "Jumlah": f"+{jumlah} pcs"})
+        ket_simpan = keterangan if keterangan.strip() != "" else "Restok Masuk"
+        st.session_state.riwayat.append({
+            "Waktu": waktu_sekarang, 
+            "Tipe": "MASUK", 
+            "Barang": barang, 
+            "Jumlah": f"+{jumlah} pcs",
+            "Pembeli / Keterangan": ket_simpan
+        })
         save_data()
         
         panggil_confetti()
         st.toast(f"Restok Berhasil! +{jumlah} {barang}", icon="🎉")
-        st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang} dan tersimpan di Google Sheets!")
+        st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
 
-# 3. BARANG KELUAR
+# 3. BARANG KELUAR (SUDAH DITAMBAHKAN INPUT NAMA PEMBELI)
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
     
@@ -263,16 +282,27 @@ elif menu == "📤 Pengiriman Barang Keluar":
     barang = st.selectbox("Pilih Barang", list_pilihan)
     jumlah = st.number_input("Jumlah Keluar", min_value=1, step=1)
     
+    # --- INPUT NAMA PEMBELI / PROYEK ---
+    pembeli = st.text_input("👤 Nama Pembeli / Nama Proyek / Klien", placeholder="Misal: Pak Budi / Proyek Villa Bali")
+    
     if st.button("Proses Pengiriman"):
-        if jumlah <= st.session_state.stok[barang]:
+        if pembeli.strip() == "":
+            st.warning("⚠️ Mohon isi nama pembeli atau nama proyek terlebih dahulu!")
+        elif jumlah <= st.session_state.stok[barang]:
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[barang] -= jumlah
-            st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang, "Jumlah": f"-{jumlah} pcs"})
+            st.session_state.riwayat.append({
+                "Waktu": waktu_sekarang, 
+                "Tipe": "KELUAR", 
+                "Barang": barang, 
+                "Jumlah": f"-{jumlah} pcs",
+                "Pembeli / Keterangan": pembeli
+            })
             save_data()
             
             panggil_confetti()
-            st.toast(f"Pengiriman Diproses! -{jumlah} {barang}", icon="🚀")
-            st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} dan tersimpan di Google Sheets!")
+            st.toast(f"Pengiriman Diproses! -{jumlah} {barang} ke {pembeli}", icon="🚀")
+            st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} untuk {pembeli}!")
         else:
             st.error("Stok tidak mencukupi!")
 
@@ -288,14 +318,20 @@ elif menu == "➕ Tambah Jenis Barang":
         elif nama_baru.strip() != "":
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[nama_baru] = stok_awal
-            st.session_state.riwayat.append({"Waktu": waktu_sekarang, "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs"})
+            st.session_state.riwayat.append({
+                "Waktu": waktu_sekarang, 
+                "Tipe": "TAMBAH BARU", 
+                "Barang": nama_baru, 
+                "Jumlah": f"{stok_awal} pcs",
+                "Pembeli / Keterangan": "Pendaftaran Barang Baru"
+            })
             save_data()
             
             panggil_confetti()
             st.toast(f"Item Baru Terdaftar: {nama_baru}", icon="✨")
-            st.success(f"{nama_baru} berhasil didaftarkan ke Google Sheets!")
+            st.success(f"{nama_baru} berhasil didaftarkan!")
 
-# 5. RIWAYAT
+# 5. RIWAYAT TRANSAKSI (MENAMPILKAN KOLOM PEMBELI)
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi & Tanggal")
     if not st.session_state.riwayat:
@@ -303,7 +339,23 @@ elif menu == "📜 Riwayat Transaksi":
     else:
         df_riwayat = pd.DataFrame(st.session_state.riwayat)
         df_riwayat.index = range(1, len(df_riwayat) + 1)
-        st.dataframe(df_riwayat, use_container_width=True)
+        
+        # Memastikan kolom Pembeli / Keterangan ada di DataFrame
+        if "Pembeli / Keterangan" not in df_riwayat.columns:
+            df_riwayat["Pembeli / Keterangan"] = "-"
+            
+        st.dataframe(
+            df_riwayat[["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]], 
+            use_container_width=True
+        )
+        
+        csv_riwayat = df_riwayat.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Riwayat Transaksi (CSV/Excel)",
+            data=csv_riwayat,
+            file_name=f"Riwayat_Transaksi_{dapatkan_waktu_wib()[:10]}.csv",
+            mime="text/csv"
+        )
 
 # 6. RESET & BACKUP DATA
 elif menu == "⚙️ Reset & Backup Data":
@@ -329,5 +381,5 @@ elif menu == "⚙️ Reset & Backup Data":
             st.session_state.stok = STOK_DEFAULT.copy()
             st.session_state.riwayat = []
             save_data()
-            st.success("✅ Seluruh data gudang berhasil di-reset ke awalan dan tersimpan di Google Sheets!")
+            st.success("✅ Seluruh data gudang berhasil di-reset ke awalan!")
             st.rerun()
