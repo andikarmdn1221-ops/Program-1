@@ -57,9 +57,32 @@ def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
-# 1. LIHAT STOK
+# 1. LIHAT STOK & DASHBOARD STATISTIK
 if menu == "📊 Lihat Semua Stok":
-    st.header("📊 Daftar Stok Gudang")
+    st.header("📊 Ringkasan Dashboard & Stok Gudang")
+    
+    # --- PROSES PERHITUNGAN STATISTIK (METRICS) ---
+    total_jenis = len(st.session_state.stok)
+    total_unit = sum(st.session_state.stok.values())
+    jumlah_kritis = sum(1 for qty in st.session_state.stok.values() if 0 < qty < 5)
+    jumlah_habis = sum(1 for qty in st.session_state.stok.values() if qty == 0)
+    
+    # Tampilan Kotak Statistik (Key Metrics)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📦 Total Jenis Barang", f"{total_jenis} Item")
+    col2.metric("📊 Total Stok Fisik", f"{total_unit} pcs")
+    col3.metric("🟡 Stok Kritis (<5)", f"{jumlah_kritis} Item")
+    col4.metric("🔴 Stok Habis (0)", f"{jumlah_habis} Item")
+    
+    # Peringatan Otomatis (Alerts)
+    if jumlah_habis > 0:
+        st.error(f"⚠️ **PERHATIAN:** Ada **{jumlah_habis} jenis barang HABIS!** Segera lakukan restok.")
+    elif jumlah_kritis > 0:
+        st.warning(f"🔔 **INFORMASI:** Ada **{jumlah_kritis} jenis barang STOK KRITIS!** Lakukan re-order dalam waktu dekat.")
+    
+    st.divider()
+    
+    # Fitur Search Bar
     kata_kunci = st.text_input("🔍 Cari Nama Barang...", "")
     
     data_tabel = []
@@ -150,7 +173,6 @@ elif menu == "⚙️ Reset & Backup Data":
     with col1:
         st.subheader("💾 Backup & Restore Data")
         
-        # Download Backup JSON
         data_backup = {
             "stok": st.session_state.stok,
             "riwayat": st.session_state.riwayat
@@ -166,15 +188,14 @@ elif menu == "⚙️ Reset & Backup Data":
         
         st.divider()
         
-        # Upload Restore Data
-        st.write(" Upload File Backup untuk Mengembalikan Data:")
+        st.write("📂 Upload File Backup untuk Mengembalikan Data:")
         file_upload = st.file_uploader("Pilih file .json backup", type=["json"])
         if file_upload is not None:
             if st.button("Restore Data Sekarang"):
                 data_restored = json.load(file_upload)
                 st.session_state.stok = data_restored.get("stok", {})
                 st.session_state.riwayat = data_restored.get("riwayat", [])
-                st.success(" Data berhasil dipulihkan dari file backup!")
+                st.success("✅ Data berhasil dipulihkan dari file backup!")
                 st.rerun()
 
     with col2:
@@ -185,5 +206,5 @@ elif menu == "⚙️ Reset & Backup Data":
         if st.button("🚨 Reset Semua Data", disabled=not konfirmasi):
             st.session_state.stok = STOK_DEFAULT.copy()
             st.session_state.riwayat = []
-            st.success(" Seluruh sistem gudang berhasil di-reset!")
+            st.success("✅ Seluruh sistem gudang berhasil di-reset!")
             st.rerun()
