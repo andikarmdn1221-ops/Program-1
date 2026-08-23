@@ -1,11 +1,14 @@
 import streamlit as st
 import pandas as pd
 import json
+import requests
 import plotly.express as px
 from datetime import datetime, timedelta
-from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
+
+# --- URL GOOGLE APPS SCRIPT KAMU ---
+URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
 # --- FITUR DARK MODE / LIGHT MODE ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
@@ -22,17 +25,39 @@ if dark_mode:
         unsafe_allow_html=True
     )
 
-# --- KONEKSI KE GOOGLE SHEETS ---
-conn = st.connection("gsheets", type=GSheetsConnection)
-
+# --- FUNGSI LOAD & SAVE DATA VIA API GOOGLE APPS SCRIPT ---
 def load_data():
     try:
-        df_stok = conn.read(worksheet="Stock", ttl=0)
-        df_riwayat = conn.read(worksheet="riwayat", ttl=0)
+        res = requests.get(URL_GSHEET_API)
+        data = res.json()
         
-        stok_dict = dict(zip(df_stok["Nama Barang"], df_stok["Jumlah Stok"]))
-        riwayat_list = df_riwayat.to_dict(orient="records") if not df_riwayat.empty else []
+        # Ambil data dari Sheet Stock
+        raw_stok = data.get("stok", [])
+        stok_dict = {}
+        if len(raw_stok) > 1:
+            for row in raw_stok[1:]:
+                if len(row) >= 2 and str(row[1]).isdigit():
+                    stok_dict[row[0]] = int(row[1])
         
+        # Ambil data dari Sheet riwayat
+        raw_riwayat = data.get("riwayat", [])
+        riwayat_list = []
+        if len(raw_riwayat) > 1:
+            for row in raw_riwayat[1:]:
+                if len(row) >= 4:
+                    riwayat_list.append({
+                        "Waktu": row[0], "Tipe": row[1], "Barang": row[2], "Jumlah": row[3]
+                    })
+                    
+        if not stok_dict:
+            stok_dict = {
+                "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
+                "Ceramic microcement": 4, "Microrock": 17, "Primer ordinary": 7,
+                "Epoxy primer": 3, "Self leveling white finish": 4, "Top coat A": 15,
+                "Top coat B": 1, "Top coat C": 5, "Pewarna no 1": 3,
+                "Pewarna no 2": 10, "Pewarna no 3": 0, "Pewarna no 4": 9, "Metal glaze wax": 0
+            }
+            
         return stok_dict, riwayat_list
     except Exception:
         return {
@@ -44,12 +69,16 @@ def load_data():
         }, []
 
 def save_data():
-    df_stok = pd.DataFrame(list(st.session_state.stok.items()), columns=["Nama Barang", "Jumlah Stok"])
-    df_riwayat = pd.DataFrame(st.session_state.riwayat)
-    
-    conn.update(worksheet="Stock", data=df_stok)
-    conn.update(worksheet="riwayat", data=df_riwayat)
+    payload = {
+        "stok": [[k, v] for k, v in st.session_state.stok.items()],
+        "riwayat": st.session_state.riwayat
+    }
+    try:
+        requests.post(URL_GSHEET_API, json=payload)
+    except Exception as e:
+        st.error(f"Gagal menyimpan data: {e}")
 
+# Inisialisasi Data awal dari Cloud
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
@@ -68,7 +97,7 @@ def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
-# 1. LIHAT STOK
+# 1. LIHAT STOK & DASHBOARD STATISTIK & GRAFIK
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Ringkasan Dashboard & Stok Gudang")
     
