@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import plotly.express as px
 from datetime import datetime, timedelta
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
@@ -57,7 +58,7 @@ def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
-# 1. LIHAT STOK & DASHBOARD STATISTIK
+# 1. LIHAT STOK & DASHBOARD STATISTIK & GRAFIK
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Ringkasan Dashboard & Stok Gudang")
     
@@ -88,11 +89,13 @@ if menu == "📊 Lihat Semua Stok":
     data_tabel = []
     for barang, jumlah in st.session_state.stok.items():
         if kata_kunci.lower() in barang.lower():
-            status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
+            status = "HABIS!" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
             data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
     
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
+        
+        # Tabel Data
         st.dataframe(df_stok, use_container_width=True)
         
         csv_stok = df_stok.to_csv(index=False).encode('utf-8')
@@ -102,6 +105,39 @@ if menu == "📊 Lihat Semua Stok":
             file_name=f"Laporan_Stok_{dapatkan_waktu_wib()[:10]}.csv",
             mime="text/csv"
         )
+        
+        st.divider()
+        st.subheader("📈 Visualisasi & Analisis Stok")
+        
+        col_chart1, col_chart2 = st.columns(2)
+        
+        # Grafik 1: Bar Chart Jumlah Stok Per Barang
+        with col_chart1:
+            st.markdown("##### 📊 Perbandingan Stok per Item")
+            fig_bar = px.bar(
+                df_stok, 
+                x="Nama Barang", 
+                y="Jumlah Stok (pcs)", 
+                color="Status",
+                color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
+                text="Jumlah Stok (pcs)"
+            )
+            fig_bar.update_layout(xaxis_tickangle=-45, showlegend=True, margin=dict(l=20, r=20, t=30, b=80))
+            st.plotly_chart(fig_bar, use_container_width=True)
+            
+        # Grafik 2: Pie Chart Distribusi Status Stok
+        with col_chart2:
+            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
+            fig_pie = px.pie(
+                df_stok, 
+                names="Status", 
+                color="Status",
+                color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
+                hole=0.4
+            )
+            fig_pie.update_layout(margin=dict(l=20, r=20, t=30, b=30))
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
     else:
         st.warning(f"Barang dengan kata kunci '{kata_kunci}' tidak ditemukan.")
 
