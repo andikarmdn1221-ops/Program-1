@@ -71,7 +71,7 @@ def load_data():
         if len(raw_stok) > 1:
             for row in raw_stok[1:]:
                 if len(row) >= 2 and str(row[1]).isdigit():
-                    stok_dict[row[0]] = int(row[1])
+                    stok_dict[row[1]] = int(row[1])
         
         # Ambil data dari Sheet riwayat
         raw_riwayat = data.get("riwayat", [])
