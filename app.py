@@ -77,7 +77,7 @@ if menu == "📊 Lihat Semua Stok":
     
     # Peringatan Otomatis (Alerts)
     if jumlah_habis > 0:
-        st.error(f"⚠️ **PERHATIAN:** Ada **{jumlah_habis} jenis barang HABIS!** Segera lakukan restok.")
+        st.error(f"🚨 **PERHATIAN:** Ada **{jumlah_habis} jenis barang HABIS!** Segera lakukan restok.")
     elif jumlah_kritis > 0:
         st.warning(f"🔔 **INFORMASI:** Ada **{jumlah_kritis} jenis barang STOK KRITIS!** Lakukan re-order dalam waktu dekat.")
     
@@ -89,16 +89,25 @@ if menu == "📊 Lihat Semua Stok":
     data_tabel = []
     for barang, jumlah in st.session_state.stok.items():
         if kata_kunci.lower() in barang.lower():
-            status = "HABIS!" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
-            data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
+            # Penentuan teks warna untuk tabel
+            status_tabel = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
+            # Teks status murni untuk warna grafik
+            status_grafik = "HABIS!" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
+            
+            data_tabel.append({
+                "Nama Barang": barang, 
+                "Jumlah Stok (pcs)": jumlah, 
+                "Status": status_tabel,
+                "StatusGrafik": status_grafik
+            })
     
     if data_tabel:
         df_stok = pd.DataFrame(data_tabel)
         
-        # Tabel Data
-        st.dataframe(df_stok, use_container_width=True)
+        # Tampilkan tabel tanpa kolom bantu StatusGrafik
+        st.dataframe(df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]], use_container_width=True)
         
-        csv_stok = df_stok.to_csv(index=False).encode('utf-8')
+        csv_stok = df_stok[["Nama Barang", "Jumlah Stok (pcs)", "Status"]].to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Download Laporan Stok (CSV/Excel)",
             data=csv_stok,
@@ -118,7 +127,7 @@ if menu == "📊 Lihat Semua Stok":
                 df_stok, 
                 x="Nama Barang", 
                 y="Jumlah Stok (pcs)", 
-                color="Status",
+                color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
                 text="Jumlah Stok (pcs)"
             )
@@ -130,8 +139,8 @@ if menu == "📊 Lihat Semua Stok":
             st.markdown("##### 🥧 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, 
-                names="Status", 
-                color="Status",
+                names="StatusGrafik", 
+                color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
                 hole=0.4
             )
