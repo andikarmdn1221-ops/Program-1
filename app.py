@@ -30,14 +30,26 @@ def dapatkan_waktu_wib():
     waktu_wib = datetime.utcnow() + timedelta(hours=7)
     return waktu_wib.strftime("%d-%m-%Y %H:%M")
 
+# 1. LIHAT STOK & PENCARIAN
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Daftar Stok Gudang")
+    
+    # Fitur Search Bar
+    kata_kunci = st.text_input("🔍 Cari Nama Barang...", "")
+    
     data_tabel = []
     for barang, jumlah in st.session_state.stok.items():
-        status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
-        data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
-    st.dataframe(data_tabel, use_container_width=True)
+        # Filter pencarian (tidak sensitif huruf besar/kecil)
+        if kata_kunci.lower() in barang.lower():
+            status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
+            data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
+    
+    if data_tabel:
+        st.dataframe(data_tabel, use_container_width=True)
+    else:
+        st.warning(f"Barang dengan kata kunci '{kata_kunci}' tidak ditemukan.")
 
+# 2. RESTOK
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
     barang = st.selectbox("Pilih Barang", list(st.session_state.stok.keys()))
@@ -49,6 +61,7 @@ elif menu == "📥 Restok Barang Masuk":
         st.session_state.riwayat.append(f"[{waktu_sekarang}] MASUK: {barang} (+{jumlah} pcs)")
         st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
 
+# 3. BARANG KELUAR
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
     barang = st.selectbox("Pilih Barang", list(st.session_state.stok.keys()))
@@ -63,6 +76,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
         else:
             st.error("Stok tidak mencukupi!")
 
+# 4. TAMBAH BARANG BARU
 elif menu == "➕ Tambah Jenis Barang":
     st.header("➕ Tambah Jenis Barang Baru")
     nama_baru = st.text_input("Nama Barang Baru")
@@ -77,6 +91,7 @@ elif menu == "➕ Tambah Jenis Barang":
             st.session_state.riwayat.append(f"[{waktu_sekarang}] TAMBAH BARU: {nama_baru} ({stok_awal} pcs)")
             st.success(f"{nama_baru} berhasil didaftarkan!")
 
+# 5. RIWAYAT
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi & Tanggal")
     if not st.session_state.riwayat:
@@ -84,4 +99,4 @@ elif menu == "📜 Riwayat Transaksi":
     else:
         for log in reversed(st.session_state.riwayat):
             st.write(f"- {log}")
-            
+        
