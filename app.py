@@ -11,8 +11,28 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# --- 1. KONFIGURASI URL & WAKTU WIB ---
+# --- 1. KONFIGURASI URL, WAKTU & BOT TELEGRAM ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
+
+# Masukkan Bot Token & Chat ID Telegram Anda di sini
+TELEGRAM_BOT_TOKEN = "ISI_DENGAN_BOT_TOKEN_KAMU"
+TELEGRAM_CHAT_ID = "ISI_DENGAN_CHAT_ID_KAMU"
+
+def kirim_notifikasi_telegram(pesan):
+    """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
+    if TELEGRAM_BOT_TOKEN == "ISI_DENGAN_BOT_TOKEN_KAMU" or not TELEGRAM_BOT_TOKEN:
+        return
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": pesan,
+        "parse_mode": "Markdown"
+    }
+    try:
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"Gagal kirim notif Telegram: {e}")
 
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
@@ -91,96 +111,26 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
         
     return bytes(pdf.output())
 
-# --- STYLING MODERN (DARK & LIGHT MODE RAPI) ---
+# --- STYLING MODERN ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap Premium", value=True)
 
 if dark_mode:
-    # Custom CSS untuk Dark Mode Profesional (Teks terang, Card kontras, Tabel Elegan)
     st.markdown(
         """
         <style>
-        /* Background Utama & Font */
-        .stApp {
-            background-color: #0F172A !important;
-            color: #F8FAFC !important;
-        }
-        .stSidebar {
-            background-color: #1E293B !important;
-        }
-        
-        /* Metric Card styling */
-        div[data-testid="stMetric"] {
-            background-color: #1E293B !important;
-            border: 1px solid #334155 !important;
-            border-radius: 10px !important;
-            padding: 15px !important;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
-        }
-        div[data-testid="stMetricLabel"] p {
-            color: #94A3B8 !important;
-            font-size: 14px !important;
-            font-weight: 600 !important;
-        }
-        div[data-testid="stMetricValue"] div {
-            color: #38BDF8 !important;
-            font-size: 28px !important;
-            font-weight: 700 !important;
-        }
-
-        /* Styling Input, Selectbox & Sidebar Text */
-        .stTextInput input, .stSelectbox div[role="combobox"] {
-            background-color: #1E293B !important;
-            color: #F8FAFC !important;
-            border: 1px solid #475569 !important;
-            border-radius: 8px !important;
-        }
-        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span {
-            color: #F8FAFC !important;
-        }
-
-        /* Tabel Styling */
-        div[data-testid="stDataFrame"] {
-            border: 1px solid #334155 !important;
-            border-radius: 8px !important;
-            overflow: hidden;
-        }
+        .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
+        .stSidebar { background-color: #1E293B !important; }
+        div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
+        .stTextInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span { color: #F8FAFC !important; }
+        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
         </style>
         """,
         unsafe_allow_html=True
     )
-else:
-    # Light Mode Rapi
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stMetric"] {
-            background-color: #F8FAFC !important;
-            border: 1px solid #E2E8F0 !important;
-            border-radius: 10px !important;
-            padding: 15px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-st.markdown(
-    """
-    <style>
-    div[data-testid="stDataFrame"] div[role="grid"] div[role="columnheader"]:nth-child(2),
-    div[data-testid="stDataFrame"] div[role="grid"] div[role="gridcell"]:nth-child(2) {
-        min-width: 400px !important;
-    }
-    div[data-testid="stDataFrame"] div[role="grid"] div[role="columnheader"]:nth-child(3),
-    div[data-testid="stDataFrame"] div[role="grid"] div[role="gridcell"]:nth-child(3) {
-        min-width: 180px !important;
-        text-align: right !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 def load_data():
     data = fetch_data_from_gsheet(URL_GSHEET_API)
@@ -228,9 +178,8 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-st.title("📦 Sistem Gudang Microcement")
+st.title("📦 Sistem Gudang Mikrosemen")
 
-# --- BANNER ALERT NOTIFIKASI BARANG HABIS/KRITIS ---
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
 item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
 
@@ -361,7 +310,7 @@ if menu == "📊 Lihat Semua Stok":
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
-            st.markdown("##### 📦 Proporsi Status Stok Gudang")
+            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
@@ -410,11 +359,22 @@ elif menu == "📤 Pengiriman Barang Keluar":
         elif jumlah <= stok_saat_ini:
             waktu_sekarang = dapatkan_waktu_wib()
             st.session_state.stok[barang] -= jumlah
+            sisa_stok = st.session_state.stok[barang]
+            
             st.session_state.riwayat.append({
                 "Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang, 
                 "Jumlah": f"-{jumlah} pcs", "Pembeli / Keterangan": pembeli
             })
             save_data()
+            
+            # CEK DAN KIRIM NOTIFIKASI TELEGRAM JIKA STOK HABIS ATAU KRITIS
+            if sisa_stok == 0:
+                pesan_tg = f"🚨 *PERHATIAN: STOK HABIS!*\n\n📦 Barang: *{barang}*\n📉 Transaksi: Keluar {jumlah} pcs\n👤 Klien: {pembeli}\n⏰ Waktu: {waktu_sekarang}\n🔴 *Sisa Stok: 0 pcs*. Segera Restok!"
+                kirim_notifikasi_telegram(pesan_tg)
+            elif sisa_stok < 5:
+                pesan_tg = f"🟡 *PERHATIAN: STOK KRITIS!*\n\n📦 Barang: *{barang}*\n📉 Transaksi: Keluar {jumlah} pcs\n👤 Klien: {pembeli}\n⏰ Waktu: {waktu_sekarang}\n⚠️ *Sisa Stok: {sisa_stok} pcs*. Harap re-order segera."
+                kirim_notifikasi_telegram(pesan_tg)
+            
             panggil_confetti()
             st.toast(f"Pengiriman Diproses! -{jumlah} {barang} ke {pembeli}", icon="🚀")
             st.success(f"Berhasil mengeluarkan {jumlah} pcs dari {barang} untuk {pembeli}!")
