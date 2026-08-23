@@ -19,8 +19,8 @@ try:
     TELEGRAM_BOT_TOKEN = st.secrets["telegram"]["bot_token"]
     TELEGRAM_CHAT_ID = st.secrets["telegram"]["chat_id"]
 except Exception:
-    TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV8lzQpE"
-    TELEGRAM_CHAT_ID = "2106196278"
+    TELEGRAM_BOT_TOKEN = ""
+    TELEGRAM_CHAT_ID = ""
 
 def kirim_notifikasi_telegram(pesan):
     """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
