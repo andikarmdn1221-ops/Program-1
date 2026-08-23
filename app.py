@@ -228,7 +228,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-st.title("📦 Sistem Gudang Mikrosemen")
+st.title("📦 Sistem Gudang Microcement")
 
 # --- BANNER ALERT NOTIFIKASI BARANG HABIS/KRITIS ---
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
@@ -361,7 +361,7 @@ if menu == "📊 Lihat Semua Stok":
             st.plotly_chart(fig_bar, use_container_width=True)
             
         with col_chart2:
-            st.markdown("##### 🥧 Proporsi Status Stok Gudang")
+            st.markdown("##### 📦 Proporsi Status Stok Gudang")
             fig_pie = px.pie(
                 df_stok, names="StatusGrafik", color="StatusGrafik",
                 color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"},
