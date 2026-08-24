@@ -11,7 +11,6 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# Mengambil kredensial dari st.secrets
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
@@ -35,14 +34,12 @@ def parse_waktu(waktu_str):
     
     waktu_str = str(waktu_str).strip()
     
-    # Parsing format ISO Google Sheets
     try:
         dt = datetime.fromisoformat(waktu_str.replace('Z', '+00:00'))
         return dt.replace(tzinfo=None)
     except Exception:
         pass
         
-    # Parsing format tanggal standar
     formats = [
         "%d-%m-%Y %H:%M",
         "%d-%m-%Y %H:%M:%S",
@@ -187,7 +184,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-# Pengaturan Sidebar
+# Sidebar
 st.sidebar.title("⚙️ Pengaturan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
 
@@ -199,18 +196,93 @@ if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True)
 
 st.sidebar.divider()
 
+# Desain CSS Mode Gelap Premium
 if dark_mode:
     st.markdown("""
         <style>
-        .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
-        .stSidebar { background-color: #1E293B !important; }
-        div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
-        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
-        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
-        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"], .stDateInput input { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
-        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
-        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
-        .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
+        /* Background Utama */
+        .stApp { 
+            background-color: #0F172A !important; 
+            color: #F8FAFC !important; 
+        }
+        .stSidebar { 
+            background-color: #1E293B !important; 
+            border-right: 1px solid #334155 !important;
+        }
+
+        /* Metric Cards */
+        div[data-testid="stMetric"] { 
+            background-color: #1E293B !important; 
+            border: 1px solid #334155 !important; 
+            border-radius: 12px !important; 
+            padding: 16px !important; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
+        }
+        div[data-testid="stMetricLabel"] p { 
+            color: #94A3B8 !important; 
+            font-size: 13px !important; 
+            font-weight: 600 !important; 
+        }
+        div[data-testid="stMetricValue"] div { 
+            color: #38BDF8 !important; 
+            font-size: 28px !important; 
+            font-weight: 700 !important; 
+        }
+
+        /* Form Inputs & Selectbox */
+        .stTextInput input, .stNumberInput input, .stDateInput input { 
+            background-color: #1E293B !important; 
+            color: #FFFFFF !important; 
+            border: 1px solid #475569 !important; 
+            border-radius: 8px !important; 
+        }
+        div[data-baseweb="select"] > div {
+            background-color: #1E293B !important;
+            color: #FFFFFF !important;
+            border-color: #475569 !important;
+            border-radius: 8px !important;
+        }
+        div[data-baseweb="select"] span {
+            color: #FFFFFF !important;
+        }
+
+        /* Styling Tabel / Dataframe */
+        div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+            background-color: #1E293B !important;
+            border: 1px solid #334155 !important;
+            border-radius: 10px !important;
+            overflow: hidden !important;
+        }
+        div[data-testid="stDataFrame"] * {
+            color: #F8FAFC !important;
+        }
+
+        /* Peringatan & Alert */
+        div[data-testid="stNotification"], .stAlert {
+            background-color: #1E293B !important;
+            color: #F8FAFC !important;
+            border: 1px solid #475569 !important;
+            border-radius: 10px !important;
+        }
+
+        /* Tombol & Download Button */
+        .stButton button, .stDownloadButton button { 
+            background-color: #0284C7 !important; 
+            color: #FFFFFF !important; 
+            font-weight: 600 !important; 
+            border: none !important; 
+            border-radius: 8px !important;
+            padding: 8px 16px !important;
+            transition: all 0.2s ease-in-out !important;
+        }
+        .stButton button:hover, .stDownloadButton button:hover {
+            background-color: #0369A1 !important;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4) !important;
+        }
+        
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span { 
+            color: #F8FAFC !important; 
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -258,7 +330,6 @@ if menu == "📊 Lihat Semua Stok":
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
         
-        # Opsi Unduh Tabel Stok (Excel & PDF)
         c_dl1, c_dl2 = st.columns(2)
         
         excel_stok_bytes = buat_excel_bytes(df, sheet_name="Stok Barang")
@@ -452,12 +523,11 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
             df_laporan.index = range(1, len(df_laporan) + 1)
             st.dataframe(df_laporan, use_container_width=True)
             
-            # Opsi Download PDF & Excel untuk Laporan
             c_rep1, c_rep2 = st.columns(2)
             
             excel_laporan_bytes = buat_excel_bytes(df_laporan, sheet_name="Laporan Transaksi")
             c_rep1.download_button(
-                label=f"📊 Download Laporan Excel (.xlsx)",
+                label="📊 Download Laporan Excel (.xlsx)",
                 data=excel_laporan_bytes,
                 file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -471,7 +541,7 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
             pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", headers, data_pdf, col_widths, info_tambahan=rentang_str)
             
             c_rep2.download_button(
-                label=f"📄 Download Laporan PDF",
+                label="📄 Download Laporan PDF",
                 data=pdf_bytes,
                 file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
