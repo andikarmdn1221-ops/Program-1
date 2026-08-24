@@ -445,7 +445,11 @@ elif menu == "📜 Riwayat Transaksi":
                 cols = st.columns(3)
                 for i, (wkt, tipe, brg, ket, b64_img) in enumerate(reversed(riwayat_dengan_foto)):
                     with cols[i % 3]:
-                        st.image(f"data:image/png;base64,{b64_img}", caption=f"{wkt} | {tipe} ({brg}) - {ket}", use_column_width=True)
+                        try:
+                            img_bytes = base64.b64decode(b64_img)
+                            st.image(img_bytes, caption=f"{wkt} | {tipe} ({brg}) - {ket}", use_container_width=True)
+                        except Exception:
+                            st.caption(f"⚠️ Gambar gagal dimuat ({wkt})")
     else:
         st.info("Belum ada riwayat.")
 
@@ -514,7 +518,11 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
                     cols = st.columns(3)
                     for i, item in enumerate(reversed(laporan_foto)):
                         with cols[i % 3]:
-                            st.image(f"data:image/png;base64,{item.get('Bukti')}", caption=f"{item.get('Waktu')} | {item.get('Tipe')} ({item.get('Barang')})", use_column_width=True)
+                            try:
+                                img_bytes = base64.b64decode(item.get('Bukti'))
+                                st.image(img_bytes, caption=f"{item.get('Waktu')} | {item.get('Tipe')} ({item.get('Barang')})", use_container_width=True)
+                            except Exception:
+                                st.caption("⚠️ Gambar gagal dimuat")
         else:
             st.info(f"Belum ada transaksi pada rentang tanggal {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}.")
 
