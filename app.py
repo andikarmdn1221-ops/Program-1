@@ -38,27 +38,19 @@ def dapatkan_waktu_wib():
 def parse_waktu(waktu_str):
     if not waktu_str:
         return None
-    
     waktu_str = str(waktu_str).strip()
-    
     try:
         dt = datetime.fromisoformat(waktu_str.replace('Z', '+00:00'))
         return dt.replace(tzinfo=None)
     except Exception:
         pass
         
-    formats = [
-        "%d-%m-%Y %H:%M",
-        "%d-%m-%Y %H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d"
-    ]
+    formats = ["%d-%m-%Y %H:%M", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"]
     for fmt in formats:
         try:
             return datetime.strptime(waktu_str, fmt)
         except ValueError:
             pass
-            
     return None
 
 def encode_gambar(file_uploaded):
@@ -213,7 +205,7 @@ if "stok" not in st.session_state or "riwayat" not in st.session_state:
 
 # Sidebar
 st.sidebar.title("⚙️ Pengaturan")
-dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
+dark_mode = st.sidebar.toggle("🌙 Mode Gelap Modern", value=True)
 
 if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True):
     st.cache_data.clear()
@@ -228,17 +220,16 @@ if dark_mode:
         <style>
         .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
         .stSidebar { background-color: #1E293B !important; border-right: 1px solid #334155 !important; }
-        div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 12px !important; padding: 16px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important; }
-        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 13px !important; font-weight: 600 !important; }
-        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
+        div[data-testid="stMetric"] { background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%) !important; border: 1px solid #334155 !important; border-radius: 14px !important; padding: 18px !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 13px !important; font-weight: 600 !important; text-transform: uppercase; letter-spacing: 0.5px; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 30px !important; font-weight: 800 !important; }
         .stTextInput input, .stNumberInput input, .stDateInput input { background-color: #1E293B !important; color: #FFFFFF !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
         div[data-baseweb="select"] > div { background-color: #1E293B !important; color: #FFFFFF !important; border-color: #475569 !important; border-radius: 8px !important; }
         div[data-baseweb="select"] span { color: #FFFFFF !important; }
-        div[data-testid="stDataFrame"], div[data-testid="stTable"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; overflow: hidden !important; }
+        div[data-testid="stDataFrame"], div[data-testid="stTable"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 12px !important; overflow: hidden !important; }
         div[data-testid="stDataFrame"] * { color: #F8FAFC !important; }
-        div[data-testid="stNotification"], .stAlert { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 10px !important; }
-        .stButton button, .stDownloadButton button { background-color: #0284C7 !important; color: #FFFFFF !important; font-weight: 600 !important; border: none !important; border-radius: 8px !important; padding: 8px 16px !important; transition: all 0.2s ease-in-out !important; }
-        .stButton button:hover, .stDownloadButton button:hover { background-color: #0369A1 !important; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4) !important; }
+        .stButton button, .stDownloadButton button { background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important; color: #FFFFFF !important; font-weight: 600 !important; border: none !important; border-radius: 8px !important; padding: 10px 20px !important; transition: all 0.2s ease-in-out !important; }
+        .stButton button:hover, .stDownloadButton button:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45) !important; }
         label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span { color: #F8FAFC !important; }
         </style>
     """, unsafe_allow_html=True)
@@ -276,22 +267,45 @@ if menu == "📊 Lihat Semua Stok":
     keyword = st.text_input("🔍 Cari Nama Barang...", "")
     
     data_tabel = []
+    max_stok_val = max(st.session_state.stok.values()) if st.session_state.stok else 30
+    
     for barang in sorted(st.session_state.stok.keys(), key=kunci_urut_nama):
         jumlah = st.session_state.stok[barang]
         if keyword.lower() in barang.lower():
             status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
-            data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
+            data_tabel.append({
+                "Nama Barang": barang,
+                "Jumlah Stok": jumlah,
+                "Progress Visual": jumlah,
+                "Status": status
+            })
     
     if data_tabel:
         df = pd.DataFrame(data_tabel)
-        df.index = range(1, len(df) + 1)
-        st.dataframe(df, use_container_width=True)
+        
+        st.dataframe(
+            df,
+            column_config={
+                "Nama Barang": st.column_config.TextColumn("Nama Barang", help="Jenis produk mikrosemen"),
+                "Jumlah Stok": st.column_config.NumberColumn("Sisa Stok", format="%d pcs"),
+                "Progress Visual": st.column_config.ProgressColumn(
+                    "Indikator Level Stok",
+                    help="Visualisasi sisa stok relatif terhadap item terbanyak",
+                    format="%d pcs",
+                    min_value=0,
+                    max_value=max(max_stok_val, 20),
+                ),
+                "Status": st.column_config.TextColumn("Status Stok"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
         
         c_dl1, c_dl2 = st.columns(2)
         excel_stok_bytes = buat_excel_bytes(df, sheet_name="Stok Barang")
         c_dl1.download_button("📊 Download Tabel Stok (Excel .xlsx)", data=excel_stok_bytes, file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         
-        data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok (pcs)"]), item["Status"]] for item in data_tabel]
+        data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok"]), item["Status"]] for item in data_tabel]
         pdf_bytes_stok = buat_pdf_tabel("Laporan Stok Gudang Mikrosemen", ["Nama Barang", "Jumlah Stok (pcs)", "Status"], data_pdf_stok, [90, 45, 45])
         c_dl2.download_button("📄 Download Tabel Stok (PDF)", data=pdf_bytes_stok, file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.pdf", mime="application/pdf", use_container_width=True)
         
@@ -301,18 +315,18 @@ if menu == "📊 Lihat Semua Stok":
         theme_plotly = "plotly_dark" if dark_mode else "plotly"
         
         if tipe_grafik == "📊 Batang Tegak (Vertical)":
-            df_sorted = df.sort_values(by="Jumlah Stok (pcs)", ascending=False)
-            fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status", text="Jumlah Stok (pcs)", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+            df_sorted = df.sort_values(by="Jumlah Stok", ascending=False)
+            fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok", color="Status", text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
             fig_bar.update_traces(textposition='outside')
             fig_bar.update_layout(xaxis_tickangle=-45, uniformtext_minsize=8, uniformtext_mode='hide')
         elif tipe_grafik == "📉 Batang Mendatar (Horizontal)":
-            df_sorted = df.sort_values(by="Jumlah Stok (pcs)", ascending=True)
-            fig_bar = px.bar(df_sorted, x="Jumlah Stok (pcs)", y="Nama Barang", color="Status", orientation='h', text="Jumlah Stok (pcs)", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+            df_sorted = df.sort_values(by="Jumlah Stok", ascending=True)
+            fig_bar = px.bar(df_sorted, x="Jumlah Stok", y="Nama Barang", color="Status", orientation='h', text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
             fig_bar.update_traces(textposition='outside')
             fig_bar.update_layout(height=650)
         else:
             df_sorted = df.sort_values(by="Nama Barang", ascending=True)
-            fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", markers=True, template=theme_plotly)
+            fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok", markers=True, template=theme_plotly)
             fig_bar.update_traces(line_color="#38BDF8", marker_size=8)
             fig_bar.update_layout(xaxis_tickangle=-45)
             
@@ -421,9 +435,12 @@ elif menu == "📜 Riwayat Transaksi":
         riwayat_formatted = []
         riwayat_dengan_foto = []
         
-        for idx, item in enumerate(st.session_state.riwayat):
+        for item in st.session_state.riwayat:
             dt = parse_waktu(item.get("Waktu", ""))
             waktu_str = dt.strftime("%d-%m-%Y %H:%M") if dt else item.get("Waktu", "")
+            
+            b64_str = item.get("Bukti", "")
+            img_data_url = f"data:image/png;base64,{b64_str}" if b64_str else None
             
             row_display = {
                 "Waktu": waktu_str,
@@ -431,17 +448,31 @@ elif menu == "📜 Riwayat Transaksi":
                 "Barang": item.get("Barang", ""),
                 "Jumlah": item.get("Jumlah", ""),
                 "Pembeli / Keterangan": item.get("Pembeli / Keterangan", "-"),
-                "Foto Bukti": "📸 Ada Foto" if item.get("Bukti") else "❌ Tanpa Foto"
+                "Foto Bukti": img_data_url
             }
             riwayat_formatted.append(row_display)
             
-            if item.get("Bukti"):
-                riwayat_dengan_foto.append((waktu_str, item.get("Tipe"), item.get("Barang"), item.get("Pembeli / Keterangan"), item.get("Bukti")))
+            if b64_str:
+                riwayat_dengan_foto.append((waktu_str, item.get("Tipe"), item.get("Barang"), item.get("Pembeli / Keterangan"), b64_str))
                 
-        st.dataframe(pd.DataFrame(riwayat_formatted), use_container_width=True)
+        df_riwayat = pd.DataFrame(riwayat_formatted)
+        
+        st.dataframe(
+            df_riwayat,
+            column_config={
+                "Waktu": st.column_config.TextColumn("Waktu Transaksi"),
+                "Tipe": st.column_config.TextColumn("Jenis"),
+                "Barang": st.column_config.TextColumn("Nama Produk"),
+                "Jumlah": st.column_config.TextColumn("Jumlah"),
+                "Pembeli / Keterangan": st.column_config.TextColumn("Keterangan"),
+                "Foto Bukti": st.column_config.ImageColumn("Foto Bukti", help="Pratinjau Bukti / Surat Jalan"),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
         
         if riwayat_dengan_foto:
-            with st.expander("🖼️ Galeri Foto Bukti Transaksi / Surat Jalan"):
+            with st.expander("🖼️ Galeri Ukuran Penuh (Foto Bukti / Surat Jalan)"):
                 cols = st.columns(3)
                 for i, (wkt, tipe, brg, ket, b64_img) in enumerate(reversed(riwayat_dengan_foto)):
                     with cols[i % 3]:
@@ -490,23 +521,33 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
             laporan_tabel = []
             laporan_foto = []
             for item in riwayat_filtered:
+                b64_str = item.get("Bukti", "")
+                img_data_url = f"data:image/png;base64,{b64_str}" if b64_str else None
+                
                 laporan_tabel.append({
                     "Waktu": item.get("Waktu"),
                     "Tipe": item.get("Tipe"),
                     "Barang": item.get("Barang"),
                     "Jumlah": item.get("Jumlah"),
                     "Pembeli / Keterangan": item.get("Pembeli / Keterangan"),
-                    "Foto Bukti": "📸 Ada Foto" if item.get("Bukti") else "❌ Tanpa Foto"
+                    "Foto Bukti": img_data_url
                 })
-                if item.get("Bukti"):
+                if b64_str:
                     laporan_foto.append(item)
                     
             df_laporan = pd.DataFrame(laporan_tabel)
-            df_laporan.index = range(1, len(df_laporan) + 1)
-            st.dataframe(df_laporan, use_container_width=True)
+            
+            st.dataframe(
+                df_laporan,
+                column_config={
+                    "Foto Bukti": st.column_config.ImageColumn("Foto Bukti"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
             
             c_rep1, c_rep2 = st.columns(2)
-            excel_laporan_bytes = buat_excel_bytes(df_laporan, sheet_name="Laporan Transaksi")
+            excel_laporan_bytes = buat_excel_bytes(df_laporan.drop(columns=["Foto Bukti"]), sheet_name="Laporan Transaksi")
             c_rep1.download_button("📊 Download Laporan Excel (.xlsx)", data=excel_laporan_bytes, file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
             pdf_data = [[x["Waktu"], x["Tipe"], x["Barang"], x["Jumlah"], x["Pembeli / Keterangan"]] for x in laporan_tabel]
