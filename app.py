@@ -29,10 +29,32 @@ def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
 
 def parse_waktu(waktu_str):
-    try:
-        return datetime.strptime(waktu_str, "%d-%m-%Y %H:%M")
-    except Exception:
+    if not waktu_str:
         return None
+    
+    waktu_str = str(waktu_str).strip()
+    
+    # 1. Parsing format ISO Google Sheets (contoh: 2026-08-24T13:05:00.000Z)
+    try:
+        dt = datetime.fromisoformat(waktu_str.replace('Z', '+00:00'))
+        return dt.replace(tzinfo=None)
+    except Exception:
+        pass
+        
+    # 2. Parsing format tanggal standar
+    formats = [
+        "%d-%m-%Y %H:%M",
+        "%d-%m-%Y %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d"
+    ]
+    for fmt in formats:
+        try:
+            return datetime.strptime(waktu_str, fmt)
+        except ValueError:
+            pass
+            
+    return None
 
 @st.cache_data(ttl=60)
 def fetch_data_from_gsheet(url):
@@ -112,7 +134,9 @@ def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
     for item in riwayat_list:
         tgl = parse_waktu(item.get("Waktu", ""))
         if tgl and dt_mulai <= tgl <= dt_selesai:
-            hasil.append(item)
+            item_formatted = item.copy()
+            item_formatted["Waktu"] = tgl.strftime("%d-%m-%Y %H:%M")
+            hasil.append(item_formatted)
     return hasil
 
 def load_data():
@@ -227,6 +251,7 @@ if menu == "📊 Lihat Semua Stok":
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
         
+        # Tombol Download PDF Tabel Stok
         data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok (pcs)"]), item["Status"]] for item in data_tabel]
         headers_stok = ["Nama Barang", "Jumlah Stok (pcs)", "Status"]
         col_widths_stok = [90, 45, 45]
@@ -351,14 +376,21 @@ elif menu == "➕ Tambah Jenis Barang":
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
     if st.session_state.riwayat:
-        st.dataframe(pd.DataFrame(st.session_state.riwayat), use_container_width=True)
+        riwayat_formatted = []
+        for item in st.session_state.riwayat:
+            dt = parse_waktu(item.get("Waktu", ""))
+            row = item.copy()
+            if dt:
+                row["Waktu"] = dt.strftime("%d-%m-%Y %H:%M")
+            riwayat_formatted.append(row)
+        st.dataframe(pd.DataFrame(riwayat_formatted), use_container_width=True)
     else:
         st.info("Belum ada riwayat.")
 
 elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
     st.header("🗓️ Rekapitulasi Laporan Transaksi Periodik")
     
-    col_preset, col_empty = st.columns([2, 2])
+    col_preset, _ = st.columns([2, 2])
     with col_preset:
         preset = st.selectbox("⚡ Pilih Pintasan Waktu:", ["Rentang Tanggal Custom", "7 Hari Terakhir", "30 Hari Terakhir", "Bulan Ini"])
     
@@ -385,7 +417,6 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
     else:
         riwayat_filtered = filter_riwayat_berdasarkan_rentang(st.session_state.riwayat, tgl_mulai, tgl_selesai)
         
-        # Ringkasan Statistik Laporan
         total_transaksi = len(riwayat_filtered)
         total_masuk = sum(1 for x in riwayat_filtered if x.get("Tipe") == "MASUK")
         total_keluar = sum(1 for x in riwayat_filtered if x.get("Tipe") == "KELUAR")
