@@ -1,5 +1,6 @@
 streamlit
 pandas
-plotly
 requests
+plotly
 fpdf2
+openpyxl
