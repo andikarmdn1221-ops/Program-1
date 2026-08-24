@@ -198,20 +198,31 @@ def load_data(force_refresh=False):
     return stok_dict, riwayat_list
 
 def save_data_atomic(stok_terbaru, riwayat_terbaru):
-    """Mengirim seluruh payload stok dan riwayat yang telah di-update ke Google Sheets."""
+    """Mengirim seluruh payload stok dan riwayat ke Google Sheets tanpa membuat sel error."""
     if not URL_GSHEET_API:
         st.warning("URL Google Sheets API belum dikonfigurasi.")
         return False
-    payload = {
-        "stok": [[k, v] for k, v in stok_terbaru.items()],
-        "riwayat": [[
+        
+    stok_payload = [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in stok_terbaru.items()]
+    
+    riwayat_payload = [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan", "Bukti"]]
+    for item in riwayat_terbaru:
+        b64_val = str(item.get("Bukti", ""))
+        # Gambar Base64 disederhanakan agar tidak melampaui limit sel 32.767 karakter di GSheets
+        keterangan_bukti = "Ada Foto (Telegram)" if len(b64_val) > 100 else (b64_val if b64_val else "-")
+        
+        riwayat_payload.append([
             item.get("Waktu", ""),
             item.get("Tipe", ""),
             item.get("Barang", ""),
             item.get("Jumlah", ""),
             item.get("Pembeli / Keterangan", "-"),
-            item.get("Bukti", "")
-        ] for item in riwayat_terbaru]
+            keterangan_bukti
+        ])
+
+    payload = {
+        "stok": stok_payload,
+        "riwayat": riwayat_payload
     }
     try:
         res = requests.post(URL_GSHEET_API, json=payload, timeout=30)
@@ -368,7 +379,6 @@ elif menu == "📥 Restok Barang Masuk":
     if st.button("Simpan Barang Masuk"):
         bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
         
-        # Fetch data terbaru langsung dari server untuk cegah penimpaan transaksi
         stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
         
         stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
@@ -408,7 +418,6 @@ elif menu == "📤 Pengiriman Barang Keluar":
         elif stok_ini == 0:
             st.error("❌ Barang habis!")
         else:
-            # Fetch data gres dari GSheet
             stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
             stok_saat_ini = stok_terbaru.get(barang, 0)
             
@@ -485,8 +494,9 @@ elif menu == "📜 Riwayat Transaksi":
             dt = parse_waktu(item.get("Waktu", ""))
             waktu_str = dt.strftime("%d-%m-%Y %H:%M") if dt else item.get("Waktu", "")
             
-            b64_str = item.get("Bukti", "")
-            img_data_url = f"data:image/jpeg;base64,{b64_str}" if b64_str else None
+            b64_str = str(item.get("Bukti", ""))
+            is_b64 = len(b64_str) > 100
+            img_data_url = f"data:image/jpeg;base64,{b64_str}" if is_b64 else None
             
             row_display = {
                 "Waktu": waktu_str,
@@ -494,11 +504,11 @@ elif menu == "📜 Riwayat Transaksi":
                 "Barang": item.get("Barang", ""),
                 "Jumlah": item.get("Jumlah", ""),
                 "Pembeli / Keterangan": item.get("Pembeli / Keterangan", "-"),
-                "Foto Bukti": img_data_url
+                "Foto Bukti": img_data_url if is_b64 else (b64_str if b64_str else "-")
             }
             riwayat_formatted.append(row_display)
             
-            if b64_str:
+            if is_b64:
                 riwayat_dengan_foto.append((waktu_str, item.get("Tipe"), item.get("Barang"), item.get("Pembeli / Keterangan"), b64_str))
                 
         df_riwayat = pd.DataFrame(riwayat_formatted)
@@ -567,8 +577,9 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
             laporan_tabel = []
             laporan_foto = []
             for item in riwayat_filtered:
-                b64_str = item.get("Bukti", "")
-                img_data_url = f"data:image/jpeg;base64,{b64_str}" if b64_str else None
+                b64_str = str(item.get("Bukti", ""))
+                is_b64 = len(b64_str) > 100
+                img_data_url = f"data:image/jpeg;base64,{b64_str}" if is_b64 else None
                 
                 laporan_tabel.append({
                     "Waktu": item.get("Waktu"),
@@ -576,9 +587,9 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
                     "Barang": item.get("Barang"),
                     "Jumlah": item.get("Jumlah"),
                     "Pembeli / Keterangan": item.get("Pembeli / Keterangan"),
-                    "Foto Bukti": img_data_url
+                    "Foto Bukti": img_data_url if is_b64 else (b64_str if b64_str else "-")
                 })
-                if b64_str:
+                if is_b64:
                     laporan_foto.append(item)
                     
             df_laporan = pd.DataFrame(laporan_tabel)
