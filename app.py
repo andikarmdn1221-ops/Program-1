@@ -13,7 +13,7 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
-# --- TOKEN BOT & CHAT ID DITANAM LANGSUNG DI KODE ---
+# --- GANTI TOKEN DI BAWAH INI DENGAN TOKEN BARU DARI BOTFATHER ---
 TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV81ZqpE"
 TELEGRAM_CHAT_ID = 2106196278
 
@@ -283,12 +283,12 @@ elif menu == "📜 Riwayat Transaksi":
         st.info("Belum ada riwayat transaksi.")
 
 elif menu == "📆 Laporan Mingguan":
-    st.header("📆 Laporan Mingguan")
-    st.info("Fitur rekapitulasi mingguan aktif.")
+    st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
+    st.info("Menu laporan mingguan aktif.")
 
 elif menu == "📅 Laporan Bulanan":
-    st.header("📅 Laporan Bulanan")
-    st.info("Fitur rekapitulasi bulanan aktif.")
+    st.header("📅 Rekapitulasi Laporan Bulanan Gudang")
+    st.info("Menu laporan bulanan aktif.")
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
