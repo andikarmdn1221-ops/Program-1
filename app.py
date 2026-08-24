@@ -7,6 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 import re
+from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
@@ -55,6 +56,35 @@ def panggil_confetti():
     </script>
     """, height=0)
 
+# --- FUNGSI PDF YANG SEMPAT HILANG SAYA KEMBALIKAN DI SINI ---
+def bersihkan_teks_pdf(teks):
+    return re.sub(r'[^\x00-\x7F]+', '', str(teks)).strip()
+
+def buat_pdf_tabel(judul, headers, data, col_widths):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, judul, ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 8, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_fill_color(230, 230, 230)
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 8, h, border=1, align="C", fill=True)
+    pdf.ln()
+    
+    pdf.set_font("Helvetica", "", 9)
+    for row in data:
+        for i, val in enumerate(row):
+            teks_bersih = bersihkan_teks_pdf(val)
+            align_text = "C" if i == 0 or i == len(row)-1 else "L"
+            pdf.cell(col_widths[i], 7, teks_bersih, border=1, align=align_text)
+        pdf.ln()
+    return bytes(pdf.output())
+
+# --- STYLING & SIDEBAR ---
 st.sidebar.title("⚙️ Pengaturan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
 
@@ -111,7 +141,6 @@ item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
 if item_habis:
     st.error(f"⚠️ **PERHATIAN:** Ada {len(item_habis)} item habis: {', '.join(item_habis[:3])}")
 
-# --- DAFTAR MENU LENGKAP ---
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
     "📥 Restok Barang Masuk", 
@@ -146,6 +175,11 @@ if menu == "📊 Lihat Semua Stok":
         df = pd.DataFrame(data_tabel)
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
+        
+        theme_plotly = "plotly_dark" if dark_mode else "plotly"
+        fig_bar = px.bar(df, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status",
+                         color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+        st.plotly_chart(fig_bar, use_container_width=True)
 
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
@@ -219,12 +253,10 @@ elif menu == "⚙️ Reset & Backup Data":
     
     col1, col2 = st.columns(2)
     
-    # --- Tombol Backup CSV ---
     df_stok_backup = pd.DataFrame(list(st.session_state.stok.items()), columns=["Nama Barang", "Jumlah Stok"])
     csv_stok = df_stok_backup.to_csv(index=False).encode('utf-8')
     col1.download_button("📥 Download Data Stok (CSV)", data=csv_stok, file_name='backup_stok_mikrosemen.csv', mime='text/csv')
     
-    # --- Tombol Backup PDF ---
     data_pdf = [[k, str(v)] for k, v in st.session_state.stok.items()]
     pdf_bytes = buat_pdf_tabel("Laporan Stok Gudang", ["Nama Barang", "Jumlah Stok (pcs)"], data_pdf, [130, 50])
     col2.download_button("📄 Download Data Stok (PDF)", data=pdf_bytes, file_name="Laporan_Stok_Mikrosemen.pdf", mime="application/pdf")
