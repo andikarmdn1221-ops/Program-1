@@ -11,14 +11,14 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# --- 1. KONFIGURASI URL & TOKEN TELEGRAM LANGSUNG ---
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
+# --- TOKEN BOT & CHAT ID DITANAM LANGSUNG DI KODE ---
 TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV81ZqpE"
 TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
-    """Mengirim pesan notifikasi otomatis ke Bot Telegram & menampilkan status error di layar"""
+    """Mengirim pesan notifikasi otomatis ke Bot Telegram"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         st.warning("⚠️ Token atau Chat ID Telegram kosong!")
         return
@@ -30,7 +30,6 @@ def kirim_notifikasi_telegram(pesan):
     }
     try:
         response = requests.post(url, json=payload, timeout=5)
-        # Menampilkan respons asli dari Telegram langsung ke layar Streamlit Anda
         st.write("🔍 **Debug Respon Telegram:**", response.text)
     except Exception as e:
         st.error(f"❌ Gagal koneksi ke Telegram: {e}")
@@ -104,7 +103,6 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
         pdf.ln()
     return bytes(pdf.output())
 
-# --- STYLING ---
 st.sidebar.title("⚙️ Pengaturan Tampilan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap Premium", value=True, key="setting_dark_mode")
 
@@ -184,7 +182,6 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "⚙️ Reset & Backup Data"
 ])
 
-# 1. LIHAT STOK
 if menu == "📊 Lihat Semua Stok":
     st.header("📊 Ringkasan Dashboard & Stok Gudang")
     total_jenis = len(st.session_state.stok)
@@ -218,7 +215,6 @@ if menu == "📊 Lihat Semua Stok":
                          color_discrete_map={"AMAN": "#2ecc71", "KRITIS": "#f1c40f", "HABIS!": "#e74c3c"}, template=theme_plotly)
         st.plotly_chart(fig_bar, use_container_width=True)
 
-# 2. RESTOK
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
     barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
@@ -233,7 +229,6 @@ elif menu == "📥 Restok Barang Masuk":
         panggil_confetti()
         st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
 
-# 3. BARANG KELUAR
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
     barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
@@ -266,7 +261,6 @@ elif menu == "📤 Pengiriman Barang Keluar":
         else:
             st.error("Stok tidak mencukupi!")
 
-# 4. TAMBAH BARANG BARU
 elif menu == "➕ Tambah Jenis Barang":
     st.header("➕ Tambah Jenis Barang Baru")
     nama_baru = st.text_input("Nama Barang Baru")
@@ -281,7 +275,6 @@ elif menu == "➕ Tambah Jenis Barang":
             panggil_confetti()
             st.success(f"Barang {nama_baru} berhasil ditambahkan!")
 
-# 5. RIWAYAT
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
     if st.session_state.riwayat:
@@ -289,17 +282,14 @@ elif menu == "📜 Riwayat Transaksi":
     else:
         st.info("Belum ada riwayat transaksi.")
 
-# 6. LAPORAN MINGGUAN
 elif menu == "📆 Laporan Mingguan":
     st.header("📆 Laporan Mingguan")
     st.info("Fitur rekapitulasi mingguan aktif.")
 
-# 7. LAPORAN BULANAN
 elif menu == "📅 Laporan Bulanan":
     st.header("📅 Laporan Bulanan")
     st.info("Fitur rekapitulasi bulanan aktif.")
 
-# 8. RESET & BACKUP
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
     if st.button("🚨 Reset Semua Data"):
