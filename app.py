@@ -92,8 +92,12 @@ if dark_mode:
         .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
         .stSidebar { background-color: #1E293B !important; }
         div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
-        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; }
-        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
+        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
+        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
+        .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -139,7 +143,6 @@ item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
 if item_habis:
     st.error(f"⚠️ **PERHATIAN:** Ada {len(item_habis)} item habis: {', '.join(item_habis[:3])}")
 
-# --- DAFTAR MENU LENGKAP KEMBALI ---
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
     "📥 Restok Barang Masuk", 
@@ -177,9 +180,42 @@ if menu == "📊 Lihat Semua Stok":
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
         
+        st.divider()
+        st.subheader("📈 Visualisasi Grafik Stok")
+        
+        tipe_grafik = st.radio(
+            "Pilih Model Tampilan Grafik:", 
+            ["📊 Batang Tegak (Vertical)", "📉 Batang Mendatar (Horizontal)", "📈 Grafik Garis (Line Chart)"], 
+            horizontal=True
+        )
+        
         theme_plotly = "plotly_dark" if dark_mode else "plotly"
-        fig_bar = px.bar(df, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status",
-                         color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+        
+        if tipe_grafik == "📊 Batang Tegak (Vertical)":
+            df_sorted = df.sort_values(by="Jumlah Stok (pcs)", ascending=False)
+            fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status",
+                             text="Jumlah Stok (pcs)",
+                             color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, 
+                             template=theme_plotly)
+            fig_bar.update_traces(textposition='outside')
+            fig_bar.update_layout(xaxis_tickangle=-45, uniformtext_minsize=8, uniformtext_mode='hide')
+            
+        elif tipe_grafik == "📉 Batang Mendatar (Horizontal)":
+            df_sorted = df.sort_values(by="Jumlah Stok (pcs)", ascending=True)
+            fig_bar = px.bar(df_sorted, x="Jumlah Stok (pcs)", y="Nama Barang", color="Status",
+                             orientation='h', text="Jumlah Stok (pcs)",
+                             color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, 
+                             template=theme_plotly)
+            fig_bar.update_traces(textposition='outside')
+            fig_bar.update_layout(height=650)
+            
+        else:
+            df_sorted = df.sort_values(by="Nama Barang", ascending=True)
+            fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", markers=True,
+                              template=theme_plotly)
+            fig_bar.update_traces(line_color="#38BDF8", marker_size=8)
+            fig_bar.update_layout(xaxis_tickangle=-45)
+            
         st.plotly_chart(fig_bar, use_container_width=True)
 
 elif menu == "📥 Restok Barang Masuk":
@@ -246,7 +282,6 @@ elif menu == "📜 Riwayat Transaksi":
     else:
         st.info("Belum ada riwayat.")
 
-# --- MENU LAPORAN YANG HILANG SUDAH DIKEMBALIKAN ---
 elif menu == "📆 Laporan Mingguan":
     st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
     st.info("Menu laporan mingguan aktif.")
@@ -281,4 +316,3 @@ elif menu == "⚙️ Reset & Backup Data":
         save_data()
         st.success("Data berhasil di-reset!")
         st.rerun()
-        
