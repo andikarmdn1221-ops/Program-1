@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 import re
 import io
+import base64
 from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
@@ -15,13 +16,19 @@ URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
-def kirim_notifikasi_telegram(pesan):
+def kirim_notifikasi_telegram(pesan, foto_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan}
     try:
-        requests.post(url, json=payload, timeout=15)
+        if foto_bytes:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            payload = {"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}
+            files = {"photo": ("bukti.png", foto_bytes, "image/png")}
+            requests.post(url, data=payload, files=files, timeout=15)
+        else:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            payload = {"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan}
+            requests.post(url, json=payload, timeout=15)
     except Exception as e:
         st.error(f"Gagal mengirim notifikasi Telegram: {e}")
 
@@ -53,6 +60,11 @@ def parse_waktu(waktu_str):
             pass
             
     return None
+
+def encode_gambar(file_uploaded):
+    if file_uploaded is not None:
+        return base64.b64encode(file_uploaded.getvalue()).decode('utf-8')
+    return ""
 
 def buat_excel_bytes(df, sheet_name="Data"):
     output = io.BytesIO()
@@ -158,7 +170,15 @@ def load_data():
         for row in raw_riwayat[1:]:
             if len(row) >= 4:
                 pembeli = row[4] if len(row) >= 5 else "-"
-                riwayat_list.append({"Waktu": row[0], "Tipe": row[1], "Barang": row[2], "Jumlah": row[3], "Pembeli / Keterangan": pembeli})
+                bukti = row[5] if len(row) >= 6 else ""
+                riwayat_list.append({
+                    "Waktu": row[0], 
+                    "Tipe": row[1], 
+                    "Barang": row[2], 
+                    "Jumlah": row[3], 
+                    "Pembeli / Keterangan": pembeli,
+                    "Bukti": bukti
+                })
     if not stok_dict:
         stok_dict = STOK_DEFAULT.copy()
     return stok_dict, riwayat_list
@@ -169,7 +189,14 @@ def save_data():
         return False
     payload = {
         "stok": [[k, v] for k, v in st.session_state.stok.items()],
-        "riwayat": st.session_state.riwayat
+        "riwayat": [[
+            item.get("Waktu", ""),
+            item.get("Tipe", ""),
+            item.get("Barang", ""),
+            item.get("Jumlah", ""),
+            item.get("Pembeli / Keterangan", "-"),
+            item.get("Bukti", "")
+        ] for item in st.session_state.riwayat]
     }
     try:
         res = requests.post(URL_GSHEET_API, json=payload, timeout=30)
@@ -196,93 +223,23 @@ if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True)
 
 st.sidebar.divider()
 
-# Desain CSS Mode Gelap Premium
 if dark_mode:
     st.markdown("""
         <style>
-        /* Background Utama */
-        .stApp { 
-            background-color: #0F172A !important; 
-            color: #F8FAFC !important; 
-        }
-        .stSidebar { 
-            background-color: #1E293B !important; 
-            border-right: 1px solid #334155 !important;
-        }
-
-        /* Metric Cards */
-        div[data-testid="stMetric"] { 
-            background-color: #1E293B !important; 
-            border: 1px solid #334155 !important; 
-            border-radius: 12px !important; 
-            padding: 16px !important; 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important;
-        }
-        div[data-testid="stMetricLabel"] p { 
-            color: #94A3B8 !important; 
-            font-size: 13px !important; 
-            font-weight: 600 !important; 
-        }
-        div[data-testid="stMetricValue"] div { 
-            color: #38BDF8 !important; 
-            font-size: 28px !important; 
-            font-weight: 700 !important; 
-        }
-
-        /* Form Inputs & Selectbox */
-        .stTextInput input, .stNumberInput input, .stDateInput input { 
-            background-color: #1E293B !important; 
-            color: #FFFFFF !important; 
-            border: 1px solid #475569 !important; 
-            border-radius: 8px !important; 
-        }
-        div[data-baseweb="select"] > div {
-            background-color: #1E293B !important;
-            color: #FFFFFF !important;
-            border-color: #475569 !important;
-            border-radius: 8px !important;
-        }
-        div[data-baseweb="select"] span {
-            color: #FFFFFF !important;
-        }
-
-        /* Styling Tabel / Dataframe */
-        div[data-testid="stDataFrame"], div[data-testid="stTable"] {
-            background-color: #1E293B !important;
-            border: 1px solid #334155 !important;
-            border-radius: 10px !important;
-            overflow: hidden !important;
-        }
-        div[data-testid="stDataFrame"] * {
-            color: #F8FAFC !important;
-        }
-
-        /* Peringatan & Alert */
-        div[data-testid="stNotification"], .stAlert {
-            background-color: #1E293B !important;
-            color: #F8FAFC !important;
-            border: 1px solid #475569 !important;
-            border-radius: 10px !important;
-        }
-
-        /* Tombol & Download Button */
-        .stButton button, .stDownloadButton button { 
-            background-color: #0284C7 !important; 
-            color: #FFFFFF !important; 
-            font-weight: 600 !important; 
-            border: none !important; 
-            border-radius: 8px !important;
-            padding: 8px 16px !important;
-            transition: all 0.2s ease-in-out !important;
-        }
-        .stButton button:hover, .stDownloadButton button:hover {
-            background-color: #0369A1 !important;
-            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4) !important;
-        }
-        
-        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span { 
-            color: #F8FAFC !important; 
-        }
+        .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
+        .stSidebar { background-color: #1E293B !important; border-right: 1px solid #334155 !important; }
+        div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 12px !important; padding: 16px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2) !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 13px !important; font-weight: 600 !important; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
+        .stTextInput input, .stNumberInput input, .stDateInput input { background-color: #1E293B !important; color: #FFFFFF !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        div[data-baseweb="select"] > div { background-color: #1E293B !important; color: #FFFFFF !important; border-color: #475569 !important; border-radius: 8px !important; }
+        div[data-baseweb="select"] span { color: #FFFFFF !important; }
+        div[data-testid="stDataFrame"], div[data-testid="stTable"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; overflow: hidden !important; }
+        div[data-testid="stDataFrame"] * { color: #F8FAFC !important; }
+        div[data-testid="stNotification"], .stAlert { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 10px !important; }
+        .stButton button, .stDownloadButton button { background-color: #0284C7 !important; color: #FFFFFF !important; font-weight: 600 !important; border: none !important; border-radius: 8px !important; padding: 8px 16px !important; transition: all 0.2s ease-in-out !important; }
+        .stButton button:hover, .stDownloadButton button:hover { background-color: #0369A1 !important; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4) !important; }
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span { color: #F8FAFC !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -331,62 +288,31 @@ if menu == "📊 Lihat Semua Stok":
         st.dataframe(df, use_container_width=True)
         
         c_dl1, c_dl2 = st.columns(2)
-        
         excel_stok_bytes = buat_excel_bytes(df, sheet_name="Stok Barang")
-        c_dl1.download_button(
-            label="📊 Download Tabel Stok (Excel .xlsx)",
-            data=excel_stok_bytes,
-            file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+        c_dl1.download_button("📊 Download Tabel Stok (Excel .xlsx)", data=excel_stok_bytes, file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         
         data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok (pcs)"]), item["Status"]] for item in data_tabel]
-        headers_stok = ["Nama Barang", "Jumlah Stok (pcs)", "Status"]
-        col_widths_stok = [90, 45, 45]
-        pdf_bytes_stok = buat_pdf_tabel("Laporan Stok Gudang Mikrosemen", headers_stok, data_pdf_stok, col_widths_stok)
-        
-        c_dl2.download_button(
-            label="📄 Download Tabel Stok (PDF)",
-            data=pdf_bytes_stok,
-            file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
+        pdf_bytes_stok = buat_pdf_tabel("Laporan Stok Gudang Mikrosemen", ["Nama Barang", "Jumlah Stok (pcs)", "Status"], data_pdf_stok, [90, 45, 45])
+        c_dl2.download_button("📄 Download Tabel Stok (PDF)", data=pdf_bytes_stok, file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.pdf", mime="application/pdf", use_container_width=True)
         
         st.divider()
         st.subheader("📈 Visualisasi Grafik Stok")
-        
-        tipe_grafik = st.radio(
-            "Pilih Model Tampilan Grafik:", 
-            ["📊 Batang Tegak (Vertical)", "📉 Batang Mendatar (Horizontal)", "📈 Grafik Garis (Line Chart)"], 
-            horizontal=True
-        )
-        
+        tipe_grafik = st.radio("Pilih Model Tampilan Grafik:", ["📊 Batang Tegak (Vertical)", "📉 Batang Mendatar (Horizontal)", "📈 Grafik Garis (Line Chart)"], horizontal=True)
         theme_plotly = "plotly_dark" if dark_mode else "plotly"
         
         if tipe_grafik == "📊 Batang Tegak (Vertical)":
             df_sorted = df.sort_values(by="Jumlah Stok (pcs)", ascending=False)
-            fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status",
-                             text="Jumlah Stok (pcs)",
-                             color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, 
-                             template=theme_plotly)
+            fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status", text="Jumlah Stok (pcs)", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
             fig_bar.update_traces(textposition='outside')
             fig_bar.update_layout(xaxis_tickangle=-45, uniformtext_minsize=8, uniformtext_mode='hide')
-            
         elif tipe_grafik == "📉 Batang Mendatar (Horizontal)":
             df_sorted = df.sort_values(by="Jumlah Stok (pcs)", ascending=True)
-            fig_bar = px.bar(df_sorted, x="Jumlah Stok (pcs)", y="Nama Barang", color="Status",
-                             orientation='h', text="Jumlah Stok (pcs)",
-                             color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, 
-                             template=theme_plotly)
+            fig_bar = px.bar(df_sorted, x="Jumlah Stok (pcs)", y="Nama Barang", color="Status", orientation='h', text="Jumlah Stok (pcs)", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
             fig_bar.update_traces(textposition='outside')
             fig_bar.update_layout(height=650)
-            
         else:
             df_sorted = df.sort_values(by="Nama Barang", ascending=True)
-            fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", markers=True,
-                              template=theme_plotly)
+            fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok (pcs)", markers=True, template=theme_plotly)
             fig_bar.update_traces(line_color="#38BDF8", marker_size=8)
             fig_bar.update_layout(xaxis_tickangle=-45)
             
@@ -397,12 +323,25 @@ elif menu == "📥 Restok Barang Masuk":
     barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
     keterangan = st.text_input("Supplier / Keterangan (Opsional)").strip()
+    uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Simpan Barang Masuk"):
+        bukti_b64 = encode_gambar(uploaded_file)
+        foto_bytes = uploaded_file.getvalue() if uploaded_file else None
+        
         st.session_state.stok[barang] += jumlah
-        st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "MASUK", "Barang": barang, "Jumlah": f"+{jumlah} pcs", "Pembeli / Keterangan": keterangan or "Restok"})
+        st.session_state.riwayat.append({
+            "Waktu": dapatkan_waktu_wib(), 
+            "Tipe": "MASUK", 
+            "Barang": barang, 
+            "Jumlah": f"+{jumlah} pcs", 
+            "Pembeli / Keterangan": keterangan or "Restok",
+            "Bukti": bukti_b64
+        })
         
         if save_data():
+            pesan_tg = f"📥 BARANG MASUK!\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
+            kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
             panggil_confetti()
             st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
         else:
@@ -417,6 +356,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
     
     jumlah = st.number_input("Jumlah Keluar", min_value=1, max_value=max(1, stok_ini), step=1)
     pembeli = st.text_input("👤 Nama Pembeli / Klien").strip()
+    uploaded_file = st.file_uploader("📷 Upload Surat Jalan / Bukti Terima (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Proses Pengiriman"):
         if not pembeli:
@@ -424,16 +364,28 @@ elif menu == "📤 Pengiriman Barang Keluar":
         elif stok_ini == 0:
             st.error("❌ Barang habis!")
         elif jumlah <= stok_ini:
+            bukti_b64 = encode_gambar(uploaded_file)
+            foto_bytes = uploaded_file.getvalue() if uploaded_file else None
+            
             st.session_state.stok[barang] -= jumlah
             sisa = st.session_state.stok[barang]
-            st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "KELUAR", "Barang": barang, "Jumlah": f"-{jumlah} pcs", "Pembeli / Keterangan": pembeli})
+            st.session_state.riwayat.append({
+                "Waktu": dapatkan_waktu_wib(), 
+                "Tipe": "KELUAR", 
+                "Barang": barang, 
+                "Jumlah": f"-{jumlah} pcs", 
+                "Pembeli / Keterangan": pembeli,
+                "Bukti": bukti_b64
+            })
             
             if save_data():
+                pesan_tg = f"📤 BARANG KELUAR!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
                 if sisa == 0:
-                    kirim_notifikasi_telegram(f"PERHATIAN: STOK HABIS!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa: 0 pcs")
+                    pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
                 elif sisa < 5:
-                    kirim_notifikasi_telegram(f"PERHATIAN: STOK KRITIS!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa: {sisa} pcs")
+                    pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
                     
+                kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
                 panggil_confetti()
                 st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
             else:
@@ -454,7 +406,7 @@ elif menu == "➕ Tambah Jenis Barang":
             st.warning("⚠️ Barang sudah ada di dalam daftar!")
         else:
             st.session_state.stok[nama_baru] = stok_awal
-            st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs", "Pembeli / Keterangan": "Baru"})
+            st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs", "Pembeli / Keterangan": "Baru", "Bukti": ""})
             
             if save_data():
                 panggil_confetti()
@@ -467,13 +419,33 @@ elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
     if st.session_state.riwayat:
         riwayat_formatted = []
-        for item in st.session_state.riwayat:
+        riwayat_dengan_foto = []
+        
+        for idx, item in enumerate(st.session_state.riwayat):
             dt = parse_waktu(item.get("Waktu", ""))
-            row = item.copy()
-            if dt:
-                row["Waktu"] = dt.strftime("%d-%m-%Y %H:%M")
-            riwayat_formatted.append(row)
+            waktu_str = dt.strftime("%d-%m-%Y %H:%M") if dt else item.get("Waktu", "")
+            
+            row_display = {
+                "Waktu": waktu_str,
+                "Tipe": item.get("Tipe", ""),
+                "Barang": item.get("Barang", ""),
+                "Jumlah": item.get("Jumlah", ""),
+                "Pembeli / Keterangan": item.get("Pembeli / Keterangan", "-"),
+                "Foto Bukti": "📸 Ada Foto" if item.get("Bukti") else "❌ Tanpa Foto"
+            }
+            riwayat_formatted.append(row_display)
+            
+            if item.get("Bukti"):
+                riwayat_dengan_foto.append((waktu_str, item.get("Tipe"), item.get("Barang"), item.get("Pembeli / Keterangan"), item.get("Bukti")))
+                
         st.dataframe(pd.DataFrame(riwayat_formatted), use_container_width=True)
+        
+        if riwayat_dengan_foto:
+            with st.expander("🖼️ Galeri Foto Bukti Transaksi / Surat Jalan"):
+                cols = st.columns(3)
+                for i, (wkt, tipe, brg, ket, b64_img) in enumerate(reversed(riwayat_dengan_foto)):
+                    with cols[i % 3]:
+                        st.image(f"data:image/png;base64,{b64_img}", caption=f"{wkt} | {tipe} ({brg}) - {ket}", use_column_width=True)
     else:
         st.info("Belum ada riwayat.")
 
@@ -486,17 +458,13 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
     
     hari_ini = date.today()
     if preset == "7 Hari Terakhir":
-        tgl_mulai_default = hari_ini - timedelta(days=7)
-        tgl_selesai_default = hari_ini
+        tgl_mulai_default, tgl_selesai_default = hari_ini - timedelta(days=7), hari_ini
     elif preset == "30 Hari Terakhir":
-        tgl_mulai_default = hari_ini - timedelta(days=30)
-        tgl_selesai_default = hari_ini
+        tgl_mulai_default, tgl_selesai_default = hari_ini - timedelta(days=30), hari_ini
     elif preset == "Bulan Ini":
-        tgl_mulai_default = hari_ini.replace(day=1)
-        tgl_selesai_default = hari_ini
+        tgl_mulai_default, tgl_selesai_default = hari_ini.replace(day=1), hari_ini
     else:
-        tgl_mulai_default = hari_ini - timedelta(days=7)
-        tgl_selesai_default = hari_ini
+        tgl_mulai_default, tgl_selesai_default = hari_ini - timedelta(days=7), hari_ini
 
     c_start, c_end = st.columns(2)
     tgl_mulai = c_start.date_input("📅 Tanggal Mulai:", value=tgl_mulai_default)
@@ -507,71 +475,63 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
     else:
         riwayat_filtered = filter_riwayat_berdasarkan_rentang(st.session_state.riwayat, tgl_mulai, tgl_selesai)
         
-        total_transaksi = len(riwayat_filtered)
-        total_masuk = sum(1 for x in riwayat_filtered if x.get("Tipe") == "MASUK")
-        total_keluar = sum(1 for x in riwayat_filtered if x.get("Tipe") == "KELUAR")
-        
         m1, m2, m3 = st.columns(3)
-        m1.metric("📋 Total Transaksi", f"{total_transaksi} Data")
-        m2.metric("📥 Barang Masuk", f"{total_masuk} Kali")
-        m3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
+        m1.metric("📋 Total Transaksi", f"{len(riwayat_filtered)} Data")
+        m2.metric("📥 Barang Masuk", f"{sum(1 for x in riwayat_filtered if x.get('Tipe') == 'MASUK')} Kali")
+        m3.metric("📤 Barang Keluar", f"{sum(1 for x in riwayat_filtered if x.get('Tipe') == 'KELUAR')} Kali")
         
         st.divider()
         
         if riwayat_filtered:
-            df_laporan = pd.DataFrame(riwayat_filtered)
+            laporan_tabel = []
+            laporan_foto = []
+            for item in riwayat_filtered:
+                laporan_tabel.append({
+                    "Waktu": item.get("Waktu"),
+                    "Tipe": item.get("Tipe"),
+                    "Barang": item.get("Barang"),
+                    "Jumlah": item.get("Jumlah"),
+                    "Pembeli / Keterangan": item.get("Pembeli / Keterangan"),
+                    "Foto Bukti": "📸 Ada Foto" if item.get("Bukti") else "❌ Tanpa Foto"
+                })
+                if item.get("Bukti"):
+                    laporan_foto.append(item)
+                    
+            df_laporan = pd.DataFrame(laporan_tabel)
             df_laporan.index = range(1, len(df_laporan) + 1)
             st.dataframe(df_laporan, use_container_width=True)
             
             c_rep1, c_rep2 = st.columns(2)
-            
             excel_laporan_bytes = buat_excel_bytes(df_laporan, sheet_name="Laporan Transaksi")
-            c_rep1.download_button(
-                label="📊 Download Laporan Excel (.xlsx)",
-                data=excel_laporan_bytes,
-                file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
+            c_rep1.download_button("📊 Download Laporan Excel (.xlsx)", data=excel_laporan_bytes, file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
-            data_pdf = df_laporan.values.tolist()
-            headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
-            col_widths = [35, 25, 45, 25, 60]
-            rentang_str = f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}"
-            pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", headers, data_pdf, col_widths, info_tambahan=rentang_str)
+            pdf_data = [[x["Waktu"], x["Tipe"], x["Barang"], x["Jumlah"], x["Pembeli / Keterangan"]] for x in laporan_tabel]
+            pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], pdf_data, [35, 25, 45, 25, 60], info_tambahan=f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}")
+            c_rep2.download_button("📄 Download Laporan PDF", data=pdf_bytes, file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
             
-            c_rep2.download_button(
-                label="📄 Download Laporan PDF",
-                data=pdf_bytes,
-                file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                use_container_width=True
-            )
+            if laporan_foto:
+                with st.expander("🖼️ Lihat Foto Bukti Transaksi Periode Ini"):
+                    cols = st.columns(3)
+                    for i, item in enumerate(reversed(laporan_foto)):
+                        with cols[i % 3]:
+                            st.image(f"data:image/png;base64,{item.get('Bukti')}", caption=f"{item.get('Waktu')} | {item.get('Tipe')} ({item.get('Barang')})", use_column_width=True)
         else:
             st.info(f"Belum ada transaksi pada rentang tanggal {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}.")
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
-    
     st.subheader("💾 Backup Data Gudang")
-    st.write("Silakan unduh data stok Anda untuk cadangan (backup):")
     
     col1, col2, col3 = st.columns(3)
-    
     df_stok_backup = pd.DataFrame(list(st.session_state.stok.items()), columns=["Nama Barang", "Jumlah Stok"])
     
-    csv_stok = df_stok_backup.to_csv(index=False).encode('utf-8')
-    col1.download_button("📥 Download Stok (CSV)", data=csv_stok, file_name='backup_stok_mikrosemen.csv', mime='text/csv', use_container_width=True)
+    col1.download_button("📥 Download Stok (CSV)", data=df_stok_backup.to_csv(index=False).encode('utf-8'), file_name='backup_stok_mikrosemen.csv', mime='text/csv', use_container_width=True)
+    col2.download_button("📊 Download Stok (Excel)", data=buat_excel_bytes(df_stok_backup, sheet_name="Backup Stok"), file_name='backup_stok_mikrosemen.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', use_container_width=True)
     
-    excel_backup_bytes = buat_excel_bytes(df_stok_backup, sheet_name="Backup Stok")
-    col2.download_button("📊 Download Stok (Excel)", data=excel_backup_bytes, file_name='backup_stok_mikrosemen.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', use_container_width=True)
-    
-    data_pdf = [[k, str(v)] for k, v in st.session_state.stok.items()]
-    pdf_bytes = buat_pdf_tabel("Laporan Stok Gudang", ["Nama Barang", "Jumlah Stok (pcs)"], data_pdf, [130, 50])
+    pdf_bytes = buat_pdf_tabel("Laporan Stok Gudang", ["Nama Barang", "Jumlah Stok (pcs)"], [[k, str(v)] for k, v in st.session_state.stok.items()], [130, 50])
     col3.download_button("📄 Download Stok (PDF)", data=pdf_bytes, file_name="Laporan_Stok_Mikrosemen.pdf", mime="application/pdf", use_container_width=True)
     
     st.divider()
-    
     st.subheader("🚨 Reset Data")
     st.warning("Tombol di bawah ini akan menghapus riwayat dan mengembalikan stok ke kondisi awal.")
     if st.button("🚨 Reset Semua Data"):
