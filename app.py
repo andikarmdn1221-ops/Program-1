@@ -12,7 +12,7 @@ from fpdf import FPDF
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
-TELEGRAM_BOT_TOKEN = "8936505684:AAGM3KuPnq8u88Y3HMDKmvBHkQuthsq9bwI"
+TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV81ZqpE"
 TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
@@ -92,15 +92,8 @@ if dark_mode:
         .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
         .stSidebar { background-color: #1E293B !important; }
         div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
-        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
-        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
-        /* Warna teks kotak input dan dropdown */
-        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
-        /* Warna label, menu, dan judul menjadi putih */
-        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
-        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
-        /* Memperjelas warna tombol */
-        .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -179,20 +172,14 @@ if menu == "📊 Lihat Semua Stok":
             status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
             data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
     
-    # Mengurutkan stok agar yang terbanyak ada di atas
-        df = df.sort_values(by="Jumlah Stok (pcs)", ascending=True)
+    if data_tabel:
+        df = pd.DataFrame(data_tabel)
+        df.index = range(1, len(df) + 1)
+        st.dataframe(df, use_container_width=True)
         
         theme_plotly = "plotly_dark" if dark_mode else "plotly"
-        fig_bar = px.bar(df, x="Jumlah Stok (pcs)", y="Nama Barang", color="Status",
-                         orientation='h', # Mengubah jadi grafik mendatar
-                         text="Jumlah Stok (pcs)", # Memunculkan angka stok
-                         color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, 
-                         template=theme_plotly)
-        
-        # Mempercantik posisi angka dan tinggi grafik agar tidak berdesakan
-        fig_bar.update_traces(textposition='outside')
-        fig_bar.update_layout(height=650)
-        
+        fig_bar = px.bar(df, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status",
+                         color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
         st.plotly_chart(fig_bar, use_container_width=True)
 
 elif menu == "📥 Restok Barang Masuk":
@@ -294,3 +281,4 @@ elif menu == "⚙️ Reset & Backup Data":
         save_data()
         st.success("Data berhasil di-reset!")
         st.rerun()
+        
