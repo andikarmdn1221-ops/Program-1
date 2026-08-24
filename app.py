@@ -10,7 +10,7 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-# Mengambil kredensial dari st.secrets (dengan fallback agar tidak error jika secrets belum diset)
+# Mengambil kredensial dari st.secrets
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
@@ -67,7 +67,10 @@ def panggil_confetti():
     """, height=0)
 
 def bersihkan_teks_pdf(teks):
-    return re.sub(r'[^\x00-\x7F]+', '', str(teks)).strip()
+    teks_str = str(teks)
+    if len(teks_str) > 35:
+        teks_str = teks_str[:32] + "..."
+    return re.sub(r'[^\x00-\x7F]+', '', teks_str).strip()
 
 def buat_pdf_tabel(judul, headers, data, col_widths):
     pdf = FPDF()
@@ -106,24 +109,6 @@ def filter_riwayat_berdasarkan_hari(riwayat_list, jumlah_hari):
             hasil.append(item)
     return hasil
 
-st.sidebar.title("⚙️ Pengaturan")
-dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
-
-if dark_mode:
-    st.markdown("""
-        <style>
-        .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
-        .stSidebar { background-color: #1E293B !important; }
-        div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
-        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
-        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
-        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
-        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
-        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
-        .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
-        </style>
-    """, unsafe_allow_html=True)
-
 def load_data():
     data = fetch_data_from_gsheet(URL_GSHEET_API)
     raw_stok = data.get("stok", [])
@@ -147,20 +132,50 @@ def load_data():
 def save_data():
     if not URL_GSHEET_API:
         st.warning("URL Google Sheets API belum dikonfigurasi.")
-        return
+        return False
     payload = {
         "stok": [[k, v] for k, v in st.session_state.stok.items()],
         "riwayat": st.session_state.riwayat
     }
     try:
-        res = requests.post(URL_GSHEET_API, json=payload, timeout=12)
+        res = requests.post(URL_GSHEET_API, json=payload, timeout=30)
         res.raise_for_status()
         st.cache_data.clear()
+        return True
     except Exception as e:
         st.error(f"Gagal menyimpan data ke database: {e}")
+        return False
 
+# Inisialisasi Session State
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
+
+# Pengaturan Sidebar & Tombol Refresh
+st.sidebar.title("⚙️ Pengaturan")
+dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
+
+if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True):
+    st.cache_data.clear()
+    st.session_state.stok, st.session_state.riwayat = load_data()
+    st.toast("Data berhasil disinkronkan dari Google Sheets!", icon="✅")
+    st.rerun()
+
+st.sidebar.divider()
+
+if dark_mode:
+    st.markdown("""
+        <style>
+        .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
+        .stSidebar { background-color: #1E293B !important; }
+        div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
+        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
+        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
+        .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
+        </style>
+    """, unsafe_allow_html=True)
 
 st.title("📦 Sistem Gudang Mikrosemen")
 
@@ -249,14 +264,18 @@ elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
     barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
-    keterangan = st.text_input("Supplier / Keterangan (Opsional)")
+    keterangan = st.text_input("Supplier / Keterangan (Opsional)").strip()
     
     if st.button("Simpan Barang Masuk"):
         st.session_state.stok[barang] += jumlah
         st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "MASUK", "Barang": barang, "Jumlah": f"+{jumlah} pcs", "Pembeli / Keterangan": keterangan or "Restok"})
-        save_data()
-        panggil_confetti()
-        st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
+        
+        if save_data():
+            panggil_confetti()
+            st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
+        else:
+            st.session_state.stok[barang] -= jumlah
+            st.session_state.riwayat.pop()
 
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
@@ -265,10 +284,10 @@ elif menu == "📤 Pengiriman Barang Keluar":
     st.caption(f"Sisa stok: **{stok_ini} pcs**")
     
     jumlah = st.number_input("Jumlah Keluar", min_value=1, max_value=max(1, stok_ini), step=1)
-    pembeli = st.text_input("👤 Nama Pembeli / Klien")
+    pembeli = st.text_input("👤 Nama Pembeli / Klien").strip()
     
     if st.button("Proses Pengiriman"):
-        if not pembeli.strip():
+        if not pembeli:
             st.warning("⚠️ Mohon isi nama pembeli!")
         elif stok_ini == 0:
             st.error("❌ Barang habis!")
@@ -276,31 +295,41 @@ elif menu == "📤 Pengiriman Barang Keluar":
             st.session_state.stok[barang] -= jumlah
             sisa = st.session_state.stok[barang]
             st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "KELUAR", "Barang": barang, "Jumlah": f"-{jumlah} pcs", "Pembeli / Keterangan": pembeli})
-            save_data()
             
-            if sisa == 0:
-                kirim_notifikasi_telegram(f"PERHATIAN: STOK HABIS!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa: 0 pcs")
-            elif sisa < 5:
-                kirim_notifikasi_telegram(f"PERHATIAN: STOK KRITIS!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa: {sisa} pcs")
-                
-            panggil_confetti()
-            st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
+            if save_data():
+                if sisa == 0:
+                    kirim_notifikasi_telegram(f"PERHATIAN: STOK HABIS!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa: 0 pcs")
+                elif sisa < 5:
+                    kirim_notifikasi_telegram(f"PERHATIAN: STOK KRITIS!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa: {sisa} pcs")
+                    
+                panggil_confetti()
+                st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
+            else:
+                st.session_state.stok[barang] += jumlah
+                st.session_state.riwayat.pop()
         else:
             st.error("Stok tidak mencukupi!")
 
 elif menu == "➕ Tambah Jenis Barang":
     st.header("➕ Tambah Jenis Barang Baru")
-    nama_baru = st.text_input("Nama Barang Baru")
+    nama_baru = st.text_input("Nama Barang Baru").strip()
     stok_awal = st.number_input("Stok Awal", min_value=0, step=1)
+    
     if st.button("Daftarkan Barang"):
-        if nama_baru in st.session_state.stok:
-            st.warning("Barang sudah ada!")
-        elif nama_baru.strip():
+        if not nama_baru:
+            st.warning("⚠️ Nama barang tidak boleh kosong!")
+        elif nama_baru in st.session_state.stok:
+            st.warning("⚠️ Barang sudah ada di dalam daftar!")
+        else:
             st.session_state.stok[nama_baru] = stok_awal
             st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs", "Pembeli / Keterangan": "Baru"})
-            save_data()
-            panggil_confetti()
-            st.success(f"Barang {nama_baru} ditambahkan!")
+            
+            if save_data():
+                panggil_confetti()
+                st.success(f"Barang {nama_baru} berhasil ditambahkan!")
+            else:
+                del st.session_state.stok[nama_baru]
+                st.session_state.riwayat.pop()
 
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
@@ -366,6 +395,6 @@ elif menu == "⚙️ Reset & Backup Data":
     if st.button("🚨 Reset Semua Data"):
         st.session_state.stok = STOK_DEFAULT.copy()
         st.session_state.riwayat = []
-        save_data()
-        st.success("Data berhasil di-reset!")
-        st.rerun()
+        if save_data():
+            st.success("Data berhasil di-reset!")
+            st.rerun()
