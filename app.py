@@ -111,6 +111,7 @@ item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
 if item_habis:
     st.error(f"⚠️ **PERHATIAN:** Ada {len(item_habis)} item habis: {', '.join(item_habis[:3])}")
 
+# --- DAFTAR MENU LENGKAP ---
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
     "📥 Restok Barang Masuk", 
