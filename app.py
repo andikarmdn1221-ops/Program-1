@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
-import json
 import requests
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 import re
@@ -11,9 +10,10 @@ from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
-URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
-TELEGRAM_BOT_TOKEN = "8936505684:AAGM3KuPnq8u88Y3HMDKmvBHkQuthsq9bwI"
-TELEGRAM_CHAT_ID = 2106196278
+# Mengambil kredensial dari st.secrets (dengan fallback agar tidak error jika secrets belum diset)
+URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
+TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 def kirim_notifikasi_telegram(pesan):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -23,17 +23,27 @@ def kirim_notifikasi_telegram(pesan):
     try:
         requests.post(url, json=payload, timeout=15)
     except Exception as e:
-        print(e)
+        st.error(f"Gagal mengirim notifikasi Telegram: {e}")
 
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
 
+def parse_waktu(waktu_str):
+    try:
+        return datetime.strptime(waktu_str, "%d-%m-%Y %H:%M")
+    except Exception:
+        return None
+
 @st.cache_data(ttl=60)
 def fetch_data_from_gsheet(url):
+    if not url:
+        return {}
     try:
         res = requests.get(url, timeout=15)
+        res.raise_for_status()
         return res.json()
-    except:
+    except Exception as e:
+        st.warning(f"Gagal memuat data dari Google Sheets: {e}")
         return {}
 
 STOK_DEFAULT = {
@@ -83,6 +93,19 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
         pdf.ln()
     return bytes(pdf.output())
 
+def filter_riwayat_berdasarkan_hari(riwayat_list, jumlah_hari):
+    if not riwayat_list:
+        return []
+    sekarang = datetime.now()
+    batas_waktu = sekarang - timedelta(days=jumlah_hari)
+    
+    hasil = []
+    for item in riwayat_list:
+        tgl = parse_waktu(item.get("Waktu", ""))
+        if tgl and tgl >= batas_waktu:
+            hasil.append(item)
+    return hasil
+
 st.sidebar.title("⚙️ Pengaturan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
 
@@ -122,15 +145,19 @@ def load_data():
     return stok_dict, riwayat_list
 
 def save_data():
+    if not URL_GSHEET_API:
+        st.warning("URL Google Sheets API belum dikonfigurasi.")
+        return
     payload = {
         "stok": [[k, v] for k, v in st.session_state.stok.items()],
         "riwayat": st.session_state.riwayat
     }
     try:
-        requests.post(URL_GSHEET_API, json=payload, timeout=12)
+        res = requests.post(URL_GSHEET_API, json=payload, timeout=12)
+        res.raise_for_status()
         st.cache_data.clear()
     except Exception as e:
-        st.error(f"Gagal menyimpan: {e}")
+        st.error(f"Gagal menyimpan data ke database: {e}")
 
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
@@ -283,10 +310,11 @@ elif menu == "📜 Riwayat Transaksi":
         st.info("Belum ada riwayat.")
 
 elif menu == "📆 Laporan Mingguan":
-    st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
-    st.write("Berikut adalah seluruh riwayat transaksi untuk rekapitulasi mingguan:")
-    if st.session_state.riwayat:
-        df_laporan = pd.DataFrame(st.session_state.riwayat)
+    st.header("📆 Rekapitulasi Laporan Mingguan Gudang (7 Hari Terakhir)")
+    riwayat_mingguan = filter_riwayat_berdasarkan_hari(st.session_state.riwayat, 7)
+    
+    if riwayat_mingguan:
+        df_laporan = pd.DataFrame(riwayat_mingguan)
         df_laporan.index = range(1, len(df_laporan) + 1)
         st.dataframe(df_laporan, use_container_width=True)
         
@@ -296,13 +324,14 @@ elif menu == "📆 Laporan Mingguan":
         pdf_bytes = buat_pdf_tabel("Laporan Mingguan Gudang", headers, data_pdf, col_widths)
         st.download_button("📄 Download Laporan Mingguan (PDF)", data=pdf_bytes, file_name="Laporan_Mingguan_Gudang.pdf", mime="application/pdf")
     else:
-        st.info("Belum ada data transaksi untuk laporan mingguan.")
+        st.info("Belum ada data transaksi dalam 7 hari terakhir.")
 
 elif menu == "📅 Laporan Bulanan":
-    st.header("📅 Rekapitulasi Laporan Bulanan Gudang")
-    st.write("Berikut adalah seluruh riwayat transaksi untuk rekapitulasi bulanan:")
-    if st.session_state.riwayat:
-        df_laporan = pd.DataFrame(st.session_state.riwayat)
+    st.header("📅 Rekapitulasi Laporan Bulanan Gudang (30 Hari Terakhir)")
+    riwayat_bulanan = filter_riwayat_berdasarkan_hari(st.session_state.riwayat, 30)
+    
+    if riwayat_bulanan:
+        df_laporan = pd.DataFrame(riwayat_bulanan)
         df_laporan.index = range(1, len(df_laporan) + 1)
         st.dataframe(df_laporan, use_container_width=True)
         
@@ -312,7 +341,7 @@ elif menu == "📅 Laporan Bulanan":
         pdf_bytes = buat_pdf_tabel("Laporan Bulanan Gudang", headers, data_pdf, col_widths)
         st.download_button("📄 Download Laporan Bulanan (PDF)", data=pdf_bytes, file_name="Laporan_Bulanan_Gudang.pdf", mime="application/pdf")
     else:
-        st.info("Belum ada data transaksi untuk laporan bulanan.")
+        st.info("Belum ada data transaksi dalam 30 hari terakhir.")
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
