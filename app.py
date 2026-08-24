@@ -268,9 +268,14 @@ if dark_mode:
         .stButton button, .stDownloadButton button { background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%) !important; color: #FFFFFF !important; font-weight: 600 !important; border: none !important; border-radius: 8px !important; padding: 10px 20px !important; transition: all 0.2s ease-in-out !important; }
         .stButton button:hover, .stDownloadButton button:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45) !important; }
         label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span { color: #F8FAFC !important; }
+
+        /* PERBAIKAN WIDGET UPLOAD FILE */
+        div[data-testid="stFileUploader"] { background-color: #1E293B !important; border: 1px dashed #475569 !important; border-radius: 10px !important; padding: 8px !important; }
+        div[data-testid="stFileUploaderDropzone"] { background-color: #1E293B !important; }
+        div[data-testid="stFileUploaderDropzone"] * { color: #F8FAFC !important; }
+        div[data-testid="stFileUploader"] button { background-color: #334155 !important; color: #FFFFFF !important; border: 1px solid #475569 !important; }
         </style>
     """, unsafe_allow_html=True)
-
 st.title("📦 Sistem Gudang Microcement")
 
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
