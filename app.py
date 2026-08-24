@@ -234,7 +234,7 @@ if dark_mode:
         </style>
     """, unsafe_allow_html=True)
 
-st.title("📦 Sistem Gudang Mikrosemen")
+st.title("📦 Sistem Gudang Microcement")
 
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
 item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
