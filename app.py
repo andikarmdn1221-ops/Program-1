@@ -213,9 +213,29 @@ elif menu == "📜 Riwayat Transaksi":
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
+    
+    st.subheader("💾 Backup Data Gudang")
+    st.write("Silakan unduh data stok Anda untuk cadangan (backup):")
+    
+    col1, col2 = st.columns(2)
+    
+    # --- Tombol Backup CSV ---
+    df_stok_backup = pd.DataFrame(list(st.session_state.stok.items()), columns=["Nama Barang", "Jumlah Stok"])
+    csv_stok = df_stok_backup.to_csv(index=False).encode('utf-8')
+    col1.download_button("📥 Download Data Stok (CSV)", data=csv_stok, file_name='backup_stok_mikrosemen.csv', mime='text/csv')
+    
+    # --- Tombol Backup PDF ---
+    data_pdf = [[k, str(v)] for k, v in st.session_state.stok.items()]
+    pdf_bytes = buat_pdf_tabel("Laporan Stok Gudang", ["Nama Barang", "Jumlah Stok (pcs)"], data_pdf, [130, 50])
+    col2.download_button("📄 Download Data Stok (PDF)", data=pdf_bytes, file_name="Laporan_Stok_Mikrosemen.pdf", mime="application/pdf")
+    
+    st.divider()
+    
+    st.subheader("🚨 Reset Data")
+    st.warning("Tombol di bawah ini akan menghapus riwayat dan mengembalikan stok ke kondisi awal.")
     if st.button("🚨 Reset Semua Data"):
         st.session_state.stok = STOK_DEFAULT.copy()
         st.session_state.riwayat = []
         save_data()
-        st.success("Data di-reset!")
+        st.success("Data berhasil di-reset!")
         st.rerun()
