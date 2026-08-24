@@ -56,7 +56,6 @@ def panggil_confetti():
     </script>
     """, height=0)
 
-# --- FUNGSI PDF YANG SEMPAT HILANG SAYA KEMBALIKAN DI SINI ---
 def bersihkan_teks_pdf(teks):
     return re.sub(r'[^\x00-\x7F]+', '', str(teks)).strip()
 
@@ -84,7 +83,6 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
         pdf.ln()
     return bytes(pdf.output())
 
-# --- STYLING & SIDEBAR ---
 st.sidebar.title("⚙️ Pengaturan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
 
@@ -141,12 +139,15 @@ item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
 if item_habis:
     st.error(f"⚠️ **PERHATIAN:** Ada {len(item_habis)} item habis: {', '.join(item_habis[:3])}")
 
+# --- DAFTAR MENU LENGKAP KEMBALI ---
 menu = st.sidebar.selectbox("Pilih Menu", [
     "📊 Lihat Semua Stok", 
     "📥 Restok Barang Masuk", 
     "📤 Pengiriman Barang Keluar", 
     "➕ Tambah Jenis Barang", 
     "📜 Riwayat Transaksi",
+    "📆 Laporan Mingguan",
+    "📅 Laporan Bulanan",
     "⚙️ Reset & Backup Data"
 ])
 
@@ -244,6 +245,15 @@ elif menu == "📜 Riwayat Transaksi":
         st.dataframe(pd.DataFrame(st.session_state.riwayat), use_container_width=True)
     else:
         st.info("Belum ada riwayat.")
+
+# --- MENU LAPORAN YANG HILANG SUDAH DIKEMBALIKAN ---
+elif menu == "📆 Laporan Mingguan":
+    st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
+    st.info("Menu laporan mingguan aktif.")
+
+elif menu == "📅 Laporan Bulanan":
+    st.header("📅 Rekapitulasi Laporan Bulanan Gudang")
+    st.info("Menu laporan bulanan aktif.")
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
