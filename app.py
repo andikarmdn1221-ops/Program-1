@@ -284,11 +284,35 @@ elif menu == "📜 Riwayat Transaksi":
 
 elif menu == "📆 Laporan Mingguan":
     st.header("📆 Rekapitulasi Laporan Mingguan Gudang")
-    st.info("Menu laporan mingguan aktif.")
+    st.write("Berikut adalah seluruh riwayat transaksi untuk rekapitulasi mingguan:")
+    if st.session_state.riwayat:
+        df_laporan = pd.DataFrame(st.session_state.riwayat)
+        df_laporan.index = range(1, len(df_laporan) + 1)
+        st.dataframe(df_laporan, use_container_width=True)
+        
+        data_pdf = df_laporan.values.tolist()
+        headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
+        col_widths = [35, 25, 45, 25, 60]
+        pdf_bytes = buat_pdf_tabel("Laporan Mingguan Gudang", headers, data_pdf, col_widths)
+        st.download_button("📄 Download Laporan Mingguan (PDF)", data=pdf_bytes, file_name="Laporan_Mingguan_Gudang.pdf", mime="application/pdf")
+    else:
+        st.info("Belum ada data transaksi untuk laporan mingguan.")
 
 elif menu == "📅 Laporan Bulanan":
     st.header("📅 Rekapitulasi Laporan Bulanan Gudang")
-    st.info("Menu laporan bulanan aktif.")
+    st.write("Berikut adalah seluruh riwayat transaksi untuk rekapitulasi bulanan:")
+    if st.session_state.riwayat:
+        df_laporan = pd.DataFrame(st.session_state.riwayat)
+        df_laporan.index = range(1, len(df_laporan) + 1)
+        st.dataframe(df_laporan, use_container_width=True)
+        
+        data_pdf = df_laporan.values.tolist()
+        headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
+        col_widths = [35, 25, 45, 25, 60]
+        pdf_bytes = buat_pdf_tabel("Laporan Bulanan Gudang", headers, data_pdf, col_widths)
+        st.download_button("📄 Download Laporan Bulanan (PDF)", data=pdf_bytes, file_name="Laporan_Bulanan_Gudang.pdf", mime="application/pdf")
+    else:
+        st.info("Belum ada data transaksi untuk laporan bulanan.")
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
