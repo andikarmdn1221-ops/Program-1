@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 import re
+import io
 from fpdf import FPDF
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
@@ -34,14 +35,14 @@ def parse_waktu(waktu_str):
     
     waktu_str = str(waktu_str).strip()
     
-    # 1. Parsing format ISO Google Sheets (contoh: 2026-08-24T13:05:00.000Z)
+    # Parsing format ISO Google Sheets
     try:
         dt = datetime.fromisoformat(waktu_str.replace('Z', '+00:00'))
         return dt.replace(tzinfo=None)
     except Exception:
         pass
         
-    # 2. Parsing format tanggal standar
+    # Parsing format tanggal standar
     formats = [
         "%d-%m-%Y %H:%M",
         "%d-%m-%Y %H:%M:%S",
@@ -55,6 +56,12 @@ def parse_waktu(waktu_str):
             pass
             
     return None
+
+def buat_excel_bytes(df, sheet_name="Data"):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+    return output.getvalue()
 
 @st.cache_data(ttl=60)
 def fetch_data_from_gsheet(url):
@@ -251,17 +258,29 @@ if menu == "📊 Lihat Semua Stok":
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
         
-        # Tombol Download PDF Tabel Stok
+        # Opsi Unduh Tabel Stok (Excel & PDF)
+        c_dl1, c_dl2 = st.columns(2)
+        
+        excel_stok_bytes = buat_excel_bytes(df, sheet_name="Stok Barang")
+        c_dl1.download_button(
+            label="📊 Download Tabel Stok (Excel .xlsx)",
+            data=excel_stok_bytes,
+            file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        
         data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok (pcs)"]), item["Status"]] for item in data_tabel]
         headers_stok = ["Nama Barang", "Jumlah Stok (pcs)", "Status"]
         col_widths_stok = [90, 45, 45]
         pdf_bytes_stok = buat_pdf_tabel("Laporan Stok Gudang Mikrosemen", headers_stok, data_pdf_stok, col_widths_stok)
         
-        st.download_button(
+        c_dl2.download_button(
             label="📄 Download Tabel Stok (PDF)",
             data=pdf_bytes_stok,
             file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
+            use_container_width=True
         )
         
         st.divider()
@@ -433,18 +452,30 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
             df_laporan.index = range(1, len(df_laporan) + 1)
             st.dataframe(df_laporan, use_container_width=True)
             
+            # Opsi Download PDF & Excel untuk Laporan
+            c_rep1, c_rep2 = st.columns(2)
+            
+            excel_laporan_bytes = buat_excel_bytes(df_laporan, sheet_name="Laporan Transaksi")
+            c_rep1.download_button(
+                label=f"📊 Download Laporan Excel (.xlsx)",
+                data=excel_laporan_bytes,
+                file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
             data_pdf = df_laporan.values.tolist()
             headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
             col_widths = [35, 25, 45, 25, 60]
-            
             rentang_str = f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}"
             pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", headers, data_pdf, col_widths, info_tambahan=rentang_str)
             
-            st.download_button(
-                label=f"📄 Download Laporan PDF ({tgl_mulai.strftime('%d/%m')} - {tgl_selesai.strftime('%d/%m')})",
+            c_rep2.download_button(
+                label=f"📄 Download Laporan PDF",
                 data=pdf_bytes,
                 file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.pdf",
-                mime="application/pdf"
+                mime="application/pdf",
+                use_container_width=True
             )
         else:
             st.info(f"Belum ada transaksi pada rentang tanggal {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}.")
@@ -455,15 +486,19 @@ elif menu == "⚙️ Reset & Backup Data":
     st.subheader("💾 Backup Data Gudang")
     st.write("Silakan unduh data stok Anda untuk cadangan (backup):")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     df_stok_backup = pd.DataFrame(list(st.session_state.stok.items()), columns=["Nama Barang", "Jumlah Stok"])
+    
     csv_stok = df_stok_backup.to_csv(index=False).encode('utf-8')
-    col1.download_button("📥 Download Data Stok (CSV)", data=csv_stok, file_name='backup_stok_mikrosemen.csv', mime='text/csv')
+    col1.download_button("📥 Download Stok (CSV)", data=csv_stok, file_name='backup_stok_mikrosemen.csv', mime='text/csv', use_container_width=True)
+    
+    excel_backup_bytes = buat_excel_bytes(df_stok_backup, sheet_name="Backup Stok")
+    col2.download_button("📊 Download Stok (Excel)", data=excel_backup_bytes, file_name='backup_stok_mikrosemen.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', use_container_width=True)
     
     data_pdf = [[k, str(v)] for k, v in st.session_state.stok.items()]
     pdf_bytes = buat_pdf_tabel("Laporan Stok Gudang", ["Nama Barang", "Jumlah Stok (pcs)"], data_pdf, [130, 50])
-    col2.download_button("📄 Download Data Stok (PDF)", data=pdf_bytes, file_name="Laporan_Stok_Mikrosemen.pdf", mime="application/pdf")
+    col3.download_button("📄 Download Stok (PDF)", data=pdf_bytes, file_name="Laporan_Stok_Mikrosemen.pdf", mime="application/pdf", use_container_width=True)
     
     st.divider()
     
