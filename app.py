@@ -13,13 +13,9 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
-# Mengambil token & chat_id dari st.secrets
-try:
-    TELEGRAM_BOT_TOKEN = st.secrets["telegram"]["bot_token"]
-    TELEGRAM_CHAT_ID = st.secrets["telegram"]["chat_id"]
-except Exception:
-    TELEGRAM_BOT_TOKEN = ""
-    TELEGRAM_CHAT_ID = ""
+# --- TOKEN & CHAT ID DIMASUKKAN LANGSUNG (DIJAMIN TERBACA) ---
+TELEGRAM_BOT_TOKEN = "8810239918:AAGBfJH1gOUc4d4172bpqhaaoMYORiJUl0gw"
+TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
     """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
@@ -27,17 +23,13 @@ def kirim_notifikasi_telegram(pesan):
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    try:
-        chat_id_clean = int(str(TELEGRAM_CHAT_ID).strip())
-    except ValueError:
-        return
-
     payload = {
-        "chat_id": chat_id_clean,
+        "chat_id": int(TELEGRAM_CHAT_ID),
         "text": pesan,
     }
     try:
-        requests.post(url, json=payload, timeout=5)
+        response = requests.post(url, json=payload, timeout=5)
+        print("Response Telegram:", response.text)
     except Exception as e:
         print(f"Gagal kirim notif Telegram: {e}")
 
@@ -146,10 +138,10 @@ if menu == "📤 Pengiriman Barang Keluar":
             save_data()
             
             if sisa_stok == 0:
-                kirim_notifikasi_telegram(f"STOK HABIS!\nBarang: {barang}\nSisa: 0 pcs")
+                kirim_notifikasi_telegram(f"PERHATIAN: STOK HABIS!\n\nBarang: {barang}\nSisa: 0 pcs. Segera Restok!")
             elif sisa_stok < 5:
-                kirim_notifikasi_telegram(f"STOK KRITIS!\nBarang: {barang}\nSisa: {sisa_stok} pcs")
+                kirim_notifikasi_telegram(f"PERHATIAN: STOK KRITIS!\n\nBarang: {barang}\nSisa: {sisa_stok} pcs. Harap re-order segera.")
                 
-            st.success("Pengiriman diproses dan notifikasi terkirim!")
+            st.success("Pengiriman diproses dan notifikasi dikirim!")
         else:
             st.error("Stok tidak mencukupi!")
