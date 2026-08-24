@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 import streamlit.components.v1 as components
 import re
@@ -72,14 +72,19 @@ def bersihkan_teks_pdf(teks):
         teks_str = teks_str[:32] + "..."
     return re.sub(r'[^\x00-\x7F]+', '', teks_str).strip()
 
-def buat_pdf_tabel(judul, headers, data, col_widths):
+def buat_pdf_tabel(judul, headers, data, col_widths, info_tambahan=""):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, judul, ln=True, align="C")
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 8, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
-    pdf.ln(5)
+    
+    if info_tambahan:
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(0, 6, info_tambahan, ln=True, align="C")
+        
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 6, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
+    pdf.ln(4)
     
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(230, 230, 230)
@@ -91,21 +96,22 @@ def buat_pdf_tabel(judul, headers, data, col_widths):
     for row in data:
         for i, val in enumerate(row):
             teks_bersih = bersihkan_teks_pdf(val)
-            align_text = "C" if i == 0 or i == len(row)-1 else "L"
+            align_text = "C" if i in [0, 1, 3] else "L"
             pdf.cell(col_widths[i], 7, teks_bersih, border=1, align=align_text)
         pdf.ln()
     return bytes(pdf.output())
 
-def filter_riwayat_berdasarkan_hari(riwayat_list, jumlah_hari):
+def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
     if not riwayat_list:
         return []
-    sekarang = datetime.now()
-    batas_waktu = sekarang - timedelta(days=jumlah_hari)
+    
+    dt_mulai = datetime.combine(tgl_mulai, datetime.min.time())
+    dt_selesai = datetime.combine(tgl_selesai, datetime.max.time())
     
     hasil = []
     for item in riwayat_list:
         tgl = parse_waktu(item.get("Waktu", ""))
-        if tgl and tgl >= batas_waktu:
+        if tgl and dt_mulai <= tgl <= dt_selesai:
             hasil.append(item)
     return hasil
 
@@ -150,7 +156,7 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-# Pengaturan Sidebar & Tombol Refresh
+# Pengaturan Sidebar
 st.sidebar.title("⚙️ Pengaturan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap", value=True)
 
@@ -170,7 +176,7 @@ if dark_mode:
         div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
         div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
         div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
-        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"], .stDateInput input { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
         label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
         div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
         .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
@@ -191,8 +197,7 @@ menu = st.sidebar.selectbox("Pilih Menu", [
     "📤 Pengiriman Barang Keluar", 
     "➕ Tambah Jenis Barang", 
     "📜 Riwayat Transaksi",
-    "📆 Laporan Mingguan",
-    "📅 Laporan Bulanan",
+    "🗓️ Laporan Periodik (Custom Tanggal)",
     "⚙️ Reset & Backup Data"
 ])
 
@@ -222,7 +227,6 @@ if menu == "📊 Lihat Semua Stok":
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
         
-        # --- TOMBOL DOWNLOAD PDF DI BAWAH TABEL ---
         data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok (pcs)"]), item["Status"]] for item in data_tabel]
         headers_stok = ["Nama Barang", "Jumlah Stok (pcs)", "Status"]
         col_widths_stok = [90, 45, 45]
@@ -351,39 +355,68 @@ elif menu == "📜 Riwayat Transaksi":
     else:
         st.info("Belum ada riwayat.")
 
-elif menu == "📆 Laporan Mingguan":
-    st.header("📆 Rekapitulasi Laporan Mingguan Gudang (7 Hari Terakhir)")
-    riwayat_mingguan = filter_riwayat_berdasarkan_hari(st.session_state.riwayat, 7)
+elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
+    st.header("🗓️ Rekapitulasi Laporan Transaksi Periodik")
     
-    if riwayat_mingguan:
-        df_laporan = pd.DataFrame(riwayat_mingguan)
-        df_laporan.index = range(1, len(df_laporan) + 1)
-        st.dataframe(df_laporan, use_container_width=True)
-        
-        data_pdf = df_laporan.values.tolist()
-        headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
-        col_widths = [35, 25, 45, 25, 60]
-        pdf_bytes = buat_pdf_tabel("Laporan Mingguan Gudang", headers, data_pdf, col_widths)
-        st.download_button("📄 Download Laporan Mingguan (PDF)", data=pdf_bytes, file_name="Laporan_Mingguan_Gudang.pdf", mime="application/pdf")
+    col_preset, col_empty = st.columns([2, 2])
+    with col_preset:
+        preset = st.selectbox("⚡ Pilih Pintasan Waktu:", ["Rentang Tanggal Custom", "7 Hari Terakhir", "30 Hari Terakhir", "Bulan Ini"])
+    
+    hari_ini = date.today()
+    if preset == "7 Hari Terakhir":
+        tgl_mulai_default = hari_ini - timedelta(days=7)
+        tgl_selesai_default = hari_ini
+    elif preset == "30 Hari Terakhir":
+        tgl_mulai_default = hari_ini - timedelta(days=30)
+        tgl_selesai_default = hari_ini
+    elif preset == "Bulan Ini":
+        tgl_mulai_default = hari_ini.replace(day=1)
+        tgl_selesai_default = hari_ini
     else:
-        st.info("Belum ada data transaksi dalam 7 hari terakhir.")
+        tgl_mulai_default = hari_ini - timedelta(days=7)
+        tgl_selesai_default = hari_ini
 
-elif menu == "📅 Laporan Bulanan":
-    st.header("📅 Rekapitulasi Laporan Bulanan Gudang (30 Hari Terakhir)")
-    riwayat_bulanan = filter_riwayat_berdasarkan_hari(st.session_state.riwayat, 30)
+    c_start, c_end = st.columns(2)
+    tgl_mulai = c_start.date_input("📅 Tanggal Mulai:", value=tgl_mulai_default)
+    tgl_selesai = c_end.date_input("📅 Tanggal Selesai:", value=tgl_selesai_default)
     
-    if riwayat_bulanan:
-        df_laporan = pd.DataFrame(riwayat_bulanan)
-        df_laporan.index = range(1, len(df_laporan) + 1)
-        st.dataframe(df_laporan, use_container_width=True)
-        
-        data_pdf = df_laporan.values.tolist()
-        headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
-        col_widths = [35, 25, 45, 25, 60]
-        pdf_bytes = buat_pdf_tabel("Laporan Bulanan Gudang", headers, data_pdf, col_widths)
-        st.download_button("📄 Download Laporan Bulanan (PDF)", data=pdf_bytes, file_name="Laporan_Bulanan_Gudang.pdf", mime="application/pdf")
+    if tgl_mulai > tgl_selesai:
+        st.error("⚠️ Tanggal Mulai tidak boleh melebihi Tanggal Selesai!")
     else:
-        st.info("Belum ada data transaksi dalam 30 hari terakhir.")
+        riwayat_filtered = filter_riwayat_berdasarkan_rentang(st.session_state.riwayat, tgl_mulai, tgl_selesai)
+        
+        # Ringkasan Statistik Laporan
+        total_transaksi = len(riwayat_filtered)
+        total_masuk = sum(1 for x in riwayat_filtered if x.get("Tipe") == "MASUK")
+        total_keluar = sum(1 for x in riwayat_filtered if x.get("Tipe") == "KELUAR")
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("📋 Total Transaksi", f"{total_transaksi} Data")
+        m2.metric("📥 Barang Masuk", f"{total_masuk} Kali")
+        m3.metric("📤 Barang Keluar", f"{total_keluar} Kali")
+        
+        st.divider()
+        
+        if riwayat_filtered:
+            df_laporan = pd.DataFrame(riwayat_filtered)
+            df_laporan.index = range(1, len(df_laporan) + 1)
+            st.dataframe(df_laporan, use_container_width=True)
+            
+            data_pdf = df_laporan.values.tolist()
+            headers = ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"]
+            col_widths = [35, 25, 45, 25, 60]
+            
+            rentang_str = f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}"
+            pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", headers, data_pdf, col_widths, info_tambahan=rentang_str)
+            
+            st.download_button(
+                label=f"📄 Download Laporan PDF ({tgl_mulai.strftime('%d/%m')} - {tgl_selesai.strftime('%d/%m')})",
+                data=pdf_bytes,
+                file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.pdf",
+                mime="application/pdf"
+            )
+        else:
+            st.info(f"Belum ada transaksi pada rentang tanggal {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}.")
 
 elif menu == "⚙️ Reset & Backup Data":
     st.header("⚙️ Reset & Backup Data")
