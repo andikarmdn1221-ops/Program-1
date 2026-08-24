@@ -4,17 +4,42 @@ import requests
 import plotly.express as px
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
-import streamlit.components.v1 as components
 import re
 import io
 import base64
 from fpdf import FPDF
+from PIL import Image
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+
+# -----------------------------------------------------------------------------
+# HELPER FUNCTIONS & COMPRESSION
+# -----------------------------------------------------------------------------
+
+def kompres_dan_encode_gambar(file_uploaded, max_size=(400, 400), quality=60):
+    """Mekompresi gambar uploaded agar ukurannya kecil (<20KB) sebelum di-Base64."""
+    if file_uploaded is None:
+        return "", None
+    try:
+        file_uploaded.seek(0)
+        img = Image.open(file_uploaded)
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        img_bytes = buffer.getvalue()
+        b64_str = base64.b64encode(img_bytes).decode('utf-8')
+        return b64_str, img_bytes
+    except Exception as e:
+        st.warning(f"Gagal memproses/mengompresi gambar: {e}")
+        raw_bytes = file_uploaded.getvalue()
+        return base64.b64encode(raw_bytes).decode('utf-8'), raw_bytes
 
 def kirim_notifikasi_telegram(pesan, foto_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -23,7 +48,7 @@ def kirim_notifikasi_telegram(pesan, foto_bytes=None):
         if foto_bytes:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
             payload = {"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}
-            files = {"photo": ("bukti.png", foto_bytes, "image/png")}
+            files = {"photo": ("bukti.jpg", foto_bytes, "image/jpeg")}
             requests.post(url, data=payload, files=files, timeout=15)
         else:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -53,28 +78,11 @@ def parse_waktu(waktu_str):
             pass
     return None
 
-def encode_gambar(file_uploaded):
-    if file_uploaded is not None:
-        return base64.b64encode(file_uploaded.getvalue()).decode('utf-8')
-    return ""
-
 def buat_excel_bytes(df, sheet_name="Data"):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
     return output.getvalue()
-
-@st.cache_data(ttl=60)
-def fetch_data_from_gsheet(url):
-    if not url:
-        return {}
-    try:
-        res = requests.get(url, timeout=15)
-        res.raise_for_status()
-        return res.json()
-    except Exception as e:
-        st.warning(f"Gagal memuat data dari Google Sheets: {e}")
-        return {}
 
 STOK_DEFAULT = {
     "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
@@ -88,19 +96,9 @@ STOK_DEFAULT = {
 def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
-def panggil_confetti():
-    components.html("""
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
-    <script>
-        confetti({ particleCount: 150, origin: { y: 0.7 } });
-    </script>
-    """, height=0)
-
 def bersihkan_teks_pdf(teks):
-    teks_str = str(teks)
-    if len(teks_str) > 35:
-        teks_str = teks_str[:32] + "..."
-    return re.sub(r'[^\x00-\x7F]+', '', teks_str).strip()
+    teks_str = str(teks).strip()
+    return teks_str.encode('latin-1', 'replace').decode('latin-1')
 
 def buat_pdf_tabel(judul, headers, data, col_widths, info_tambahan=""):
     pdf = FPDF()
@@ -122,7 +120,7 @@ def buat_pdf_tabel(judul, headers, data, col_widths, info_tambahan=""):
         pdf.cell(col_widths[i], 8, h, border=1, align="C", fill=True)
     pdf.ln()
     
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font("Helvetica", "", 8)
     for row in data:
         for i, val in enumerate(row):
             teks_bersih = bersihkan_teks_pdf(val)
@@ -147,8 +145,32 @@ def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
             hasil.append(item_formatted)
     return hasil
 
-def load_data():
-    data = fetch_data_from_gsheet(URL_GSHEET_API)
+# -----------------------------------------------------------------------------
+# DATA ENGINE (SINKRONISASI REAL-TIME GSHEET)
+# -----------------------------------------------------------------------------
+
+def fetch_data_from_gsheet_direct(url):
+    """Fetch data tanpa caching untuk operasi transaksi real-time."""
+    if not url:
+        return {}
+    try:
+        res = requests.get(url, timeout=15)
+        res.raise_for_status()
+        return res.json()
+    except Exception as e:
+        st.warning(f"Gagal memuat data dari Google Sheets: {e}")
+        return {}
+
+@st.cache_data(ttl=60)
+def fetch_data_cached(url):
+    return fetch_data_from_gsheet_direct(url)
+
+def load_data(force_refresh=False):
+    if force_refresh:
+        data = fetch_data_from_gsheet_direct(URL_GSHEET_API)
+    else:
+        data = fetch_data_cached(URL_GSHEET_API)
+        
     raw_stok = data.get("stok", [])
     stok_dict = {}
     if len(raw_stok) > 1:
@@ -175,12 +197,13 @@ def load_data():
         stok_dict = STOK_DEFAULT.copy()
     return stok_dict, riwayat_list
 
-def save_data():
+def save_data_atomic(stok_terbaru, riwayat_terbaru):
+    """Mengirim seluruh payload stok dan riwayat yang telah di-update ke Google Sheets."""
     if not URL_GSHEET_API:
         st.warning("URL Google Sheets API belum dikonfigurasi.")
         return False
     payload = {
-        "stok": [[k, v] for k, v in st.session_state.stok.items()],
+        "stok": [[k, v] for k, v in stok_terbaru.items()],
         "riwayat": [[
             item.get("Waktu", ""),
             item.get("Tipe", ""),
@@ -188,7 +211,7 @@ def save_data():
             item.get("Jumlah", ""),
             item.get("Pembeli / Keterangan", "-"),
             item.get("Bukti", "")
-        ] for item in st.session_state.riwayat]
+        ] for item in riwayat_terbaru]
     }
     try:
         res = requests.post(URL_GSHEET_API, json=payload, timeout=30)
@@ -203,13 +226,16 @@ def save_data():
 if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
-# Sidebar
+# -----------------------------------------------------------------------------
+# UI STREAMLIT DASHBOARD & MENUS
+# -----------------------------------------------------------------------------
+
 st.sidebar.title("⚙️ Pengaturan")
 dark_mode = st.sidebar.toggle("🌙 Mode Gelap Modern", value=True)
 
 if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True):
     st.cache_data.clear()
-    st.session_state.stok, st.session_state.riwayat = load_data()
+    st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
     st.toast("Data berhasil disinkronkan dari Google Sheets!", icon="✅")
     st.rerun()
 
@@ -340,11 +366,13 @@ elif menu == "📥 Restok Barang Masuk":
     uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Simpan Barang Masuk"):
-        bukti_b64 = encode_gambar(uploaded_file)
-        foto_bytes = uploaded_file.getvalue() if uploaded_file else None
+        bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
         
-        st.session_state.stok[barang] += jumlah
-        st.session_state.riwayat.append({
+        # Fetch data terbaru langsung dari server untuk cegah penimpaan transaksi
+        stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
+        
+        stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
+        riwayat_terbaru.append({
             "Waktu": dapatkan_waktu_wib(), 
             "Tipe": "MASUK", 
             "Barang": barang, 
@@ -353,14 +381,16 @@ elif menu == "📥 Restok Barang Masuk":
             "Bukti": bukti_b64
         })
         
-        if save_data():
+        if save_data_atomic(stok_terbaru, riwayat_terbaru):
+            st.session_state.stok = stok_terbaru
+            st.session_state.riwayat = riwayat_terbaru
+            
             pesan_tg = f"📥 BARANG MASUK!\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
             kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
-            panggil_confetti()
+            st.balloons()
             st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
         else:
-            st.session_state.stok[barang] -= jumlah
-            st.session_state.riwayat.pop()
+            st.error("Gagal memperbarui stok ke database. Silakan coba lagi.")
 
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
@@ -377,36 +407,42 @@ elif menu == "📤 Pengiriman Barang Keluar":
             st.warning("⚠️ Mohon isi nama pembeli!")
         elif stok_ini == 0:
             st.error("❌ Barang habis!")
-        elif jumlah <= stok_ini:
-            bukti_b64 = encode_gambar(uploaded_file)
-            foto_bytes = uploaded_file.getvalue() if uploaded_file else None
-            
-            st.session_state.stok[barang] -= jumlah
-            sisa = st.session_state.stok[barang]
-            st.session_state.riwayat.append({
-                "Waktu": dapatkan_waktu_wib(), 
-                "Tipe": "KELUAR", 
-                "Barang": barang, 
-                "Jumlah": f"-{jumlah} pcs", 
-                "Pembeli / Keterangan": pembeli,
-                "Bukti": bukti_b64
-            })
-            
-            if save_data():
-                pesan_tg = f"📤 BARANG KELUAR!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
-                if sisa == 0:
-                    pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
-                elif sisa < 5:
-                    pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
-                    
-                kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
-                panggil_confetti()
-                st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
-            else:
-                st.session_state.stok[barang] += jumlah
-                st.session_state.riwayat.pop()
         else:
-            st.error("Stok tidak mencukupi!")
+            # Fetch data gres dari GSheet
+            stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
+            stok_saat_ini = stok_terbaru.get(barang, 0)
+            
+            if jumlah > stok_saat_ini:
+                st.error(f"❌ Stok terbaru di server ({stok_saat_ini} pcs) tidak mencukupi!")
+            else:
+                bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
+                stok_terbaru[barang] = stok_saat_ini - jumlah
+                sisa = stok_terbaru[barang]
+                
+                riwayat_terbaru.append({
+                    "Waktu": dapatkan_waktu_wib(), 
+                    "Tipe": "KELUAR", 
+                    "Barang": barang, 
+                    "Jumlah": f"-{jumlah} pcs", 
+                    "Pembeli / Keterangan": pembeli,
+                    "Bukti": bukti_b64
+                })
+                
+                if save_data_atomic(stok_terbaru, riwayat_terbaru):
+                    st.session_state.stok = stok_terbaru
+                    st.session_state.riwayat = riwayat_terbaru
+                    
+                    pesan_tg = f"📤 BARANG KELUAR!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
+                    if sisa == 0:
+                        pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
+                    elif sisa < 5:
+                        pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
+                        
+                    kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
+                    st.balloons()
+                    st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
+                else:
+                    st.error("Gagal memproses transaksi. Silakan coba lagi.")
 
 elif menu == "➕ Tambah Jenis Barang":
     st.header("➕ Tambah Jenis Barang Baru")
@@ -416,18 +452,28 @@ elif menu == "➕ Tambah Jenis Barang":
     if st.button("Daftarkan Barang"):
         if not nama_baru:
             st.warning("⚠️ Nama barang tidak boleh kosong!")
-        elif nama_baru in st.session_state.stok:
-            st.warning("⚠️ Barang sudah ada di dalam daftar!")
         else:
-            st.session_state.stok[nama_baru] = stok_awal
-            st.session_state.riwayat.append({"Waktu": dapatkan_waktu_wib(), "Tipe": "TAMBAH BARU", "Barang": nama_baru, "Jumlah": f"{stok_awal} pcs", "Pembeli / Keterangan": "Baru", "Bukti": ""})
-            
-            if save_data():
-                panggil_confetti()
-                st.success(f"Barang {nama_baru} berhasil ditambahkan!")
+            stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
+            if nama_baru in stok_terbaru:
+                st.warning("⚠️ Barang sudah ada di dalam daftar database!")
             else:
-                del st.session_state.stok[nama_baru]
-                st.session_state.riwayat.pop()
+                stok_terbaru[nama_baru] = stok_awal
+                riwayat_terbaru.append({
+                    "Waktu": dapatkan_waktu_wib(), 
+                    "Tipe": "TAMBAH BARU", 
+                    "Barang": nama_baru, 
+                    "Jumlah": f"{stok_awal} pcs", 
+                    "Pembeli / Keterangan": "Baru", 
+                    "Bukti": ""
+                })
+                
+                if save_data_atomic(stok_terbaru, riwayat_terbaru):
+                    st.session_state.stok = stok_terbaru
+                    st.session_state.riwayat = riwayat_terbaru
+                    st.balloons()
+                    st.success(f"Barang {nama_baru} berhasil ditambahkan!")
+                else:
+                    st.error("Gagal menambahkan barang baru.")
 
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
@@ -440,7 +486,7 @@ elif menu == "📜 Riwayat Transaksi":
             waktu_str = dt.strftime("%d-%m-%Y %H:%M") if dt else item.get("Waktu", "")
             
             b64_str = item.get("Bukti", "")
-            img_data_url = f"data:image/png;base64,{b64_str}" if b64_str else None
+            img_data_url = f"data:image/jpeg;base64,{b64_str}" if b64_str else None
             
             row_display = {
                 "Waktu": waktu_str,
@@ -522,7 +568,7 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
             laporan_foto = []
             for item in riwayat_filtered:
                 b64_str = item.get("Bukti", "")
-                img_data_url = f"data:image/png;base64,{b64_str}" if b64_str else None
+                img_data_url = f"data:image/jpeg;base64,{b64_str}" if b64_str else None
                 
                 laporan_tabel.append({
                     "Waktu": item.get("Waktu"),
@@ -584,8 +630,10 @@ elif menu == "⚙️ Reset & Backup Data":
     st.subheader("🚨 Reset Data")
     st.warning("Tombol di bawah ini akan menghapus riwayat dan mengembalikan stok ke kondisi awal.")
     if st.button("🚨 Reset Semua Data"):
-        st.session_state.stok = STOK_DEFAULT.copy()
-        st.session_state.riwayat = []
-        if save_data():
+        stok_reset = STOK_DEFAULT.copy()
+        riwayat_reset = []
+        if save_data_atomic(stok_reset, riwayat_reset):
+            st.session_state.stok = stok_reset
+            st.session_state.riwayat = riwayat_reset
             st.success("Data berhasil di-reset!")
             st.rerun()
