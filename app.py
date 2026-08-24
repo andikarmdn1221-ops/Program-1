@@ -14,7 +14,7 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
 # --- GANTI TOKEN DI BAWAH INI DENGAN TOKEN BARU DARI BOTFATHER ---
-TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV81ZqpE"
+TELEGRAM_BOT_TOKEN = "8936505684:AAGM3KuPnq8u88Y3HMDKmvBHkQuthsq9bwI"
 TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
