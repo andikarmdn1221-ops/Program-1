@@ -179,14 +179,20 @@ if menu == "📊 Lihat Semua Stok":
             status = "🔴 HABIS!" if jumlah == 0 else ("🟡 KRITIS" if jumlah < 5 else "🟢 AMAN")
             data_tabel.append({"Nama Barang": barang, "Jumlah Stok (pcs)": jumlah, "Status": status})
     
-    if data_tabel:
-        df = pd.DataFrame(data_tabel)
-        df.index = range(1, len(df) + 1)
-        st.dataframe(df, use_container_width=True)
+    # Mengurutkan stok agar yang terbanyak ada di atas
+        df = df.sort_values(by="Jumlah Stok (pcs)", ascending=True)
         
         theme_plotly = "plotly_dark" if dark_mode else "plotly"
-        fig_bar = px.bar(df, x="Nama Barang", y="Jumlah Stok (pcs)", color="Status",
-                         color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+        fig_bar = px.bar(df, x="Jumlah Stok (pcs)", y="Nama Barang", color="Status",
+                         orientation='h', # Mengubah jadi grafik mendatar
+                         text="Jumlah Stok (pcs)", # Memunculkan angka stok
+                         color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, 
+                         template=theme_plotly)
+        
+        # Mempercantik posisi angka dan tinggi grafik agar tidak berdesakan
+        fig_bar.update_traces(textposition='outside')
+        fig_bar.update_layout(height=650)
+        
         st.plotly_chart(fig_bar, use_container_width=True)
 
 elif menu == "📥 Restok Barang Masuk":
