@@ -13,8 +13,8 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 
 URL_GSHEET_API = "https://script.google.com/macros/s/AKfycbyudM_n5g9O2S88pconh7dJHp0oeEJ0D400dG26wKkysNazniISvSXbNT5ArWL_xY04jg/exec"
 
-# --- GANTI TOKEN DI BAWAH INI DENGAN TOKEN BARU DARI BOTFATHER ---
-TELEGRAM_BOT_TOKEN = "8936505684:AAGM3KuPnq8u88Y3HMDKmvBHkQuthsq9bwI"
+# --- TOKEN BOT & CHAT ID ---
+TELEGRAM_BOT_TOKEN = "8849647370:AAESRwPya7DVJAYR7WgvxL8eESqIV81ZqpE"
 TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
@@ -29,7 +29,7 @@ def kirim_notifikasi_telegram(pesan):
         "text": pesan,
     }
     try:
-        response = requests.post(url, json=payload, timeout=5)
+        response = requests.post(url, json=payload, timeout=15)
         st.write("🔍 **Debug Respon Telegram:**", response.text)
     except Exception as e:
         st.error(f"❌ Gagal koneksi ke Telegram: {e}")
@@ -40,7 +40,7 @@ def dapatkan_waktu_wib():
 @st.cache_data(ttl=60)
 def fetch_data_from_gsheet(url):
     try:
-        res = requests.get(url, timeout=8)
+        res = requests.get(url, timeout=15)
         return res.json()
     except Exception as e:
         st.error(f"Gagal mengambil data dari server: {e}")
