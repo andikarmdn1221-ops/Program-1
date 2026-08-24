@@ -18,8 +18,9 @@ TELEGRAM_BOT_TOKEN = "8810239918:AAGBfJH1gOUc4d4172bpqhaaoMYORiJUl0gw"
 TELEGRAM_CHAT_ID = 2106196278
 
 def kirim_notifikasi_telegram(pesan):
-    """Mengirim pesan notifikasi otomatis ke Telegram Bot"""
+    """Mengirim pesan notifikasi otomatis ke Bot Telegram & menampilkan status error di layar"""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        st.warning("⚠️ Token atau Chat ID Telegram kosong!")
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -29,9 +30,10 @@ def kirim_notifikasi_telegram(pesan):
     }
     try:
         response = requests.post(url, json=payload, timeout=5)
-        print("Response Telegram:", response.text)
+        # Menampilkan respons asli dari Telegram langsung ke layar Streamlit Anda
+        st.write("🔍 **Debug Respon Telegram:**", response.text)
     except Exception as e:
-        print(f"Gagal kirim notif Telegram: {e}")
+        st.error(f"❌ Gagal koneksi ke Telegram: {e}")
 
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
