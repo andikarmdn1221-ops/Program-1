@@ -92,8 +92,15 @@ if dark_mode:
         .stApp { background-color: #0F172A !important; color: #F8FAFC !important; }
         .stSidebar { background-color: #1E293B !important; }
         div[data-testid="stMetric"] { background-color: #1E293B !important; border: 1px solid #334155 !important; border-radius: 10px !important; padding: 15px !important; }
-        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; }
-        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; }
+        div[data-testid="stMetricLabel"] p { color: #94A3B8 !important; font-size: 14px !important; font-weight: 600 !important; }
+        div[data-testid="stMetricValue"] div { color: #38BDF8 !important; font-size: 28px !important; font-weight: 700 !important; }
+        /* Warna teks kotak input dan dropdown */
+        .stTextInput input, .stNumberInput input, .stSelectbox div[role="combobox"] { background-color: #1E293B !important; color: #F8FAFC !important; border: 1px solid #475569 !important; border-radius: 8px !important; }
+        /* Warna label, menu, dan judul menjadi putih */
+        label, .stMarkdown p, h1, h2, h3, h4, h5, h6, span, div[data-baseweb="select"] { color: #F8FAFC !important; }
+        div[data-testid="stDataFrame"] { border: 1px solid #334155 !important; border-radius: 8px !important; }
+        /* Memperjelas warna tombol */
+        .stButton button { background-color: #38BDF8 !important; color: #0F172A !important; font-weight: bold !important; border: none !important; }
         </style>
     """, unsafe_allow_html=True)
 
