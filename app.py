@@ -222,6 +222,19 @@ if menu == "📊 Lihat Semua Stok":
         df.index = range(1, len(df) + 1)
         st.dataframe(df, use_container_width=True)
         
+        # --- TOMBOL DOWNLOAD PDF DI BAWAH TABEL ---
+        data_pdf_stok = [[item["Nama Barang"], str(item["Jumlah Stok (pcs)"]), item["Status"]] for item in data_tabel]
+        headers_stok = ["Nama Barang", "Jumlah Stok (pcs)", "Status"]
+        col_widths_stok = [90, 45, 45]
+        pdf_bytes_stok = buat_pdf_tabel("Laporan Stok Gudang Mikrosemen", headers_stok, data_pdf_stok, col_widths_stok)
+        
+        st.download_button(
+            label="📄 Download Tabel Stok (PDF)",
+            data=pdf_bytes_stok,
+            file_name=f"Laporan_Stok_Gudang_{datetime.now().strftime('%d%m%Y')}.pdf",
+            mime="application/pdf"
+        )
+        
         st.divider()
         st.subheader("📈 Visualisasi Grafik Stok")
         
