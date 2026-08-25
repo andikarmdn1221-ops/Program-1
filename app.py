@@ -20,7 +20,6 @@ TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 # -----------------------------------------------------------------------------
 # 📱 RESPONSIVE LAYOUT HACK (Deteksi Ukuran Layar HP)
 # -----------------------------------------------------------------------------
-# Trik JS untuk mendeteksi lebar layar browser pengguna.
 scr_width = st.components.v1.html(
     """
     <script>
@@ -34,13 +33,12 @@ scr_width = st.components.v1.html(
     height=0,
 )
 
-# Ambil lebar layar dari query parameter
 width_str = st.query_params.get("width", "1024") # Default 1024 jika gagal deteksi
 SCREEN_WIDTH = int(width_str)
 IS_MOBILE = SCREEN_WIDTH < 768  # Tentukan breakpoint mobile (768px)
 
 # -----------------------------------------------------------------------------
-# HELPER FUNCTIONS (Kecepatan & Optimasi Tetap Dipertahankan)
+# HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 
 def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
@@ -165,30 +163,38 @@ def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
     return hasil
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE (Cache Durasi Dinaikkan Menjadi 5 Menit)
+# DATA ENGINE (Dengann Proteksi Network Fallback)
 # -----------------------------------------------------------------------------
 
 def fetch_data_from_gsheet_direct(url):
     if not url:
-        return {}
+        return None
     try:
         res = requests.get(url, timeout=15)
         res.raise_for_status()
         return res.json()
     except Exception as e:
-        st.warning(f"Gagal memuat data dari Google Sheets: {e}")
-        return {}
+        st.error(f"⚠️ Gagal memuat data dari Google Sheets: {e}")
+        return None
 
-@st.cache_data(ttl=300) # Cache dinaikkan menjadi 5 menit agar HP tidak sering loading fetch
+@st.cache_data(ttl=300)
 def fetch_data_cached(url):
     return fetch_data_from_gsheet_direct(url)
 
 def load_data(force_refresh=False):
+    """
+    Mengambil data dari Google Sheets.
+    Mengembalikan (stok_dict, riwayat_list, is_connected_boolean)
+    """
     if force_refresh:
         data = fetch_data_from_gsheet_direct(URL_GSHEET_API)
     else:
         data = fetch_data_cached(URL_GSHEET_API)
         
+    # JIKA KONEKSI/API GAGAL: Jangan gunakan STOK_DEFAULT, beri sinyal koneksi terputus!
+    if data is None:
+        return {}, [], False
+
     raw_stok = data.get("stok", [])
     stok_dict = {}
     if len(raw_stok) > 1:
@@ -209,11 +215,19 @@ def load_data(force_refresh=False):
                     "Jumlah": row[3], 
                     "Pembeli / Keterangan": pembeli
                 })
-    if not stok_dict:
+                
+    # Hanya gunakan STOK_DEFAULT jika spreadsheet terhubung tetapi benar-benar kosong
+    if not stok_dict and len(raw_stok) <= 1:
         stok_dict = STOK_DEFAULT.copy()
-    return stok_dict, riwayat_list
+        
+    return stok_dict, riwayat_list, True
 
 def save_data_atomic(stok_terbaru, riwayat_terbaru):
+    # Proteksi tambahan: Cegah penyimpanan jika koneksi awal terputus
+    if not st.session_state.get("is_connected", False):
+        st.error("❌ Transaksi dibatalkan karena koneksi ke database terputus.")
+        return False
+
     if not URL_GSHEET_API:
         st.warning("URL Google Sheets API belum dikonfigurasi.")
         return False
@@ -243,8 +257,12 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
         st.error(f"Gagal menyimpan data ke database: {e}")
         return False
 
-if "stok" not in st.session_state or "riwayat" not in st.session_state:
-    st.session_state.stok, st.session_state.riwayat = load_data()
+# Inisialisasi Session State & Status Koneksi Database
+if "is_connected" not in st.session_state:
+    stok_loaded, riwayat_loaded, is_conn = load_data()
+    st.session_state.stok = stok_loaded
+    st.session_state.riwayat = riwayat_loaded
+    st.session_state.is_connected = is_conn
 
 # -----------------------------------------------------------------------------
 # UI STREAMLIT
@@ -255,8 +273,14 @@ dark_mode = st.sidebar.toggle("🌙 Mode Gelap Modern", value=False)
 
 if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True):
     st.cache_data.clear()
-    st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
-    st.toast("Data berhasil disinkronkan dari Google Sheets!", icon="✅")
+    stok_ref, riwayat_ref, is_conn = load_data(force_refresh=True)
+    st.session_state.stok = stok_ref
+    st.session_state.riwayat = riwayat_ref
+    st.session_state.is_connected = is_conn
+    if is_conn:
+        st.toast("Data berhasil disinkronkan dari Google Sheets!", icon="✅")
+    else:
+        st.error("Gagal menyinkronkan data dari Google Sheets.")
     st.rerun()
 
 st.sidebar.divider()
@@ -283,7 +307,12 @@ if dark_mode:
         div[data-testid="stFileUploader"] button { background-color: #334155 !important; color: #FFFFFF !important; border: 1px solid #475569 !important; }
         </style>
     """, unsafe_allow_html=True)
+
 st.title("📦 Sistem Gudang Microcement")
+
+# PERINGATAN KONEKSI TERPUTUS
+if not st.session_state.is_connected:
+    st.error("🚨 **KONEKSI DATABASE TERPUTUS / GAGAL DIMUAT!**\n\nSistem mengunci fungsi penyimpanan transaksi untuk mencegah data asli di Google Sheets tertimpa data kosong. Silakan periksa koneksi internet Anda lalu klik tombol **🔄 Refresh / Sinkronkan Data** di menu sebelah kiri.")
 
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
 item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
@@ -306,8 +335,6 @@ if menu == "📊 Lihat Semua Stok":
     total_jenis = len(st.session_state.stok)
     total_unit = sum(st.session_state.stok.values())
     
-    # 📱 RESPONSIVE LAYOUT (Metrik)
-    # Jika HP, metrik ditampilkan vertikal penuh agar mudah dibaca
     if IS_MOBILE:
         with st.container():
             st.metric("📦 Total Jenis", f"{total_jenis} Item")
@@ -315,7 +342,6 @@ if menu == "📊 Lihat Semua Stok":
             st.metric("🟡 Kritis (<5)", f"{len(item_kritis)} Item")
             st.metric("🔴 Habis (0)", f"{len(item_habis)} Item")
     else:
-        # Jika PC, tampilkan 4 kolom horizontal seperti biasa
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("📦 Total Jenis", f"{total_jenis} Item")
         c2.metric("📊 Total Stok", f"{total_unit} pcs")
@@ -342,8 +368,6 @@ if menu == "📊 Lihat Semua Stok":
     if data_tabel:
         df = pd.DataFrame(data_tabel)
         
-        # 📱 RESPONSIVE LAYOUT (Tabel)
-        # Jika HP, gunakan expander untuk menyembunyikan tabel panjang secara default
         if IS_MOBILE:
             with st.expander("📊 Lihat Tabel Stok Lengkap", expanded=False):
                 st.dataframe(
@@ -364,7 +388,6 @@ if menu == "📊 Lihat Semua Stok":
                     use_container_width=True
                 )
         else:
-            # Jika PC, tabel selalu terbuka
             st.dataframe(
                 df,
                 column_config={
@@ -394,8 +417,6 @@ if menu == "📊 Lihat Semua Stok":
         st.divider()
         st.subheader("📈 Visualisasi Grafik Stok")
         
-        # 📱 RESPONSIVE LAYOUT (Grafik)
-        # Jika HP, grafik SANGAT BERAT. Kita buatkan checkbox untuk memuatnya hanya jika diminta.
         if IS_MOBILE:
             tampilkan_grafik = st.checkbox("📈 Tampilkan Grafik Interaktif (Mungkin lambat di HP)", value=False)
             if tampilkan_grafik:
@@ -420,7 +441,6 @@ if menu == "📊 Lihat Semua Stok":
                         fig_bar.update_layout(xaxis_tickangle=-45)
                     st.plotly_chart(fig_bar, use_container_width=True)
         else:
-            # Jika PC, tampilkan grafik langsung seperti biasa
             tipe_grafik = st.radio("Pilih Model Tampilan Grafik:", ["📊 Batang Tegak (Vertical)", "📉 Batang Mendatar (Horizontal)", "📈 Grafik Garis (Line Chart)"], horizontal=True)
             theme_plotly = "plotly_dark" if dark_mode else "plotly"
             
@@ -444,14 +464,17 @@ if menu == "📊 Lihat Semua Stok":
 
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
-    barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
+    
+    pilihan_barang = sorted(st.session_state.stok.keys(), key=kunci_urut_nama) if st.session_state.stok else ["-"]
+    barang = st.selectbox("Pilih Barang", pilihan_barang)
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
     
     tgl_transaksi = st.date_input("📅 Tanggal Transaksi", value=date.today())
     keterangan = st.text_input("Supplier / Keterangan (Opsional)").strip()
     uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
-    if st.button("Simpan Barang Masuk"):
+    # Tombol dinonaktifkan jika koneksi ke database gagal
+    if st.button("Simpan Barang Masuk", disabled=not st.session_state.is_connected):
         with st.spinner('Menyimpan data...'):
             foto_bytes = kompres_gambar(uploaded_file)
             waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
@@ -465,7 +488,6 @@ elif menu == "📥 Restok Barang Masuk":
                 "Pembeli / Keterangan": keterangan or "Restok"
             })
             
-            # Kirim notifikasi Telegram via Threading (Tanpa Mengunci UI)
             pesan_tg = f"📥 BARANG MASUK!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
             threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, foto_bytes), daemon=True).start()
 
@@ -477,7 +499,9 @@ elif menu == "📥 Restok Barang Masuk":
 
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
-    barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
+    
+    pilihan_barang = sorted(st.session_state.stok.keys(), key=kunci_urut_nama) if st.session_state.stok else ["-"]
+    barang = st.selectbox("Pilih Barang", pilihan_barang)
     stok_ini = st.session_state.stok.get(barang, 0)
     st.caption(f"Sisa stok: **{stok_ini} pcs**")
     
@@ -487,7 +511,8 @@ elif menu == "📤 Pengiriman Barang Keluar":
     tgl_transaksi = st.date_input("📅 Tanggal Transaksi", value=date.today())
     uploaded_file = st.file_uploader("📷 Upload Surat Jalan / Bukti Terima (Opsional)", type=["jpg", "jpeg", "png"])
     
-    if st.button("Proses Pengiriman"):
+    # Tombol dinonaktifkan jika koneksi ke database gagal
+    if st.button("Proses Pengiriman", disabled=not st.session_state.is_connected):
         if not pembeli:
             st.warning("⚠️ Mohon isi nama pembeli!")
         elif stok_ini == 0:
@@ -510,7 +535,6 @@ elif menu == "📤 Pengiriman Barang Keluar":
                     "Pembeli / Keterangan": pembeli
                 })
                 
-                # Kirim notifikasi Telegram via Threading (Tanpa Mengunci UI)
                 pesan_tg = f"📤 BARANG KELUAR!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
                 if sisa == 0:
                     pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
@@ -530,7 +554,8 @@ elif menu == "➕ Tambah Jenis Barang":
     nama_baru = st.text_input("Nama Barang Baru").strip()
     stok_awal = st.number_input("Stok Awal", min_value=0, step=1)
     
-    if st.button("Daftarkan Barang"):
+    # Tombol dinonaktifkan jika koneksi ke database gagal
+    if st.button("Daftarkan Barang", disabled=not st.session_state.is_connected):
         if not nama_baru:
             st.warning("⚠️ Nama barang tidak boleh kosong!")
         elif nama_baru in st.session_state.stok:
@@ -555,15 +580,11 @@ elif menu == "➕ Tambah Jenis Barang":
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
     if st.session_state.riwayat:
-        # 📱 RESPONSIVE LAYOUT (Riwayat)
-        # Jika HP, riwayat panjang memakan memori. Kita balik dan batasi 100 terakhir saja.
         riwayat_list = []
         if IS_MOBILE:
             st.info("📱 Mode HP: Menampilkan 100 riwayat transaksi terbaru.")
-            # Balik urutan agar yang terbaru di atas, dan ambil maksimal 100
             riwayat_list = list(reversed(st.session_state.riwayat))[:100]
         else:
-            # Jika PC, tampilkan urutan normal penuh seperti biasa
             riwayat_list = st.session_state.riwayat
             
         riwayat_formatted = []
@@ -655,7 +676,7 @@ elif menu == "⚙️ Reset & Backup Data":
     paham_resiko = st.checkbox("Saya mengerti risiko dan mengonfirmasi ingin menghapus seluruh data gudang.")
     konfirmasi_teks = st.text_input("Ketik kata kunci 'RESET DATA' di bawah untuk membuka kunci tombol:", placeholder="RESET DATA").strip()
     
-    tombol_reset_aktif = paham_resiko and (konfirmasi_teks == "RESET DATA")
+    tombol_reset_aktif = paham_resiko and (konfirmasi_teks == "RESET DATA") and st.session_state.is_connected
     
     if st.button("🚨 Ya, Reset Semua Data Sekarang", disabled=not tombol_reset_aktif):
         with st.spinner("Memproses reset seluruh database..."):
