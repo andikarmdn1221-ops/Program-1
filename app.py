@@ -300,7 +300,7 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # =============================================================================
-# 📱 SIDEBAR NAVIGATION (NEW UNIFIED MENU)
+# 📱 SIDEBAR NAVIGATION
 # =============================================================================
 with st.sidebar:
     st.markdown("""
@@ -450,17 +450,24 @@ elif active_menu == "Form Barang Masuk":
     with st.form("form_masuk", clear_on_submit=True):
         barang_pilihan = st.selectbox("Pilih Produk", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
         jumlah_masuk = st.number_input("Kuantitas Masuk (pcs)", min_value=1, value=1, step=1)
+        
+        # FITUR BARU: Pilih Tanggal Transaksi Manual
+        tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
+        
         catatan_masuk = st.text_input("Nama Supplier / Referensi Pengiriman", "-")
         foto_bukti = st.file_uploader("📷 Upload Nota / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
         
         st.markdown("<br>", unsafe_allow_html=True)
         if st.form_submit_button("Simpan Transaksi Masuk"):
-            waktu_sekarang = dapatkan_waktu_wib()
+            # Format waktu gabungan tanggal manual dengan jam real-time sekarang
+            jam_sekarang = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%H:%M")
+            waktu_final = f"{tgl_transaksi.strftime('%d-%m-%Y')} {jam_sekarang}"
+            
             st.session_state.stok[barang_pilihan] += jumlah_masuk
-            st.session_state.riwayat.insert(0, {"Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang_pilihan, "Jumlah": jumlah_masuk, "Pembeli / Keterangan": catatan_masuk})
+            st.session_state.riwayat.insert(0, {"Waktu": waktu_final, "Tipe": "MASUK", "Barang": barang_pilihan, "Jumlah": jumlah_masuk, "Pembeli / Keterangan": catatan_masuk})
             if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                st.success(f"Berhasil merestok {barang_pilihan} (+{jumlah_masuk} pcs)!")
-                pesan_tg = f"📥 **BARANG MASUK**\n📦 {barang_pilihan}\n➕ +{jumlah_masuk} pcs\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs\n📝 {catatan_masuk}"
+                st.success(f"Berhasil merestok {barang_pilihan} (+{jumlah_masuk} pcs) untuk tanggal {tgl_transaksi.strftime('%d-%m-%Y')}!")
+                pesan_tg = f"📥 **BARANG MASUK**\n📦 {barang_pilihan}\n➕ +{jumlah_masuk} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs\n📝 {catatan_masuk}"
                 threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                 st.rerun()
 
@@ -473,6 +480,10 @@ elif active_menu == "Form Barang Keluar":
         st.markdown(f"<div style='background-color: #EBF8FF; color: #2B6CB0; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-weight: 600;'>💡 Ketersediaan Fisik: {stok_saat_ini} pcs</div>", unsafe_allow_html=True)
         
         jumlah_keluar = st.number_input("Kuantitas Keluar (pcs)", min_value=1, value=1, step=1)
+        
+        # FITUR BARU: Pilih Tanggal Transaksi Manual
+        tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
+        
         nama_pembeli = st.text_input("Nama Pembeli / Proyek Tujuan", "")
         foto_bukti = st.file_uploader("📷 Upload Surat Jalan / Bukti Terima (Opsional)", type=["jpg", "jpeg", "png"])
         
@@ -481,12 +492,14 @@ elif active_menu == "Form Barang Keluar":
             if jumlah_keluar > stok_saat_ini: st.error(f"Gagal: Sisa stok tidak mencukupi (Hanya {stok_saat_ini} pcs).")
             elif not nama_pembeli.strip(): st.warning("Gagal: Identitas pembeli wajib diisi!")
             else:
-                waktu_sekarang = dapatkan_waktu_wib()
+                jam_sekarang = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%H:%M")
+                waktu_final = f"{tgl_transaksi.strftime('%d-%m-%Y')} {jam_sekarang}"
+                
                 st.session_state.stok[barang_pilihan] -= jumlah_keluar
-                st.session_state.riwayat.insert(0, {"Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang_pilihan, "Jumlah": jumlah_keluar, "Pembeli / Keterangan": nama_pembeli.strip()})
+                st.session_state.riwayat.insert(0, {"Waktu": waktu_final, "Tipe": "KELUAR", "Barang": barang_pilihan, "Jumlah": jumlah_keluar, "Pembeli / Keterangan": nama_pembeli.strip()})
                 if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                    st.success(f"Pengiriman {barang_pilihan} sebanyak {jumlah_keluar} pcs berhasil dieksekusi!")
-                    pesan_tg = f"📤 **BARANG KELUAR**\n📦 {barang_pilihan}\n➖ -{jumlah_keluar} pcs\n👤 Klien: {nama_pembeli}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs"
+                    st.success(f"Pengiriman {barang_pilihan} sebanyak {jumlah_keluar} pcs untuk tanggal {tgl_transaksi.strftime('%d-%m-%Y')} berhasil dieksekusi!")
+                    pesan_tg = f"📤 **BARANG KELUAR**\n📦 {barang_pilihan}\n➖ -{jumlah_keluar} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n👤 Klien: {nama_pembeli}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs"
                     threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                     st.rerun()
 
