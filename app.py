@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import re
 import io
 import base64
+import threading
 from fpdf import FPDF
 from PIL import Image
 
@@ -51,7 +52,7 @@ def kirim_notifikasi_telegram(pesan, foto_bytes=None):
             payload = {"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan}
             requests.post(url, json=payload, timeout=15)
     except Exception as e:
-        st.error(f"Gagal mengirim notifikasi Telegram: {e}")
+        print(f"Gagal mengirim notifikasi Telegram: {e}")
 
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d-%m-%Y %H:%M")
@@ -156,7 +157,7 @@ def fetch_data_from_gsheet_direct(url):
         st.warning(f"Gagal memuat data dari Google Sheets: {e}")
         return {}
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def fetch_data_cached(url):
     return fetch_data_from_gsheet_direct(url)
 
@@ -363,22 +364,18 @@ elif menu == "📥 Restok Barang Masuk":
     barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
     
-    # Input Tanggal Transaksi (Default Hari Ini)
     tgl_transaksi = st.date_input("📅 Tanggal Transaksi", value=date.today())
-    
     keterangan = st.text_input("Supplier / Keterangan (Opsional)").strip()
     uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Simpan Barang Masuk"):
         with st.spinner('Menyimpan data...'):
             foto_bytes = kompres_gambar(uploaded_file)
-            stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
-            
-            # Format waktu: Tanggal pilihan + Jam saat ini
             waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
             
-            stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
-            riwayat_terbaru.append({
+            # Direct session state update (Sangat Cepat)
+            st.session_state.stok[barang] = st.session_state.stok.get(barang, 0) + jumlah
+            st.session_state.riwayat.append({
                 "Waktu": waktu_simpan, 
                 "Tipe": "MASUK", 
                 "Barang": barang, 
@@ -386,11 +383,11 @@ elif menu == "📥 Restok Barang Masuk":
                 "Pembeli / Keterangan": keterangan or "Restok"
             })
             
-            if save_data_atomic(stok_terbaru, riwayat_terbaru):
-                st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
-                
-                pesan_tg = f"📥 BARANG MASUK!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
-                kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
+            # Kirim notifikasi Telegram via Threading (Tanpa Mengunci UI)
+            pesan_tg = f"📥 BARANG MASUK!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
+            threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, foto_bytes), daemon=True).start()
+
+            if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
                 st.balloons()
                 st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
             else:
@@ -405,9 +402,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
     jumlah = st.number_input("Jumlah Keluar", min_value=1, max_value=max(1, stok_ini), step=1)
     pembeli = st.text_input("👤 Nama Pembeli / Klien").strip()
     
-    # Input Tanggal Transaksi (Default Hari Ini)
     tgl_transaksi = st.date_input("📅 Tanggal Transaksi", value=date.today())
-    
     uploaded_file = st.file_uploader("📷 Upload Surat Jalan / Bukti Terima (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Proses Pengiriman"):
@@ -415,43 +410,39 @@ elif menu == "📤 Pengiriman Barang Keluar":
             st.warning("⚠️ Mohon isi nama pembeli!")
         elif stok_ini == 0:
             st.error("❌ Barang habis!")
+        elif jumlah > stok_ini:
+            st.error(f"❌ Stok tidak mencukupi!")
         else:
             with st.spinner('Memproses pengiriman dan menyimpan data...'):
-                stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
-                stok_saat_ini = stok_terbaru.get(barang, 0)
+                foto_bytes = kompres_gambar(uploaded_file)
                 
-                if jumlah > stok_saat_ini:
-                    st.error(f"❌ Stok terbaru di server ({stok_saat_ini} pcs) tidak mencukupi!")
+                # Direct session state update (Sangat Cepat)
+                st.session_state.stok[barang] -= jumlah
+                sisa = st.session_state.stok[barang]
+                waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
+                
+                st.session_state.riwayat.append({
+                    "Waktu": waktu_simpan, 
+                    "Tipe": "KELUAR", 
+                    "Barang": barang, 
+                    "Jumlah": f"-{jumlah} pcs", 
+                    "Pembeli / Keterangan": pembeli
+                })
+                
+                # Kirim notifikasi Telegram via Threading (Tanpa Mengunci UI)
+                pesan_tg = f"📤 BARANG KELUAR!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
+                if sisa == 0:
+                    pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
+                elif sisa < 5:
+                    pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
+                    
+                threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, foto_bytes), daemon=True).start()
+
+                if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
+                    st.balloons()
+                    st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
                 else:
-                    foto_bytes = kompres_gambar(uploaded_file)
-                    stok_terbaru[barang] = stok_saat_ini - jumlah
-                    sisa = stok_terbaru[barang]
-                    
-                    # Format waktu: Tanggal pilihan + Jam saat ini
-                    waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
-                    
-                    riwayat_terbaru.append({
-                        "Waktu": waktu_simpan, 
-                        "Tipe": "KELUAR", 
-                        "Barang": barang, 
-                        "Jumlah": f"-{jumlah} pcs", 
-                        "Pembeli / Keterangan": pembeli
-                    })
-                    
-                    if save_data_atomic(stok_terbaru, riwayat_terbaru):
-                        st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
-                        
-                        pesan_tg = f"📤 BARANG KELUAR!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
-                        if sisa == 0:
-                            pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
-                        elif sisa < 5:
-                            pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
-                            
-                        kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
-                        st.balloons()
-                        st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
-                    else:
-                        st.error("Gagal memproses transaksi. Silakan coba lagi.")
+                    st.error("Gagal memproses transaksi. Silakan coba lagi.")
 
 elif menu == "➕ Tambah Jenis Barang":
     st.header("➕ Tambah Jenis Barang Baru")
@@ -461,13 +452,12 @@ elif menu == "➕ Tambah Jenis Barang":
     if st.button("Daftarkan Barang"):
         if not nama_baru:
             st.warning("⚠️ Nama barang tidak boleh kosong!")
+        elif nama_baru in st.session_state.stok:
+            st.warning("⚠️ Barang sudah ada di dalam daftar database!")
         else:
-            stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
-            if nama_baru in stok_terbaru:
-                st.warning("⚠️ Barang sudah ada di dalam daftar database!")
-            else:
-                stok_terbaru[nama_baru] = stok_awal
-                riwayat_terbaru.append({
+            with st.spinner('Mendaftarkan barang baru...'):
+                st.session_state.stok[nama_baru] = stok_awal
+                st.session_state.riwayat.append({
                     "Waktu": dapatkan_waktu_wib(), 
                     "Tipe": "TAMBAH BARU", 
                     "Barang": nama_baru, 
@@ -475,9 +465,7 @@ elif menu == "➕ Tambah Jenis Barang":
                     "Pembeli / Keterangan": "Baru"
                 })
                 
-                if save_data_atomic(stok_terbaru, riwayat_terbaru):
-                    st.session_state.stok = stok_terbaru
-                    st.session_state.riwayat = riwayat_terbaru
+                if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
                     st.balloons()
                     st.success(f"Barang {nama_baru} berhasil ditambahkan!")
                 else:
@@ -572,13 +560,9 @@ elif menu == "⚙️ Reset & Backup Data":
     Data yang sudah di-reset **TIDAK DAPAT DIKEMBALIKAN LAGI**.
     """)
     
-    # Verifikasi Langkah 1: Checkbox Persetujuan
     paham_resiko = st.checkbox("Saya mengerti risiko dan mengonfirmasi ingin menghapus seluruh data gudang.")
-    
-    # Verifikasi Langkah 2: Input Teks Konfirmasi
     konfirmasi_teks = st.text_input("Ketik kata kunci 'RESET DATA' di bawah untuk membuka kunci tombol:", placeholder="RESET DATA").strip()
     
-    # Tombol reset hanya terbuka jika kedua syarat terpenuhi
     tombol_reset_aktif = paham_resiko and (konfirmasi_teks == "RESET DATA")
     
     if st.button("🚨 Ya, Reset Semua Data Sekarang", disabled=not tombol_reset_aktif):
