@@ -17,13 +17,13 @@ TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 # -----------------------------------------------------------------------------
-# HELPER FUNCTIONS & COMPRESSION
+# HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 
-def kompres_dan_encode_gambar(file_uploaded, max_size=(400, 400), quality=50):
-    """Mekompresi gambar uploaded agar ukuran kecil dan aman dikirim ke GAS."""
+def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
+    """Mekompresi gambar untuk dikirim via Telegram saja."""
     if file_uploaded is None:
-        return "", None
+        return None
     try:
         file_uploaded.seek(0)
         img = Image.open(file_uploaded)
@@ -33,13 +33,9 @@ def kompres_dan_encode_gambar(file_uploaded, max_size=(400, 400), quality=50):
         
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=quality, optimize=True)
-        img_bytes = buffer.getvalue()
-        b64_str = base64.b64encode(img_bytes).decode('utf-8')
-        return b64_str, img_bytes
-    except Exception as e:
-        st.warning(f"Gagal memproses gambar: {e}")
-        raw_bytes = file_uploaded.getvalue()
-        return base64.b64encode(raw_bytes).decode('utf-8'), raw_bytes
+        return buffer.getvalue()
+    except Exception:
+        return file_uploaded.getvalue()
 
 def kirim_notifikasi_telegram(pesan, foto_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -146,7 +142,7 @@ def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
     return hasil
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE (SINKRONISASI REAL-TIME GSHEET)
+# DATA ENGINE
 # -----------------------------------------------------------------------------
 
 def fetch_data_from_gsheet_direct(url):
@@ -183,14 +179,12 @@ def load_data(force_refresh=False):
         for row in raw_riwayat[1:]:
             if len(row) >= 4:
                 pembeli = row[4] if len(row) >= 5 else "-"
-                bukti = row[5] if len(row) >= 6 else ""
                 riwayat_list.append({
                     "Waktu": row[0], 
                     "Tipe": row[1], 
                     "Barang": row[2], 
                     "Jumlah": row[3], 
-                    "Pembeli / Keterangan": pembeli,
-                    "Bukti": bukti
+                    "Pembeli / Keterangan": pembeli
                 })
     if not stok_dict:
         stok_dict = STOK_DEFAULT.copy()
@@ -203,15 +197,14 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
         
     stok_payload = [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in stok_terbaru.items()]
     
-    riwayat_payload = [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan", "Bukti"]]
+    riwayat_payload = [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]]
     for item in riwayat_terbaru:
         riwayat_payload.append([
             item.get("Waktu", ""),
             item.get("Tipe", ""),
             item.get("Barang", ""),
             item.get("Jumlah", ""),
-            item.get("Pembeli / Keterangan", "-"),
-            str(item.get("Bukti", ""))
+            item.get("Pembeli / Keterangan", "-")
         ])
 
     payload = {
@@ -231,7 +224,7 @@ if "stok" not in st.session_state or "riwayat" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat = load_data()
 
 # -----------------------------------------------------------------------------
-# UI STREAMLIT DASHBOARD & MENUS
+# UI STREAMLIT
 # -----------------------------------------------------------------------------
 
 st.sidebar.title("⚙️ Pengaturan")
@@ -373,8 +366,8 @@ elif menu == "📥 Restok Barang Masuk":
     uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Simpan Barang Masuk"):
-        with st.spinner('Menyimpan data dan mengunggah foto ke GDrive...'):
-            bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
+        with st.spinner('Menyimpan data...'):
+            foto_bytes = kompres_gambar(uploaded_file)
             stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
             
             stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
@@ -383,8 +376,7 @@ elif menu == "📥 Restok Barang Masuk":
                 "Tipe": "MASUK", 
                 "Barang": barang, 
                 "Jumlah": f"+{jumlah} pcs", 
-                "Pembeli / Keterangan": keterangan or "Restok",
-                "Bukti": bukti_b64
+                "Pembeli / Keterangan": keterangan or "Restok"
             })
             
             if save_data_atomic(stok_terbaru, riwayat_terbaru):
@@ -420,7 +412,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
                 if jumlah > stok_saat_ini:
                     st.error(f"❌ Stok terbaru di server ({stok_saat_ini} pcs) tidak mencukupi!")
                 else:
-                    bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
+                    foto_bytes = kompres_gambar(uploaded_file)
                     stok_terbaru[barang] = stok_saat_ini - jumlah
                     sisa = stok_terbaru[barang]
                     
@@ -429,8 +421,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
                         "Tipe": "KELUAR", 
                         "Barang": barang, 
                         "Jumlah": f"-{jumlah} pcs", 
-                        "Pembeli / Keterangan": pembeli,
-                        "Bukti": bukti_b64
+                        "Pembeli / Keterangan": pembeli
                     })
                     
                     if save_data_atomic(stok_terbaru, riwayat_terbaru):
@@ -467,8 +458,7 @@ elif menu == "➕ Tambah Jenis Barang":
                     "Tipe": "TAMBAH BARU", 
                     "Barang": nama_baru, 
                     "Jumlah": f"{stok_awal} pcs", 
-                    "Pembeli / Keterangan": "Baru", 
-                    "Bukti": ""
+                    "Pembeli / Keterangan": "Baru"
                 })
                 
                 if save_data_atomic(stok_terbaru, riwayat_terbaru):
@@ -483,50 +473,18 @@ elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
     if st.session_state.riwayat:
         riwayat_formatted = []
-        riwayat_dengan_foto = []
-        
         for item in st.session_state.riwayat:
             dt = parse_waktu(item.get("Waktu", ""))
             waktu_str = dt.strftime("%d-%m-%Y %H:%M") if dt else item.get("Waktu", "")
-            
-            bukti_url = str(item.get("Bukti", ""))
-            is_url = bukti_url.startswith("http")
-            
-            row_display = {
+            riwayat_formatted.append({
                 "Waktu": waktu_str,
                 "Tipe": item.get("Tipe", ""),
                 "Barang": item.get("Barang", ""),
                 "Jumlah": item.get("Jumlah", ""),
-                "Pembeli / Keterangan": item.get("Pembeli / Keterangan", "-"),
-                "Foto Bukti": bukti_url if is_url else "-"
-            }
-            riwayat_formatted.append(row_display)
-            
-            if is_url:
-                riwayat_dengan_foto.append((waktu_str, item.get("Tipe"), item.get("Barang"), item.get("Pembeli / Keterangan"), bukti_url))
-                
+                "Pembeli / Keterangan": item.get("Pembeli / Keterangan", "-")
+            })
         df_riwayat = pd.DataFrame(riwayat_formatted)
-        
-        st.dataframe(
-            df_riwayat,
-            column_config={
-                "Waktu": st.column_config.TextColumn("Waktu Transaksi"),
-                "Tipe": st.column_config.TextColumn("Jenis"),
-                "Barang": st.column_config.TextColumn("Nama Produk"),
-                "Jumlah": st.column_config.TextColumn("Jumlah"),
-                "Pembeli / Keterangan": st.column_config.TextColumn("Keterangan"),
-                "Foto Bukti": st.column_config.ImageColumn("Foto Bukti", help="Pratinjau Bukti / Surat Jalan"),
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-        
-        if riwayat_dengan_foto:
-            with st.expander("🖼️ Galeri Ukuran Penuh (Foto Bukti / Surat Jalan)"):
-                cols = st.columns(3)
-                for i, (wkt, tipe, brg, ket, img_url) in enumerate(reversed(riwayat_dengan_foto)):
-                    with cols[i % 3]:
-                        st.image(img_url, caption=f"{wkt} | {tipe} ({brg}) - {ket}", use_container_width=True)
+        st.dataframe(df_riwayat, hide_index=True, use_container_width=True)
     else:
         st.info("Belum ada riwayat.")
 
@@ -564,48 +522,17 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
         st.divider()
         
         if riwayat_filtered:
-            laporan_tabel = []
-            laporan_foto = []
-            for item in riwayat_filtered:
-                bukti_url = str(item.get("Bukti", ""))
-                is_url = bukti_url.startswith("http")
-                
-                laporan_tabel.append({
-                    "Waktu": item.get("Waktu"),
-                    "Tipe": item.get("Tipe"),
-                    "Barang": item.get("Barang"),
-                    "Jumlah": item.get("Jumlah"),
-                    "Pembeli / Keterangan": item.get("Pembeli / Keterangan"),
-                    "Foto Bukti": bukti_url if is_url else "-"
-                })
-                if is_url:
-                    laporan_foto.append(item)
-                    
-            df_laporan = pd.DataFrame(laporan_tabel)
+            laporan_tabel = [[x["Waktu"], x["Tipe"], x["Barang"], x["Jumlah"], x["Pembeli / Keterangan"]] for x in riwayat_filtered]
+            df_laporan = pd.DataFrame(laporan_tabel, columns=["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"])
             
-            st.dataframe(
-                df_laporan,
-                column_config={
-                    "Foto Bukti": st.column_config.ImageColumn("Foto Bukti"),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
+            st.dataframe(df_laporan, hide_index=True, use_container_width=True)
             
             c_rep1, c_rep2 = st.columns(2)
-            excel_laporan_bytes = buat_excel_bytes(df_laporan.drop(columns=["Foto Bukti"]), sheet_name="Laporan Transaksi")
+            excel_laporan_bytes = buat_excel_bytes(df_laporan, sheet_name="Laporan Transaksi")
             c_rep1.download_button("📊 Download Laporan Excel (.xlsx)", data=excel_laporan_bytes, file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
-            pdf_data = [[x["Waktu"], x["Tipe"], x["Barang"], x["Jumlah"], x["Pembeli / Keterangan"]] for x in laporan_tabel]
-            pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], pdf_data, [35, 25, 45, 25, 60], info_tambahan=f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}")
+            pdf_bytes = buat_pdf_tabel("Laporan Transaksi Gudang", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], laporan_tabel, [35, 25, 45, 25, 60], info_tambahan=f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}")
             c_rep2.download_button("📄 Download Laporan PDF", data=pdf_bytes, file_name=f"Laporan_Gudang_{tgl_mulai.strftime('%Y%m%d')}_{tgl_selesai.strftime('%Y%m%d')}.pdf", mime="application/pdf", use_container_width=True)
-            
-            if laporan_foto:
-                with st.expander("🖼️ Lihat Foto Bukti Transaksi Periode Ini"):
-                    cols = st.columns(3)
-                    for i, item in enumerate(reversed(laporan_foto)):
-                        with cols[i % 3]:
-                            st.image(item.get('Bukti'), caption=f"{item.get('Waktu')} | {item.get('Tipe')} ({item.get('Barang')})", use_container_width=True)
         else:
             st.info(f"Belum ada transaksi pada rentang tanggal {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}.")
 
