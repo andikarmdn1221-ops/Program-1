@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import re
 import io
 import threading
+from fpdf import FPDF
 from PIL import Image
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
@@ -29,13 +30,99 @@ def safe_int(val, default=0):
 def dapatkan_waktu_wib():
     return datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d %b %Y, %H:%M WIB")
 
-def kirim_notifikasi_telegram(pesan):
+def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
+    if file_uploaded is None: return None
+    try:
+        file_uploaded.seek(0)
+        img = Image.open(file_uploaded)
+        if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        return buffer.getvalue()
+    except:
+        return file_uploaded.getvalue()
+
+def kirim_notifikasi_telegram(pesan, foto_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan, "parse_mode": "Markdown"}, timeout=15)
+        if foto_bytes:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+            requests.post(url, data={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"photo": ("bukti.jpg", foto_bytes, "image/jpeg")}, timeout=15)
+        else:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+            requests.post(url, json={"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan, "parse_mode": "Markdown"}, timeout=15)
     except:
         pass
+
+def kirim_dokumen_telegram(pesan, file_bytes, file_name):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+        requests.post(url, data={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"document": (file_name, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, timeout=30)
+    except:
+        pass
+
+def buat_excel_bytes(df, sheet_name="Data"):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+    return output.getvalue()
+
+def buat_excel_backup_lengkap(stok_dict, riwayat_list):
+    output = io.BytesIO()
+    df_stok = pd.DataFrame(list(stok_dict.items()), columns=["Nama Barang", "Jumlah Stok"])
+    df_riwayat = pd.DataFrame(riwayat_list) if riwayat_list else pd.DataFrame(columns=["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"])
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_stok.to_excel(writer, index=False, sheet_name="Stok Barang")
+        df_riwayat.to_excel(writer, index=False, sheet_name="Riwayat Transaksi")
+    return output.getvalue()
+
+def bersihkan_teks_pdf(teks):
+    return str(teks).strip().encode('latin-1', 'replace').decode('latin-1')
+
+def buat_pdf_tabel(judul, headers, data, col_widths, info_tambahan=""):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, judul, ln=True, align="C")
+    if info_tambahan:
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.cell(0, 6, info_tambahan, ln=True, align="C")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.cell(0, 6, f"Tanggal Cetak: {dapatkan_waktu_wib()}", ln=True, align="C")
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_fill_color(230, 230, 230)
+    for i, h in enumerate(headers):
+        pdf.cell(col_widths[i], 8, h, border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    for row in data:
+        for i, val in enumerate(row):
+            pdf.cell(col_widths[i], 7, bersihkan_teks_pdf(val), border=1, align="C" if i in [0, 1, 3] else "L")
+        pdf.ln()
+    return bytes(pdf.output())
+
+def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
+    if not riwayat_list: return []
+    dt_mulai = datetime.combine(tgl_mulai, datetime.min.time())
+    dt_selesai = datetime.combine(tgl_selesai, datetime.max.time())
+    hasil = []
+    for item in riwayat_list:
+        waktu_str = str(item.get("Waktu", ""))
+        try:
+            tgl = datetime.strptime(waktu_str[:16], "%d-%m-%Y %H:%M")
+        except:
+            try:
+                tgl = datetime.fromisoformat(waktu_str.replace('Z', '+00:00')).replace(tzinfo=None)
+            except:
+                continue
+        if dt_mulai <= tgl <= dt_selesai:
+            item_formatted = item.copy()
+            item_formatted["Waktu"] = tgl.strftime("%d-%m-%Y %H:%M")
+            hasil.append(item_formatted)
+    return hasil
 
 STOK_DEFAULT = {
     "Microcement base": 16, "Ready to use": 15, "Mixed resin A": 12,
@@ -90,11 +177,10 @@ if "is_connected" not in st.session_state:
     st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_load, r_load, is_conn
 
 # -----------------------------------------------------------------------------
-# CUSTOM CSS KUSTOMISASI TAMPILAN (DARK SIDEBAR & CLEAN DASHBOARD)
+# CUSTOM CSS
 # -----------------------------------------------------------------------------
 st.markdown("""
     <style>
-    /* Styling Sidebar Gelap ala Microcement */
     [data-testid="stSidebar"] {
         background-color: #0F172A;
         border-right: 1px solid #1E293B;
@@ -102,7 +188,6 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #94A3B8 !important;
     }
-    /* Styling Kartu Metrik */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -126,73 +211,67 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION (PENGELOMPOKAN MENU)
+# SIDEBAR NAVIGATION (STATE MANAGEMENT)
 # -----------------------------------------------------------------------------
+if "nav_menu" not in st.session_state:
+    st.session_state.nav_menu = "📊 Dashboard"
+
 with st.sidebar:
     st.markdown("### 📦 **MICROCEMENT**")
     st.caption("WAREHOUSE MANAGEMENT")
     st.divider()
     
     st.markdown("##### MENU UTAMA")
-    menu = st.radio(
-        "Menu Utama",
-        [
-            "📊 Dashboard",
-            "📋 Lihat Semua Stok",
-            "🔍 Pencarian Barang"
-        ],
-        label_visibility="collapsed"
-    )
-    
+    if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.nav_menu=="📊 Dashboard" else "secondary"):
+        st.session_state.nav_menu = "📊 Dashboard"
+        st.rerun()
+    if st.button("📋 Lihat Semua Stok", use_container_width=True, type="primary" if st.session_state.nav_menu=="📋 Lihat Semua Stok" else "secondary"):
+        st.session_state.nav_menu = "📋 Lihat Semua Stok"
+        st.rerun()
+    if st.button("➕ Kelola Master Item", use_container_width=True, type="primary" if st.session_state.nav_menu=="➕ Kelola Master Item" else "secondary"):
+        st.session_state.nav_menu = "➕ Kelola Master Item"
+        st.rerun()
+        
     st.markdown("##### TRANSAKSI")
-    menu_transaksi = st.radio(
-        "Transaksi",
-        [
-            "📥 Barang Masuk",
-            "📤 Barang Keluar"
-        ],
-        label_visibility="collapsed"
-    )
-    
+    if st.button("📥 Barang Masuk", use_container_width=True, type="primary" if st.session_state.nav_menu=="📥 Barang Masuk" else "secondary"):
+        st.session_state.nav_menu = "📥 Barang Masuk"
+        st.rerun()
+    if st.button("📤 Barang Keluar", use_container_width=True, type="primary" if st.session_state.nav_menu=="📤 Barang Keluar" else "secondary"):
+        st.session_state.nav_menu = "📤 Barang Keluar"
+        st.rerun()
+        
     st.markdown("##### LAPORAN")
-    menu_laporan = st.radio(
-        "Laporan",
-        [
-            "📜 Riwayat Transaksi",
-            "📊 Laporan Stok",
-            "🗓️ Laporan Periodik"
-        ],
-        label_visibility="collapsed"
-    )
-    
+    if st.button("📜 Riwayat Transaksi", use_container_width=True, type="primary" if st.session_state.nav_menu=="📜 Riwayat Transaksi" else "secondary"):
+        st.session_state.nav_menu = "📜 Riwayat Transaksi"
+        st.rerun()
+    if st.button("🗓️ Laporan Periodik", use_container_width=True, type="primary" if st.session_state.nav_menu=="🗓️ Laporan Periodik" else "secondary"):
+        st.session_state.nav_menu = "🗓️ Laporan Periodik"
+        st.rerun()
+        
     st.markdown("##### SISTEM")
-    menu_sistem = st.radio(
-        "Sistem",
-        [
-            "💾 Backup Data",
-            "⚙️ Pengaturan",
-            "ℹ️ Tentang Aplikasi"
-        ],
-        label_visibility="collapsed"
-    )
-    
+    if st.button("💾 Backup Data", use_container_width=True, type="primary" if st.session_state.nav_menu=="💾 Backup Data" else "secondary"):
+        st.session_state.nav_menu = "💾 Backup Data"
+        st.rerun()
+    if st.button("⚙️ Pengaturan & Reset", use_container_width=True, type="primary" if st.session_state.nav_menu=="⚙️ Pengaturan & Reset" else "secondary"):
+        st.session_state.nav_menu = "⚙️ Pengaturan & Reset"
+        st.rerun()
+    if st.button("ℹ️ Tentang Aplikasi", use_container_width=True, type="primary" if st.session_state.nav_menu=="ℹ️ Tentang Aplikasi" else "secondary"):
+        st.session_state.nav_menu = "ℹ️ Tentang Aplikasi"
+        st.rerun()
+        
     st.divider()
-    # Widget status telegram di bawah sidebar
     st.info("🟢 **Notifikasi Telegram**\nAktif - Terhubung")
 
-# Gabungkan pilihan radio jadi satu variabel kontrol utama
-active_menu = menu or menu_transaksi or menu_laporan or menu_sistem
+active_menu = st.session_state.nav_menu
 
 # -----------------------------------------------------------------------------
-# HEADER UTAMA (ATAS)
+# HEADER UTAMA
 # -----------------------------------------------------------------------------
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
-    if active_menu == "📊 Dashboard":
-        st.markdown("### **Dashboard**")
-        st.caption("Ringkasan stok gudang secara real-time")
+    st.markdown(f"### **{active_menu}**")
 with col_h2:
-    st.markdown(f"<div style='text-align: right; font-size: 12px; color: #64748B;'>Terakhir diperbarui: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: right; font-size: 11px; color: #64748B;'>Update: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
     if st.button("🔄 Refresh Data", use_container_width=False):
         st.cache_data.clear()
         st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = load_data(force_refresh=True)
@@ -200,16 +279,18 @@ with col_h2:
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# KONTEN UTAMA HALAMAN
-# -----------------------------------------------------------------------------
+if not st.session_state.is_connected:
+    st.error("🚨 KONEKSI DATABASE TERPUTUS! Periksa koneksi internet / URL Google Sheets Anda.")
+
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
 item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
 total_jenis = len(st.session_state.stok)
 total_unit = sum(st.session_state.stok.values())
 
+# -----------------------------------------------------------------------------
+# ROUTING HALAMAN & FITUR
+# -----------------------------------------------------------------------------
 if active_menu == "📊 Dashboard":
-    # Banner Peringatan Atas
     if item_habis or item_kritis:
         st.markdown(f"""
             <div style="background-color: #FEF2F2; border: 1px solid #FCA5A5; padding: 12px 16px; border-radius: 8px; color: #991B1B; font-weight: 500; margin-bottom: 20px;">
@@ -217,7 +298,6 @@ if active_menu == "📊 Dashboard":
             </div>
         """, unsafe_allow_html=True)
         
-    # 4 Kotak Metrik Atas
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TOTAL JENIS", f"{total_jenis}", "Jenis Barang")
     m2.metric("TOTAL STOK", f"{total_unit}", "Total PCS")
@@ -225,8 +305,6 @@ if active_menu == "📊 Dashboard":
     m4.metric("STOK HABIS", f"{len(item_habis)}", "Stok = 0 pcs")
     
     st.write("")
-    
-    # Bagian Tengah: Donut Chart & Tabel Kritis/Habis
     col_chart, col_kritis_table = st.columns([1.1, 1.1])
     
     with col_chart:
@@ -247,94 +325,202 @@ if active_menu == "📊 Dashboard":
         
     with col_kritis_table:
         st.markdown("#### **Stok Kritis & Habis**")
-        data_kritis_habis = []
-        for b, q in st.session_state.stok.items():
-            if q == 0:
-                data_kritis_habis.append({"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "HABIS"})
-            elif q < 5:
-                data_kritis_habis.append({"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "KRITIS"})
-                
+        data_kritis_habis = [{"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "HABIS" if q==0 else "KRITIS"} for b, q in st.session_state.stok.items() if q < 5]
         if data_kritis_habis:
-            df_kh = pd.DataFrame(data_kritis_habis)
-            st.dataframe(df_kh, use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(data_kritis_habis), use_container_width=True, hide_index=True)
         else:
             st.info("Tidak ada barang dalam status kritis atau habis.")
 
     st.divider()
-
-    # Bagian Bawah: Ringkasan Semua Stok (Tabel dengan Progress Bar)
     st.markdown("#### **Ringkasan Semua Stok**")
     keyword = st.text_input("🔍 Cari nama barang...", "", label_visibility="collapsed", placeholder="Cari nama barang...")
     
     data_tabel = []
     max_stok = max(st.session_state.stok.values()) if st.session_state.stok else 30
-    
     for barang in sorted(st.session_state.stok.keys(), key=kunci_urut_nama):
         jumlah = st.session_state.stok[barang]
         if keyword.lower() in barang.lower():
             status = "HABIS" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
-            data_tabel.append({
-                "Nama Barang": barang,
-                "Sisa Stok": f"{jumlah} pcs",
-                "Indikator Stok": jumlah,
-                "Status": status
-            })
+            data_tabel.append({"Nama Barang": barang, "Sisa Stok": f"{jumlah} pcs", "Indikator Stok": jumlah, "Status": status})
             
     if data_tabel:
-        df_all = pd.DataFrame(data_tabel)
         st.dataframe(
-            df_all,
+            pd.DataFrame(data_tabel),
             column_config={
                 "Nama Barang": st.column_config.TextColumn("Nama Barang"),
                 "Sisa Stok": st.column_config.TextColumn("Sisa Stok"),
                 "Indikator Stok": st.column_config.ProgressColumn("Indikator Stok", min_value=0, max_value=max(max_stok, 20), format="%d"),
                 "Status": st.column_config.TextColumn("Status")
             },
-            hide_index=True,
-            use_container_width=True
+            hide_index=True, use_container_width=True
         )
 
-elif active_menu == "📋 Lihat Semua Stok" or active_menu == "📊 Laporan Stok":
-    st.header("📋 Daftar Keseluruhan Stok Gudang")
-    data_all = [{"Nama Barang": k, "Jumlah Stok": v, "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k,v in st.session_state.stok.items()]
-    st.dataframe(pd.DataFrame(data_all), use_container_width=True, hide_index=True)
+elif active_menu == "📋 Lihat Semua Stok":
+    st.markdown("#### Daftar Keseluruhan Stok Gudang")
+    data_all = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k,v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
+    df_all = pd.DataFrame(data_all)
+    st.dataframe(df_all, use_container_width=True, hide_index=True)
+    
+    c_ex1, c_ex2 = st.columns(2)
+    with c_ex1:
+        st.download_button("📥 Ekspor Excel", buat_excel_bytes(df_all, "Stok"), f"Stok_{datetime.now().strftime('%Y%m%d')}.xlsx", use_container_width=True)
+    with c_ex2:
+        pdf_bytes = buat_pdf_tabel("LAPORAN STOK GUDANG", ["No", "Nama Barang", "Jumlah Stok", "Status"], [[str(i+1), r["Nama Barang"], r["Jumlah Stok"], r["Status"]] for i, r in enumerate(data_all)], [15, 95, 35, 45])
+        st.download_button("📄 Cetak PDF", pdf_bytes, f"Stok_{datetime.now().strftime('%Y%m%d')}.pdf", use_container_width=True)
+
+elif active_menu == "➕ Kelola Master Item":
+    st.markdown("#### Tambah Jenis Barang Baru")
+    with st.form("form_tambah_barang", clear_on_submit=True):
+        nama_baru = st.text_input("Nama Barang Baru")
+        stok_awal = st.number_input("Stok Awal (pcs)", min_value=0, value=0, step=1)
+        if st.form_submit_button("➕ Tambah Barang"):
+            nama_clean = nama_baru.strip()
+            if not nama_clean: st.warning("Nama barang tidak boleh kosong!")
+            elif nama_clean in st.session_state.stok: st.error("Barang sudah ada di database!")
+            else:
+                waktu_sekarang = dapatkan_waktu_wib()
+                st.session_state.stok[nama_clean] = stok_awal
+                st.session_state.riwayat.insert(0, {"Waktu": waktu_sekarang, "Tipe": "BARANG BARU", "Barang": nama_clean, "Jumlah": stok_awal, "Pembeli / Keterangan": "Item baru"})
+                if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
+                    st.success(f"Item `{nama_clean}` berhasil ditambahkan!")
+                    threading.Thread(target=kirim_notifikasi_telegram, args=(f"✨ **ITEM BARU**\n📦 {nama_clean} | Stok Awal: {stok_awal} pcs",)).start()
+                    st.rerun()
 
 elif active_menu == "📥 Barang Masuk":
-    st.header("📥 Form Barang Masuk (Inbound)")
-    with st.form("f_masuk", clear_on_submit=True):
-        b_pilih = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys()))
-        jml = st.number_input("Jumlah Masuk", min_value=1, value=1)
-        ket = st.text_input("Keterangan / Supplier", "-")
-        if st.form_submit_button("Simpan Barang Masuk"):
-            st.session_state.stok[b_pilih] += jml
-            st.session_state.riwayat.insert(0, {"Waktu": dapatkan_waktu_wib(), "Tipe": "MASUK", "Barang": b_pilih, "Jumlah": jml, "Pembeli / Keterangan": ket})
+    st.markdown("#### Form Transaksi Barang Masuk (Inbound)")
+    with st.form("form_masuk", clear_on_submit=True):
+        barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
+        jumlah_masuk = st.number_input("Jumlah Masuk (pcs)", min_value=1, value=1, step=1)
+        foto_bukti = st.file_uploader("Upload Bukti / Nota (Opsional)", type=["jpg", "jpeg", "png"])
+        catatan_masuk = st.text_input("Supplier / Keterangan", "-")
+        
+        if st.form_submit_button("📥 Simpan Barang Masuk"):
+            waktu_sekarang = dapatkan_waktu_wib()
+            st.session_state.stok[barang_pilihan] += jumlah_masuk
+            st.session_state.riwayat.insert(0, {"Waktu": waktu_sekarang, "Tipe": "MASUK", "Barang": barang_pilihan, "Jumlah": jumlah_masuk, "Pembeli / Keterangan": catatan_masuk})
             if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                st.success("Stok berhasil diperbarui!")
+                st.success(f"Berhasil menambah stok {barang_pilihan} (+{jumlah_masuk} pcs)!")
+                pesan_tg = f"📥 **BARANG MASUK**\n📦 {barang_pilihan}\n➕ +{jumlah_masuk} pcs\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs\n📝 {catatan_masuk}"
+                threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                 st.rerun()
 
 elif active_menu == "📤 Barang Keluar":
-    st.header("📤 Form Barang Keluar (Outbound)")
-    with st.form("f_keluar", clear_on_submit=True):
-        b_pilih = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys()))
-        jml = st.number_input("Jumlah Keluar", min_value=1, value=1)
-        pembeli = st.text_input("Nama Pembeli / Proyek", "")
-        if st.form_submit_button("Simpan Barang Keluar"):
-            if jml > st.session_state.stok[b_pilih]:
-                st.error("Stok tidak mencukupi!")
+    st.markdown("#### Form Transaksi Barang Keluar (Outbound)")
+    with st.form("form_keluar", clear_on_submit=True):
+        barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
+        stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
+        st.info(f"Sisa Stok `{barang_pilihan}` saat ini: **{stok_saat_ini} pcs**")
+        
+        jumlah_keluar = st.number_input("Jumlah Keluar (pcs)", min_value=1, value=1, step=1)
+        nama_pembeli = st.text_input("Nama Pembeli / Proyek", "")
+        foto_bukti = st.file_uploader("Upload Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
+        
+        if st.form_submit_button("📤 Simpan Pengiriman"):
+            if jumlah_keluar > stok_saat_ini: st.error(f"Stok tidak cukup! Hanya tersedia {stok_saat_ini} pcs.")
+            elif not nama_pembeli.strip(): st.warning("Mohon isi Nama Pembeli / Proyek!")
             else:
-                st.session_state.stok[b_pilih] -= jml
-                st.session_state.riwayat.insert(0, {"Waktu": dapatkan_waktu_wib(), "Tipe": "KELUAR", "Barang": b_pilih, "Jumlah": jml, "Pembeli / Keterangan": pembeli})
+                waktu_sekarang = dapatkan_waktu_wib()
+                st.session_state.stok[barang_pilihan] -= jumlah_keluar
+                st.session_state.riwayat.insert(0, {"Waktu": waktu_sekarang, "Tipe": "KELUAR", "Barang": barang_pilihan, "Jumlah": jumlah_keluar, "Pembeli / Keterangan": nama_pembeli.strip()})
                 if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                    st.success("Pengiriman berhasil dicatat!")
+                    st.success(f"Pengiriman {barang_pilihan} sebanyak {jumlah_keluar} pcs berhasil dicatat!")
+                    pesan_tg = f"📤 **BARANG KELUAR**\n📦 {barang_pilihan}\n➖ -{jumlah_keluar} pcs\n👤 Pembeli: {nama_pembeli}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs"
+                    threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                     st.rerun()
 
 elif active_menu == "📜 Riwayat Transaksi":
-    st.header("📜 Riwayat Log Transaksi Gudang")
-    if st.session_state.riwayat:
-        st.dataframe(pd.DataFrame(st.session_state.riwayat), use_container_width=True, hide_index=True)
-    else:
+    st.markdown("#### Riwayat Log Transaksi Gudang")
+    if not st.session_state.riwayat:
         st.info("Belum ada riwayat transaksi.")
+    else:
+        df_riwayat = pd.DataFrame(st.session_state.riwayat)
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            filter_tipe = st.selectbox("Filter Tipe", ["SEMUA", "MASUK", "KELUAR", "BARANG BARU"])
+        with col_f2:
+            search_item = st.text_input("Cari Barang / Keterangan", "")
+            
+        df_filtered = df_riwayat.copy()
+        if filter_tipe != "SEMUA":
+            df_filtered = df_filtered[df_filtered["Tipe"] == filter_tipe]
+        if search_item:
+            mask = df_filtered["Barang"].astype(str).str.contains(search_item, case=False, na=False) | df_filtered["Pembeli / Keterangan"].astype(str).str.contains(search_item, case=False, na=False)
+            df_filtered = df_filtered[mask]
+            
+        st.dataframe(df_filtered, use_container_width=True, hide_index=True)
+        
+        c_ex1, c_ex2 = st.columns(2)
+        with c_ex1:
+            st.download_button("📥 Ekspor Riwayat Excel", buat_excel_bytes(df_filtered, "Riwayat"), f"Riwayat_{datetime.now().strftime('%Y%m%d')}.xlsx", use_container_width=True)
+        with c_ex2:
+            pdf_bytes = buat_pdf_tabel("RIWAYAT TRANSAKSI", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], [[str(r["Waktu"]), str(r["Tipe"]), str(r["Barang"]), f"{r['Jumlah']} pcs", str(r["Pembeli / Keterangan"])] for _, r in df_filtered.iterrows()], [35, 25, 60, 20, 50])
+            st.download_button("📄 Cetak Riwayat PDF", pdf_bytes, f"Riwayat_{datetime.now().strftime('%Y%m%d')}.pdf", use_container_width=True)
 
-else:
-    st.header(active_menu)
-    st.info("Fitur untuk menu ini aktif dan siap digunakan.")
+elif active_menu == "🗓️ Laporan Periodik":
+    st.markdown("#### Laporan Transaksi Berdasarkan Rentang Tanggal")
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        tgl_mulai = st.date_input("Tanggal Mulai", date.today().replace(day=1))
+    with col_d2:
+        tgl_selesai = st.date_input("Tanggal Selesai", date.today())
+        
+    if tgl_mulai > tgl_selesai:
+        st.error("Tanggal mulai tidak boleh melebihi tanggal selesai!")
+    else:
+        riwayat_filtered = filter_riwayat_berdasarkan_rentang(st.session_state.riwayat, tgl_mulai, tgl_selesai)
+        if not riwayat_filtered:
+            st.warning("Tidak ada transaksi pada rentang tanggal tersebut.")
+        else:
+            df_periodik = pd.DataFrame(riwayat_filtered)
+            m_in = sum(safe_int(x.get("Jumlah", 0)) for x in riwayat_filtered if x.get("Tipe") == "MASUK")
+            m_out = sum(safe_int(x.get("Jumlah", 0)) for x in riwayat_filtered if x.get("Tipe") == "KELUAR")
+            
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Total Masuk", f"{m_in} pcs")
+            mc2.metric("Total Keluar", f"{m_out} pcs")
+            mc3.metric("Total Transaksi", f"{len(riwayat_filtered)}")
+            
+            st.dataframe(df_periodik, use_container_width=True, hide_index=True)
+            info_tgl = f"Periode: {tgl_mulai.strftime('%d-%m-%Y')} s/d {tgl_selesai.strftime('%d-%m-%Y')}"
+            
+            c_ex1, c_ex2 = st.columns(2)
+            with c_ex1:
+                st.download_button("📥 Ekspor Laporan Excel", buat_excel_bytes(df_periodik, "Periodik"), f"Laporan_{tgl_mulai}_{tgl_selesai}.xlsx", use_container_width=True)
+            with c_ex2:
+                pdf_bytes = buat_pdf_tabel("LAPORAN PERIODIK", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], [[str(r["Waktu"]), str(r["Tipe"]), str(r["Barang"]), f"{r['Jumlah']} pcs", str(r["Pembeli / Keterangan"])] for _, r in df_periodik.iterrows()], [35, 25, 60, 20, 50], info_tambahan=info_tgl)
+                st.download_button("📄 Cetak Laporan PDF", pdf_bytes, f"Laporan_{tgl_mulai}_{tgl_selesai}.pdf", use_container_width=True)
+
+elif active_menu == "💾 Backup Data":
+    st.markdown("#### Unduh Backup Lengkap Database")
+    excel_backup = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
+    st.download_button(
+        "💾 Unduh Backup Excel (Stok & Riwayat)",
+        data=excel_backup,
+        file_name=f"BACKUP_GUDANG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+elif active_menu == "⚙️ Pengaturan & Reset":
+    st.markdown("#### Pengaturan & Reset Pabrik")
+    st.warning("⚠️ **Zona Bahaya:** Tindakan ini akan mengosongkan riwayat dan mengembalikan stok ke kondisi default awal.")
+    
+    langkah1 = st.checkbox("Saya memahami risiko ini")
+    teks_konfirmasi = st.text_input("Ketik `RESET-DATABASE` untuk mengonfirmasi:", disabled=not langkah1)
+    
+    if st.button("🚨 Reset Semua Data", disabled=not (langkah1 and teks_konfirmasi.strip() == "RESET-DATABASE")):
+        backup_bytes = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
+        kirim_dokumen_telegram(f"🚨 **AUTO-BACKUP SEBELUM RESET**\n{dapatkan_waktu_wib()}", backup_bytes, f"Backup_Reset_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        
+        stok_reset = STOK_DEFAULT.copy()
+        riwayat_reset = []
+        if save_data_atomic(stok_reset, riwayat_reset):
+            st.session_state.stok = stok_reset
+            st.session_state.riwayat = riwayat_reset
+            st.success("Database berhasil di-reset ke pengaturan awal!")
+            st.rerun()
+
+elif active_menu == "ℹ️ Tentang Aplikasi":
+    st.markdown("#### Tentang Aplikasi WMS Microcement")
+    st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
+    st.info("Versi: 2.5 (Production Ready)")
