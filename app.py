@@ -362,6 +362,10 @@ elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
     barang = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
     jumlah = st.number_input("Jumlah Masuk", min_value=1, step=1)
+    
+    # Input Tanggal Transaksi (Default Hari Ini)
+    tgl_transaksi = st.date_input("📅 Tanggal Transaksi", value=date.today())
+    
     keterangan = st.text_input("Supplier / Keterangan (Opsional)").strip()
     uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
@@ -370,9 +374,12 @@ elif menu == "📥 Restok Barang Masuk":
             foto_bytes = kompres_gambar(uploaded_file)
             stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
             
+            # Format waktu: Tanggal pilihan + Jam saat ini
+            waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
+            
             stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
             riwayat_terbaru.append({
-                "Waktu": dapatkan_waktu_wib(), 
+                "Waktu": waktu_simpan, 
                 "Tipe": "MASUK", 
                 "Barang": barang, 
                 "Jumlah": f"+{jumlah} pcs", 
@@ -382,7 +389,7 @@ elif menu == "📥 Restok Barang Masuk":
             if save_data_atomic(stok_terbaru, riwayat_terbaru):
                 st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
                 
-                pesan_tg = f"📥 BARANG MASUK!\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
+                pesan_tg = f"📥 BARANG MASUK!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
                 kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
                 st.balloons()
                 st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
@@ -397,6 +404,10 @@ elif menu == "📤 Pengiriman Barang Keluar":
     
     jumlah = st.number_input("Jumlah Keluar", min_value=1, max_value=max(1, stok_ini), step=1)
     pembeli = st.text_input("👤 Nama Pembeli / Klien").strip()
+    
+    # Input Tanggal Transaksi (Default Hari Ini)
+    tgl_transaksi = st.date_input("📅 Tanggal Transaksi", value=date.today())
+    
     uploaded_file = st.file_uploader("📷 Upload Surat Jalan / Bukti Terima (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Proses Pengiriman"):
@@ -416,8 +427,11 @@ elif menu == "📤 Pengiriman Barang Keluar":
                     stok_terbaru[barang] = stok_saat_ini - jumlah
                     sisa = stok_terbaru[barang]
                     
+                    # Format waktu: Tanggal pilihan + Jam saat ini
+                    waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
+                    
                     riwayat_terbaru.append({
-                        "Waktu": dapatkan_waktu_wib(), 
+                        "Waktu": waktu_simpan, 
                         "Tipe": "KELUAR", 
                         "Barang": barang, 
                         "Jumlah": f"-{jumlah} pcs", 
@@ -427,7 +441,7 @@ elif menu == "📤 Pengiriman Barang Keluar":
                     if save_data_atomic(stok_terbaru, riwayat_terbaru):
                         st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
                         
-                        pesan_tg = f"📤 BARANG KELUAR!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
+                        pesan_tg = f"📤 BARANG KELUAR!\nTanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
                         if sisa == 0:
                             pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
                         elif sisa < 5:
