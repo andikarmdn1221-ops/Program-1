@@ -10,13 +10,7 @@ import threading
 from fpdf import FPDF
 from PIL import Image
 
-# Konfigurasi Halaman & Tema Gelap Elegan
-st.set_page_config(
-    page_title="Microcement Warehouse", 
-    page_icon="📦", 
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
@@ -201,12 +195,12 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
-# ADVANCED STYLING - ELEGANT DARK MODE
+# ADVANCED STYLING - CLEAN PROFESSIONAL DARK MODE
 # -----------------------------------------------------------------------------
 st.markdown("""
     <style>
     [data-testid="stSidebar"] {
-        background-color: #0B0F19;
+        background-color: #0F172A;
         border-right: 1px solid #1E293B;
         padding-top: 10px;
     }
@@ -214,39 +208,39 @@ st.markdown("""
         color: #94A3B8 !important;
     }
     .stApp {
-        background-color: #0F172A;
+        background-color: #0B0F19;
         color: #F8FAFC;
     }
     div[data-testid="stMetric"] {
-        background-color: #1E293B;
-        border: 1px solid #334155;
+        background-color: #111827;
+        border: 1px solid #1F2937;
         border-radius: 12px;
         padding: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
     }
     div[data-testid="stMetricLabel"] p {
         font-size: 11px !important;
         font-weight: 700 !important;
-        color: #94A3B8;
+        color: #9CA3AF;
         text-transform: uppercase;
         letter-spacing: 0.5px;
     }
     div[data-testid="stMetricValue"] div {
         font-size: 26px !important;
         font-weight: 800 !important;
-        color: #F8FAFC;
+        color: #F9FAFB;
     }
     .stButton button {
         border-radius: 8px;
         font-weight: 600;
-        border: 1px solid #334155;
-        background-color: #1E293B;
-        color: #F8FAFC;
+        border: 1px solid #374151;
+        background-color: #1F2937;
+        color: #F9FAFB;
     }
     .stButton button:hover {
         border-color: #3B82F6;
         color: #3B82F6;
-        background-color: #0F172A;
+        background-color: #111827;
     }
     .stRadio div[role="radiogroup"] {
         gap: 2px;
@@ -267,12 +261,6 @@ st.markdown("""
     }
     .stRadio div[role="radiogroup"] label[data-baseweb="radio"] div[aria-checked="true"] {
         background-color: #2563EB !important;
-    }
-    /* Input & Selectbox Styling for Dark Mode */
-    .stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
-        background-color: #1E293B !important;
-        color: #F8FAFC !important;
-        border-color: #334155 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -341,16 +329,16 @@ with col_h1:
     sub_teks = "Ringkasan stok gudang secara real-time" if active_menu == "Dashboard" else "Pengelolaan sistem warehouse"
     st.markdown(f"""
         <div style="padding-top: 2px;">
-            <div style="font-size: 21px; font-weight: 800; color: #F8FAFC; line-height: 1.1;">{active_menu}</div>
-            <div style="font-size: 11px; color: #94A3B8; margin-top: 3px;">{sub_teks}</div>
+            <div style="font-size: 21px; font-weight: 800; color: #F9FAFB; line-height: 1.1;">{active_menu}</div>
+            <div style="font-size: 11px; color: #9CA3AF; margin-top: 3px;">{sub_teks}</div>
         </div>
     """, unsafe_allow_html=True)
 
 with col_h2:
     st.markdown(f"""
         <div style="text-align: right; padding-top: 6px;">
-            <div style="font-size: 10px; color: #94A3B8;">Terakhir diperbarui:</div>
-            <div style="font-size: 11px; font-weight: 600; color: #E2E8F0;">{dapatkan_waktu_wib()}</div>
+            <div style="font-size: 10px; color: #9CA3AF;">Terakhir diperbarui:</div>
+            <div style="font-size: 11px; font-weight: 600; color: #E5E7EB;">{dapatkan_waktu_wib()}</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -364,16 +352,16 @@ with col_h3:
 
 with col_h4:
     st.markdown("""
-        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; background: #1E293B; border: 1px solid #334155; padding: 5px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
-            <div style="background: #334155; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #F8FAFC;">AG</div>
+        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; background: #111827; border: 1px solid #1F2937; padding: 5px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
+            <div style="background: #374151; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #F9FAFB;">AG</div>
             <div style="text-align: left;">
-                <div style="font-size: 11px; font-weight: 700; color: #F8FAFC; line-height: 1.1;">Admin Gudang</div>
-                <div style="font-size: 9px; color: #94A3B8; font-weight: 500;">Administrator</div>
+                <div style="font-size: 11px; font-weight: 700; color: #F9FAFB; line-height: 1.1;">Admin Gudang</div>
+                <div style="font-size: 9px; color: #9CA3AF; font-weight: 500;">Administrator</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-st.markdown("<hr style='margin: 14px 0 20px 0; border: none; border-top: 1px solid #334155;'>", unsafe_allow_html=True)
+st.markdown("<hr style='margin: 14px 0 20px 0; border: none; border-top: 1px solid #1F2937;'>", unsafe_allow_html=True)
 
 if not st.session_state.is_connected:
     st.error("🚨 KONEKSI DATABASE TERPUTUS! Periksa koneksi internet / URL Google Sheets Anda.")
@@ -663,4 +651,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.markdown("#### Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.3 Pro Enterprise (Dark Theme Optimized)")
+    st.info("Versi: 3.4 Pro Enterprise (Clean & Elegant Dark Mode)")
