@@ -137,7 +137,7 @@ def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE & AUTO CHECK NOTIFIKASI
+# DATA ENGINE & AUTO CHECK TELEGRAM
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
@@ -148,16 +148,34 @@ def fetch_data_from_gsheet_direct(url):
     except:
         return None
 
-@st.cache_data(ttl=300)
-def fetch_data_cached(url):
-    return fetch_data_from_gsheet_direct(url)
-
 def load_data(force_refresh=False):
-    data = fetch_data_from_gsheet_direct(URL_GSHEET_API) if force_refresh else fetch_data_cached(URL_GSHEET_API)
+    # Mengambil langsung tanpa cache saat force_refresh agar data benar-benar baru
+    if force_refresh:
+        data = fetch_data_from_gsheet_direct(URL_GSHEET_API)
+    else:
+        @st.cache_data(ttl=300)
+        def _cached(u):
+            return fetch_data_from_gsheet_direct(u)
+        data = _cached(URL_GSHEET_API)
+
     if data is None: return {}, [], False
     stok_dict = {row[0]: safe_int(row[1]) for row in data.get("stok", [])[1:] if len(row) >= 2}
     riwayat_list = [{"Waktu": r[0], "Tipe": r[1], "Barang": r[2], "Jumlah": safe_int(r[3]), "Pembeli / Keterangan": r[4] if len(r)>4 else "-"} for r in data.get("riwayat", [])[1:] if len(r)>=4]
     return stok_dict or STOK_DEFAULT.copy(), riwayat_list, True
+
+def cek_dan_kirim_stok_kritis(stok_dict):
+    """Fungsi mandiri untuk mendeteksi stok habis/kritis dan mengirimkannya ke Telegram"""
+    habis = [b for b, q in stok_dict.items() if q == 0]
+    kritis = [b for b, q in stok_dict.items() if 0 < q < 5]
+    
+    if habis or kritis:
+        pesan_auto = f"🚨 **LAPORAN OTOMATIS: STOK KRITIS & HABIS**\n📅 {dapatkan_waktu_wib()}\n\n"
+        if habis:
+            pesan_auto += "🔴 *Stok Habis (0 pcs)*:\n" + "".join([f"• {b}\n" for b in habis]) + "\n"
+        if kritis:
+            pesan_auto += "🟡 *Stok Kritis (< 5 pcs)*:\n" + "".join([f"• {b}: {stok_dict[b]} pcs\n" for b in kritis])
+        
+        threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_auto,)).start()
 
 def save_data_atomic(stok_terbaru, riwayat_terbaru):
     if not st.session_state.get("is_connected", False) or not URL_GSHEET_API: return False
@@ -173,21 +191,10 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
         return False
 
 if "is_connected" not in st.session_state:
-    s_load, r_load, is_conn = load_data()
+    s_load, r_load, is_conn = load_data(force_refresh=True)
     st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_load, r_load, is_conn
-
-    # -------------------------------------------------------------------------
-    # FITUR OTOMATIS: CEK STOK KRITIS / HABIS SAAT PERTAMA KALI APLIKASI DIBUKA
-    # -------------------------------------------------------------------------
-    habis_init = [b for b, q in s_load.items() if q == 0]
-    kritis_init = [b for b, q in s_load.items() if 0 < q < 5]
-    if habis_init or kritis_init:
-        pesan_auto = f"🚨 **LAPORAN OTOMATIS: STOK KRITIS & HABIS**\n📅 {dapatkan_waktu_wib()}\n\n"
-        if habis_init:
-            pesan_auto += "🔴 *Stok Habis (0 pcs)*:\n" + "".join([f"• {b}\n" for b in habis_init]) + "\n"
-        if kritis_init:
-            pesan_auto += "🟡 *Stok Kritis (< 5 pcs)*:\n" + "".join([f"• {b}: {s_load[b]} pcs\n" for b in kritis_init])
-        threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_auto,)).start()
+    # Jalankan pengecekan otomatis saat pertama kali aplikasi dibuka
+    cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
 # CUSTOM CSS
@@ -277,7 +284,10 @@ with col_h2:
     st.markdown(f"<div style='text-align: right; font-size: 11px; color: #64748B;'>Update: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
     if st.button("🔄 Refresh Data", use_container_width=False):
         st.cache_data.clear()
-        st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = load_data(force_refresh=True)
+        s_fresh, r_fresh, is_conn_fresh = load_data(force_refresh=True)
+        st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_fresh, r_fresh, is_conn_fresh
+        # Cek ulang dan kirim notifikasi jika ada barang kritis saat tombol refresh ditekan
+        cek_dan_kirim_stok_kritis(s_fresh)
         st.rerun()
 
 st.divider()
