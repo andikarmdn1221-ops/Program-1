@@ -18,7 +18,29 @@ TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 # -----------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# 📱 RESPONSIVE LAYOUT HACK (Deteksi Ukuran Layar HP)
+# -----------------------------------------------------------------------------
+# Trik JS untuk mendeteksi lebar layar browser pengguna.
+scr_width = st.components.v1.html(
+    """
+    <script>
+    var width = window.parent.screen.width;
+    window.parent.postMessage({
+        type: 'streamlit:set_query_params',
+        query_params: {width: width}
+    }, '*');
+    </script>
+    """,
+    height=0,
+)
+
+# Ambil lebar layar dari query parameter
+width_str = st.query_params.get("width", "1024") # Default 1024 jika gagal deteksi
+SCREEN_WIDTH = int(width_str)
+IS_MOBILE = SCREEN_WIDTH < 768  # Tentukan breakpoint mobile (768px)
+
+# -----------------------------------------------------------------------------
+# HELPER FUNCTIONS (Kecepatan & Optimasi Tetap Dipertahankan)
 # -----------------------------------------------------------------------------
 
 def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
@@ -143,7 +165,7 @@ def filter_riwayat_berdasarkan_rentang(riwayat_list, tgl_mulai, tgl_selesai):
     return hasil
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE
+# DATA ENGINE (Cache Durasi Dinaikkan Menjadi 5 Menit)
 # -----------------------------------------------------------------------------
 
 def fetch_data_from_gsheet_direct(url):
@@ -157,7 +179,7 @@ def fetch_data_from_gsheet_direct(url):
         st.warning(f"Gagal memuat data dari Google Sheets: {e}")
         return {}
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300) # Cache dinaikkan menjadi 5 menit agar HP tidak sering loading fetch
 def fetch_data_cached(url):
     return fetch_data_from_gsheet_direct(url)
 
@@ -284,11 +306,21 @@ if menu == "📊 Lihat Semua Stok":
     total_jenis = len(st.session_state.stok)
     total_unit = sum(st.session_state.stok.values())
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📦 Total Jenis", f"{total_jenis} Item")
-    c2.metric("📊 Total Stok", f"{total_unit} pcs")
-    c3.metric("🟡 Kritis (<5)", f"{len(item_kritis)} Item")
-    c4.metric("🔴 Habis (0)", f"{len(item_habis)} Item")
+    # 📱 RESPONSIVE LAYOUT (Metrik)
+    # Jika HP, metrik ditampilkan vertikal penuh agar mudah dibaca
+    if IS_MOBILE:
+        with st.container():
+            st.metric("📦 Total Jenis", f"{total_jenis} Item")
+            st.metric("📊 Total Stok", f"{total_unit} pcs")
+            st.metric("🟡 Kritis (<5)", f"{len(item_kritis)} Item")
+            st.metric("🔴 Habis (0)", f"{len(item_habis)} Item")
+    else:
+        # Jika PC, tampilkan 4 kolom horizontal seperti biasa
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📦 Total Jenis", f"{total_jenis} Item")
+        c2.metric("📊 Total Stok", f"{total_unit} pcs")
+        c3.metric("🟡 Kritis (<5)", f"{len(item_kritis)} Item")
+        c4.metric("🔴 Habis (0)", f"{len(item_habis)} Item")
     
     st.divider()
     keyword = st.text_input("🔍 Cari Nama Barang...", "")
@@ -310,23 +342,46 @@ if menu == "📊 Lihat Semua Stok":
     if data_tabel:
         df = pd.DataFrame(data_tabel)
         
-        st.dataframe(
-            df,
-            column_config={
-                "Nama Barang": st.column_config.TextColumn("Nama Barang", help="Jenis produk mikrosemen"),
-                "Jumlah Stok": st.column_config.NumberColumn("Sisa Stok", format="%d pcs"),
-                "Progress Visual": st.column_config.ProgressColumn(
-                    "Indikator Level Stok",
-                    help="Visualisasi sisa stok relatif terhadap item terbanyak",
-                    format="%d pcs",
-                    min_value=0,
-                    max_value=max(max_stok_val, 20),
-                ),
-                "Status": st.column_config.TextColumn("Status Stok"),
-            },
-            hide_index=True,
-            use_container_width=True
-        )
+        # 📱 RESPONSIVE LAYOUT (Tabel)
+        # Jika HP, gunakan expander untuk menyembunyikan tabel panjang secara default
+        if IS_MOBILE:
+            with st.expander("📊 Lihat Tabel Stok Lengkap", expanded=False):
+                st.dataframe(
+                    df,
+                    column_config={
+                        "Nama Barang": st.column_config.TextColumn("Nama Barang", help="Jenis produk mikrosemen"),
+                        "Jumlah Stok": st.column_config.NumberColumn("Sisa Stok", format="%d pcs"),
+                        "Progress Visual": st.column_config.ProgressColumn(
+                            "Indikator Level Stok",
+                            help="Visualisasi sisa stok relatif terhadap item terbanyak",
+                            format="%d pcs",
+                            min_value=0,
+                            max_value=max(max_stok_val, 20),
+                        ),
+                        "Status": st.column_config.TextColumn("Status Stok"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+        else:
+            # Jika PC, tabel selalu terbuka
+            st.dataframe(
+                df,
+                column_config={
+                    "Nama Barang": st.column_config.TextColumn("Nama Barang", help="Jenis produk mikrosemen"),
+                    "Jumlah Stok": st.column_config.NumberColumn("Sisa Stok", format="%d pcs"),
+                    "Progress Visual": st.column_config.ProgressColumn(
+                        "Indikator Level Stok",
+                        help="Visualisasi sisa stok relatif terhadap item terbanyak",
+                        format="%d pcs",
+                        min_value=0,
+                        max_value=max(max_stok_val, 20),
+                    ),
+                    "Status": st.column_config.TextColumn("Status Stok"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
         
         c_dl1, c_dl2 = st.columns(2)
         excel_stok_bytes = buat_excel_bytes(df, sheet_name="Stok Barang")
@@ -338,26 +393,54 @@ if menu == "📊 Lihat Semua Stok":
         
         st.divider()
         st.subheader("📈 Visualisasi Grafik Stok")
-        tipe_grafik = st.radio("Pilih Model Tampilan Grafik:", ["📊 Batang Tegak (Vertical)", "📉 Batang Mendatar (Horizontal)", "📈 Grafik Garis (Line Chart)"], horizontal=True)
-        theme_plotly = "plotly_dark" if dark_mode else "plotly"
         
-        if tipe_grafik == "📊 Batang Tegak (Vertical)":
-            df_sorted = df.sort_values(by="Jumlah Stok", ascending=False)
-            fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok", color="Status", text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
-            fig_bar.update_traces(textposition='outside')
-            fig_bar.update_layout(xaxis_tickangle=-45, uniformtext_minsize=8, uniformtext_mode='hide')
-        elif tipe_grafik == "📉 Batang Mendatar (Horizontal)":
-            df_sorted = df.sort_values(by="Jumlah Stok", ascending=True)
-            fig_bar = px.bar(df_sorted, x="Jumlah Stok", y="Nama Barang", color="Status", orientation='h', text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
-            fig_bar.update_traces(textposition='outside')
-            fig_bar.update_layout(height=650)
+        # 📱 RESPONSIVE LAYOUT (Grafik)
+        # Jika HP, grafik SANGAT BERAT. Kita buatkan checkbox untuk memuatnya hanya jika diminta.
+        if IS_MOBILE:
+            tampilkan_grafik = st.checkbox("📈 Tampilkan Grafik Interaktif (Mungkin lambat di HP)", value=False)
+            if tampilkan_grafik:
+                with st.spinner("Memuat grafik Plotly..."):
+                    tipe_grafik = st.radio("Pilih Model Tampilan Grafik:", ["📊 Batang Tegak", "📉 Batang Mendatar", "📈 Grafik Garis"], horizontal=True)
+                    theme_plotly = "plotly_dark" if dark_mode else "plotly"
+                    
+                    if tipe_grafik == "📊 Batang Tegak":
+                        df_sorted = df.sort_values(by="Jumlah Stok", ascending=False)
+                        fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok", color="Status", text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+                        fig_bar.update_traces(textposition='outside')
+                        fig_bar.update_layout(xaxis_tickangle=-45, uniformtext_minsize=8, uniformtext_mode='hide')
+                    elif tipe_grafik == "📉 Batang Mendatar":
+                        df_sorted = df.sort_values(by="Jumlah Stok", ascending=True)
+                        fig_bar = px.bar(df_sorted, x="Jumlah Stok", y="Nama Barang", color="Status", orientation='h', text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+                        fig_bar.update_traces(textposition='outside')
+                        fig_bar.update_layout(height=650)
+                    else:
+                        df_sorted = df.sort_values(by="Nama Barang", ascending=True)
+                        fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok", markers=True, template=theme_plotly)
+                        fig_bar.update_traces(line_color="#38BDF8", marker_size=8)
+                        fig_bar.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(fig_bar, use_container_width=True)
         else:
-            df_sorted = df.sort_values(by="Nama Barang", ascending=True)
-            fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok", markers=True, template=theme_plotly)
-            fig_bar.update_traces(line_color="#38BDF8", marker_size=8)
-            fig_bar.update_layout(xaxis_tickangle=-45)
+            # Jika PC, tampilkan grafik langsung seperti biasa
+            tipe_grafik = st.radio("Pilih Model Tampilan Grafik:", ["📊 Batang Tegak (Vertical)", "📉 Batang Mendatar (Horizontal)", "📈 Grafik Garis (Line Chart)"], horizontal=True)
+            theme_plotly = "plotly_dark" if dark_mode else "plotly"
             
-        st.plotly_chart(fig_bar, use_container_width=True)
+            if tipe_grafik == "📊 Batang Tegak (Vertical)":
+                df_sorted = df.sort_values(by="Jumlah Stok", ascending=False)
+                fig_bar = px.bar(df_sorted, x="Nama Barang", y="Jumlah Stok", color="Status", text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+                fig_bar.update_traces(textposition='outside')
+                fig_bar.update_layout(xaxis_tickangle=-45, uniformtext_minsize=8, uniformtext_mode='hide')
+            elif tipe_grafik == "📉 Batang Mendatar (Horizontal)":
+                df_sorted = df.sort_values(by="Jumlah Stok", ascending=True)
+                fig_bar = px.bar(df_sorted, x="Jumlah Stok", y="Nama Barang", color="Status", orientation='h', text="Jumlah Stok", color_discrete_map={"🟢 AMAN": "#2ecc71", "🟡 KRITIS": "#f1c40f", "🔴 HABIS!": "#e74c3c"}, template=theme_plotly)
+                fig_bar.update_traces(textposition='outside')
+                fig_bar.update_layout(height=650)
+            else:
+                df_sorted = df.sort_values(by="Nama Barang", ascending=True)
+                fig_bar = px.line(df_sorted, x="Nama Barang", y="Jumlah Stok", markers=True, template=theme_plotly)
+                fig_bar.update_traces(line_color="#38BDF8", marker_size=8)
+                fig_bar.update_layout(xaxis_tickangle=-45)
+                
+            st.plotly_chart(fig_bar, use_container_width=True)
 
 elif menu == "📥 Restok Barang Masuk":
     st.header("📥 Tambah Stok Barang")
@@ -373,7 +456,6 @@ elif menu == "📥 Restok Barang Masuk":
             foto_bytes = kompres_gambar(uploaded_file)
             waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
             
-            # Direct session state update (Sangat Cepat)
             st.session_state.stok[barang] = st.session_state.stok.get(barang, 0) + jumlah
             st.session_state.riwayat.append({
                 "Waktu": waktu_simpan, 
@@ -416,7 +498,6 @@ elif menu == "📤 Pengiriman Barang Keluar":
             with st.spinner('Memproses pengiriman dan menyimpan data...'):
                 foto_bytes = kompres_gambar(uploaded_file)
                 
-                # Direct session state update (Sangat Cepat)
                 st.session_state.stok[barang] -= jumlah
                 sisa = st.session_state.stok[barang]
                 waktu_simpan = f"{tgl_transaksi.strftime('%d-%m-%Y')} {datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%H:%M')}"
@@ -474,8 +555,19 @@ elif menu == "➕ Tambah Jenis Barang":
 elif menu == "📜 Riwayat Transaksi":
     st.header("📜 Catatan Riwayat Transaksi")
     if st.session_state.riwayat:
+        # 📱 RESPONSIVE LAYOUT (Riwayat)
+        # Jika HP, riwayat panjang memakan memori. Kita balik dan batasi 100 terakhir saja.
+        riwayat_list = []
+        if IS_MOBILE:
+            st.info("📱 Mode HP: Menampilkan 100 riwayat transaksi terbaru.")
+            # Balik urutan agar yang terbaru di atas, dan ambil maksimal 100
+            riwayat_list = list(reversed(st.session_state.riwayat))[:100]
+        else:
+            # Jika PC, tampilkan urutan normal penuh seperti biasa
+            riwayat_list = st.session_state.riwayat
+            
         riwayat_formatted = []
-        for item in st.session_state.riwayat:
+        for item in riwayat_list:
             dt = parse_waktu(item.get("Waktu", ""))
             waktu_str = dt.strftime("%d-%m-%Y %H:%M") if dt else item.get("Waktu", "")
             riwayat_formatted.append({
