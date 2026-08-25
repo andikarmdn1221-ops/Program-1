@@ -56,12 +56,13 @@ def kirim_notifikasi_telegram(pesan, foto_bytes=None):
         pass
 
 def kirim_dokumen_telegram(pesan, file_bytes, file_name):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return False
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
-        requests.post(url, data={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"document": (file_name, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, timeout=30)
+        res = requests.post(url, data={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"document": (file_name, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, timeout=30)
+        return res.status_code == 200
     except:
-        pass
+        return False
 
 def buat_excel_bytes(df, sheet_name="Data"):
     output = io.BytesIO()
@@ -194,11 +195,10 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
-# ADVANCED STYLING (PIXEL PERFECT REFERENSI TANPA KOTAK LOGO ATAS)
+# ADVANCED STYLING
 # -----------------------------------------------------------------------------
 st.markdown("""
     <style>
-    /* Global Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #0F172A;
         border-right: 1px solid #1E293B;
@@ -207,13 +207,9 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #94A3B8 !important;
     }
-    
-    /* Main Content Background */
     .stApp {
         background-color: #F8FAFC;
     }
-
-    /* Metric Card Customization */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -233,8 +229,6 @@ st.markdown("""
         font-weight: 800 !important;
         color: #0F172A;
     }
-
-    /* Buttons styling */
     .stButton button {
         border-radius: 8px;
         font-weight: 600;
@@ -246,8 +240,6 @@ st.markdown("""
         border-color: #2563EB;
         color: #2563EB;
     }
-
-    /* Transform radio buttons into sleek professional menu items */
     .stRadio div[role="radiogroup"] {
         gap: 2px;
     }
@@ -262,11 +254,9 @@ st.markdown("""
     .stRadio div[role="radiogroup"] label:hover {
         background-color: #1E293B !important;
     }
-    /* Hide radio circle bullets completely */
     .stRadio div[role="radiogroup"] input[type="radio"] {
         display: none;
     }
-    /* Style active selected menu item */
     .stRadio div[role="radiogroup"] label[data-baseweb="radio"] div[aria-checked="true"] {
         background-color: #2563EB !important;
     }
@@ -274,7 +264,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION (TANPA LOGO KOTAK DI ATAS)
+# SIDEBAR NAVIGATION
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("""
@@ -615,15 +605,20 @@ elif active_menu == "Laporan Periodik":
                 st.download_button("📄 Cetak Laporan PDF", pdf_bytes, f"Laporan_{tgl_mulai}_{tgl_selesai}.pdf", use_container_width=True)
 
 elif active_menu == "Backup Data":
-    st.markdown("#### Unduh Backup Lengkap Database")
-    excel_backup = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
-    st.download_button(
-        "💾 Unduh Backup Excel (Stok & Riwayat)",
-        data=excel_backup,
-        file_name=f"BACKUP_GUDANG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
+    st.markdown("#### Kirim Backup Database ke Telegram")
+    st.write("Klik tombol di bawah untuk membuat file backup lengkap database (stok & riwayat) dan mengirimkannya langsung ke Telegram.")
+    
+    if st.button("📤 Kirim Backup ke Telegram", use_container_width=True):
+        with st.spinner("Sedang memproses dan mengirim file backup ke Telegram..."):
+            excel_backup = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
+            nama_file = f"BACKUP_GUDANG_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            pesan_backup = f"💾 **MANUAL BACKUP DATABASE GUDANG**\n📅 {dapatkan_waktu_wib()}"
+            
+            berhasil = kirim_dokumen_telegram(pesan_backup, excel_backup, nama_file)
+            if berhasil:
+                st.success("✅ File backup database berhasil dikirim ke Telegram!")
+            else:
+                st.error("❌ Gagal mengirim file ke Telegram. Periksa kembali token bot dan chat ID Anda.")
 
 elif active_menu == "Pengaturan & Reset":
     st.markdown("#### Pengaturan & Reset Pabrik")
