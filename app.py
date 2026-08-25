@@ -10,15 +10,131 @@ import threading
 from fpdf import FPDF
 from PIL import Image
 
-st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide", initial_sidebar_state="expanded")
 
+# =============================================================================
+# INJEKSI CSS KUSTOM (DESAIN MODERN SAAS DASHBOARD ALA REFERENSI)
+# =============================================================================
+st.markdown("""
+<style>
+    /* Latar Belakang Utama aplikasi */
+    .stApp {
+        background-color: #F4F7FE;
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 1px solid #E2E8F0;
+    }
+    /* Warna Teks Sidebar */
+    [data-testid="stSidebar"] * {
+        color: #4A5568 !important;
+    }
+    
+    /* Heading & Judul */
+    h1, h2, h3 {
+        color: #1A202C !important;
+        font-weight: 700 !important;
+    }
+    
+    /* Metrik (Kartu Angka / Dashboard) */
+    [data-testid="stMetric"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 16px !important;
+        padding: 20px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.03) !important;
+        transition: transform 0.2s ease;
+    }
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08) !important;
+    }
+    [data-testid="stMetricLabel"] p {
+        color: #718096 !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stMetricValue"] div {
+        color: #2D3748 !important;
+        font-size: 32px !important;
+        font-weight: 800 !important;
+    }
+    
+    /* Tabel / Dataframe */
+    [data-testid="stDataFrame"], [data-testid="stTable"] {
+        background-color: #FFFFFF !important;
+        border-radius: 16px !important;
+        padding: 15px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.03) !important;
+        border: 1px solid #E2E8F0 !important;
+    }
+    
+    /* Tombol-tombol Utama */
+    .stButton button, .stDownloadButton button {
+        background-color: #1A202C !important;
+        color: #FFFFFF !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        border: none !important;
+        padding: 10px 24px !important;
+        transition: all 0.3s ease !important;
+    }
+    .stButton button:hover, .stDownloadButton button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(26, 32, 44, 0.2) !important;
+        background-color: #2D3748 !important;
+        color: #FFFFFF !important;
+    }
+    
+    /* Input Form (Text, Number, Date) */
+    .stTextInput input, .stNumberInput input, .stDateInput input {
+        background-color: #F8FAFC !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 10px !important;
+        color: #2D3748 !important;
+        padding: 10px 15px !important;
+    }
+    
+    /* Selectbox */
+    div[data-baseweb="select"] > div {
+        background-color: #F8FAFC !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 10px !important;
+        color: #2D3748 !important;
+    }
+    
+    /* Container & Form Background */
+    [data-testid="stForm"] {
+        background-color: #FFFFFF !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.03) !important;
+        border: 1px solid #E2E8F0 !important;
+    }
+    
+    /* Alert / Peringatan */
+    [data-testid="stAlert"] {
+        border-radius: 10px !important;
+        border: none !important;
+    }
+    
+    /* Garis Batas (Divider) */
+    hr {
+        border-top: 1px solid #E2E8F0 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# =============================================================================
+# LOGIKA APLIKASI (SAMA PERSIS DENGAN SEBELUMNYA)
+# =============================================================================
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
-# -----------------------------------------------------------------------------
-# HELPER FUNCTIONS
-# -----------------------------------------------------------------------------
 def safe_int(val, default=0):
     try:
         if pd.isna(val) or val is None: return default
@@ -137,9 +253,6 @@ STOK_DEFAULT = {
 def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
-# -----------------------------------------------------------------------------
-# DATA ENGINE & AUTO CHECK TELEGRAM
-# -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
     try:
@@ -239,11 +352,11 @@ active_menu = active_menu_raw.split(" ", 1)[1] if " " in active_menu_raw else ac
 # -----------------------------------------------------------------------------
 col_h1, col_h2, col_h3 = st.columns([3, 1.5, 1])
 with col_h1:
-    st.title(f"📦 {active_menu}")
+    st.title(f"{active_menu}")
 with col_h2:
     st.markdown(f"<div style='text-align: right; font-size:12px; color:gray;'>Waktu: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
 with col_h3:
-    if st.button("🔄 Refresh"):
+    if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
         s_fresh, r_fresh, is_conn_fresh = load_data(force_refresh=True)
         st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_fresh, r_fresh, is_conn_fresh
@@ -485,4 +598,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.4 Pro Enterprise (Original Layout)")
+    st.info("Versi: 4.0 Pro (Modern Light Theme)")
