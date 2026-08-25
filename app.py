@@ -98,6 +98,35 @@ def kirim_dokumen_telegram(pesan, file_bytes, file_name):
     except Exception as e:
         print(f"Gagal mengirim dokumen backup ke Telegram: {e}")
 
+def cek_dan_kirim_stok_kritis_manual():
+    """Memeriksa stok kritis/habis dan mengirimkannya ke Telegram secara instan."""
+    stok_sekarang = st.session_state.get("stok", {})
+    
+    item_habis = [b for b, q in stok_sekarang.items() if q == 0]
+    item_kritis = [b for b, q in stok_sekarang.items() if 0 < q < 5]
+    
+    if not item_habis and not item_kritis:
+        return "AMAN"
+    
+    pesan = "🚨 **LAPORAN OTOMATIS: STATUS STOK GUDANG** 🚨\n"
+    pesan += f"⏰ Waktu Pengecekan: {dapatkan_waktu_wib()}\n\n"
+    
+    if item_habis:
+        pesan += "🔴 **BARANG HABIS (Stok 0):**\n"
+        for item in item_habis:
+            pesan += f"• {item} (0 pcs)\n"
+        pesan += "\n"
+        
+    if item_kritis:
+        pesan += "🟡 **BARANG KRITIS (Stok < 5):**\n"
+        for item in item_kritis:
+            pesan += f"• {item} ({stok_sekarang[item]} pcs)\n"
+            
+    pesan += "\n⚠️ Mohon segera lakukan restok untuk item di atas."
+    
+    threading.Thread(target=kirim_notifikasi_telegram, args=(pesan,)).start()
+    return "TERKIRIM"
+
 def buat_excel_backup_lengkap(stok_dict, riwayat_list):
     """Membuat 1 file Excel berisi 2 sheet: Stok dan Riwayat Transaksi."""
     output = io.BytesIO()
@@ -285,7 +314,6 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
         st.error(f"Gagal menyimpan data ke database: {e}")
         return False
 
-# Inisialisasi Session State & Status Koneksi Database
 if "is_connected" not in st.session_state:
     stok_loaded, riwayat_loaded, is_conn = load_data()
     st.session_state.stok = stok_loaded
@@ -310,6 +338,15 @@ if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True)
     else:
         st.error("Gagal menyinkronkan data dari Google Sheets.")
     st.rerun()
+
+st.sidebar.divider()
+st.sidebar.subheader("📡 Laporan Otomatis Telegram")
+if st.sidebar.button("🚨 Cek & Kirim Daftar Stok Kritis", use_container_width=True):
+    status_kirim = cek_dan_kirim_stok_kritis_manual()
+    if status_kirim == "AMAN":
+        st.sidebar.success("✅ Semua stok aman / tidak ada yang kritis!")
+    else:
+        st.sidebar.warning("📤 Daftar stok kritis berhasil dikirim ke Telegram!")
 
 st.sidebar.divider()
 
@@ -631,16 +668,13 @@ elif menu == "⚙️ Reset & Backup Data":
         
     if st.button("🚨 Ya, Reset Semua Data Sekarang", disabled=not is_valid_reset):
         with st.spinner("📦 Membuat auto-backup dan memproses reset database..."):
-            # 1. Buat File Backup Excel (Stok + Riwayat)
             backup_bytes = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
             waktu_str = datetime.now(ZoneInfo('Asia/Jakarta')).strftime('%Y%m%d_%H%M%S')
             nama_file_backup = f"AUTO_BACKUP_GUDANG_{waktu_str}.xlsx"
             
-            # 2. Kirim Dokumen Backup ke Telegram
             pesan_tg = f"🚨 **AUTOBACKUP SEBELUM RESET**\nWaktu: {dapatkan_waktu_wib()}\n\nFile terlampir adalah backup data stok & riwayat transaksi sebelum sistem di-reset."
             kirim_dokumen_telegram(pesan_tg, backup_bytes, nama_file_backup)
             
-            # 3. Proses Reset Data ke Google Sheets
             stok_reset = STOK_DEFAULT.copy()
             riwayat_reset = []
             if save_data_atomic(stok_reset, riwayat_reset):
