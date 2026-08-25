@@ -21,7 +21,6 @@ TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 # -----------------------------------------------------------------------------
 
 def kompres_dan_encode_gambar(file_uploaded, max_size=(600, 600), quality=70):
-    """Mekompresi gambar uploaded dan mengubah ke Base64 untuk dikirim ke GDrive."""
     if file_uploaded is None:
         return "", None
     try:
@@ -219,8 +218,7 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
         "riwayat": riwayat_payload
     }
     try:
-        # Upload GDrive butuh waktu, timeout dinaikkan ke 45 detik
-        res = requests.post(URL_GSHEET_API, json=payload, timeout=45) 
+        res = requests.post(URL_GSHEET_API, json=payload, timeout=45)
         res.raise_for_status()
         st.cache_data.clear()
         return True
@@ -385,11 +383,10 @@ elif menu == "📥 Restok Barang Masuk":
                 "Barang": barang, 
                 "Jumlah": f"+{jumlah} pcs", 
                 "Pembeli / Keterangan": keterangan or "Restok",
-                "Bukti": bukti_b64 # Dikirim sebagai base64, nanti akan diubah jadi URL GDrive oleh GAS
+                "Bukti": bukti_b64
             })
             
             if save_data_atomic(stok_terbaru, riwayat_terbaru):
-                # Ambil data terbaru dari server (yang bukti-nya sudah diubah jadi link Google Drive)
                 st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
                 
                 pesan_tg = f"📥 BARANG MASUK!\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
