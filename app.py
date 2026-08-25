@@ -194,7 +194,7 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
-# CUSTOM STYLING (PRO DASHBOARD UI)
+# ADVANCED STYLING (PIXEL PERFECT REFERENSI)
 # -----------------------------------------------------------------------------
 st.markdown("""
     <style>
@@ -239,18 +239,36 @@ st.markdown("""
         border-radius: 8px;
         font-weight: 600;
         border: 1px solid #CBD5E1;
+        background-color: #FFFFFF;
+        color: #0F172A;
     }
-    
-    /* Hide Radio default bullets & style nicely */
+    .stButton button:hover {
+        border-color: #2563EB;
+        color: #2563EB;
+    }
+
+    /* Transform radio buttons into sleek professional menu items */
+    .stRadio div[role="radiogroup"] {
+        gap: 2px;
+    }
     .stRadio div[role="radiogroup"] label {
-        padding: 6px 10px;
-        border-radius: 6px;
+        background-color: transparent;
+        padding: 8px 12px;
+        border-radius: 8px;
         margin-bottom: 2px;
-        transition: background 0.2s;
+        transition: all 0.2s ease;
+        cursor: pointer;
     }
     .stRadio div[role="radiogroup"] label:hover {
-        background-color: #1E293B;
-        color: #F8FAFC !important;
+        background-color: #1E293B !important;
+    }
+    /* Hide radio circle bullets completely */
+    .stRadio div[role="radiogroup"] input[type="radio"] {
+        display: none;
+    }
+    /* Style active selected menu item */
+    .stRadio div[role="radiogroup"] label[data-baseweb="radio"] div[aria-checked="true"] {
+        background-color: #2563EB !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -260,32 +278,34 @@ st.markdown("""
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("""
-        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 0 20px 0;">
-            <div style="background: #2563EB; color: white; padding: 8px 10px; border-radius: 8px; font-weight: bold; font-size: 18px;">📦</div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0 20px 5px;">
+            <div style="background: #FFFFFF; color: #0F172A; padding: 8px 10px; border-radius: 8px; font-weight: bold; font-size: 18px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">📦</div>
             <div>
                 <div style="font-weight: 800; font-size: 15px; color: #FFFFFF !important; letter-spacing: 0.5px;">MICROCEMENT</div>
-                <div style="font-size: 10px; color: #64748B !important; letter-spacing: 1px;">WAREHOUSE</div>
+                <div style="font-size: 10px; color: #64748B !important; letter-spacing: 1px; font-weight: 600;">WAREHOUSE</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-bottom: 5px;'>MENU UTAMA</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-bottom: 4px; padding-left: 5px;'>MENU UTAMA</p>", unsafe_allow_html=True)
     m_utama = st.radio("Menu Utama", ["Dashboard", "Lihat Semua Stok", "Kelola Master Item"], label_visibility="collapsed")
     
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 5px;'>TRANSAKSI</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>TRANSAKSI</p>", unsafe_allow_html=True)
     m_transaksi = st.radio("Transaksi", ["Barang Masuk", "Barang Keluar"], label_visibility="collapsed")
     
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 5px;'>LAPORAN</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>LAPORAN</p>", unsafe_allow_html=True)
     m_laporan = st.radio("Laporan", ["Riwayat Transaksi", "Laporan Periodik"], label_visibility="collapsed")
     
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 5px;'>SISTEM</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>SISTEM</p>", unsafe_allow_html=True)
     m_sistem = st.radio("Sistem", ["Backup Data", "Pengaturan & Reset", "Tentang Aplikasi"], label_visibility="collapsed")
     
     st.divider()
     st.markdown("""
-        <div style="background: #1E293B; padding: 10px; border-radius: 8px; border: 1px solid #334155;">
-            <div style="font-size: 11px; font-weight: 600; color: #E2E8F0;">🔔 Notifikasi Telegram</div>
-            <div style="font-size: 10px; color: #22C55E; margin-top: 2px;">🟢 Aktif - Terhubung</div>
+        <div style="background: #1E293B; padding: 12px; border-radius: 8px; border: 1px solid #334155; margin-top: 10px;">
+            <div style="font-size: 11px; font-weight: 700; color: #E2E8F0; display: flex; align-items: center; gap: 6px;">
+                <span>🔔</span> Notifikasi Telegram
+            </div>
+            <div style="font-size: 10px; color: #22C55E; margin-top: 4px; font-weight: 600;">🟢 Aktif - Terhubung</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -311,22 +331,22 @@ elif m_sistem != st.session_state.prev_sistem:
 active_menu = st.session_state.active_tab
 
 # -----------------------------------------------------------------------------
-# PRO HEADER BAR (HEADER ALA GAMBAR REFERENSI)
+# PRO HEADER BAR (PIXEL PERFECT INTEGRATION)
 # -----------------------------------------------------------------------------
-col_h1, col_h2, col_h3, col_h4 = st.columns([2.2, 1.8, 1.2, 1.3])
+col_h1, col_h2, col_h3, col_h4 = st.columns([2.4, 1.8, 1.1, 1.4])
 
 with col_h1:
     sub_teks = "Ringkasan stok gudang secara real-time" if active_menu == "Dashboard" else "Pengelolaan sistem warehouse"
     st.markdown(f"""
-        <div>
-            <div style="font-size: 20px; font-weight: 800; color: #0F172A; line-height: 1.2;">{active_menu}</div>
-            <div style="font-size: 11px; color: #64748B; margin-top: 2px;">{sub_teks}</div>
+        <div style="padding-top: 2px;">
+            <div style="font-size: 21px; font-weight: 800; color: #0F172A; line-height: 1.1;">{active_menu}</div>
+            <div style="font-size: 11px; color: #64748B; margin-top: 3px;">{sub_teks}</div>
         </div>
     """, unsafe_allow_html=True)
 
 with col_h2:
     st.markdown(f"""
-        <div style="text-align: right; padding-top: 4px;">
+        <div style="text-align: right; padding-top: 6px;">
             <div style="font-size: 10px; color: #64748B;">Terakhir diperbarui:</div>
             <div style="font-size: 11px; font-weight: 600; color: #334155;">{dapatkan_waktu_wib()}</div>
         </div>
@@ -342,11 +362,11 @@ with col_h3:
 
 with col_h4:
     st.markdown("""
-        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 4px 10px; border-radius: 8px;">
-            <div style="background: #E2E8F0; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #334155;">AG</div>
+        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 5px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+            <div style="background: #E2E8F0; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #334155;">AG</div>
             <div style="text-align: left;">
-                <div style="font-size: 11px; font-weight: 700; color: #0F172A; line-height: 1;">Admin Gudang</div>
-                <div style="font-size: 9px; color: #64748B;">Administrator</div>
+                <div style="font-size: 11px; font-weight: 700; color: #0F172A; line-height: 1.1;">Admin Gudang</div>
+                <div style="font-size: 9px; color: #64748B; font-weight: 500;">Administrator</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -366,16 +386,11 @@ total_unit = sum(st.session_state.stok.values())
 # -----------------------------------------------------------------------------
 if active_menu == "Dashboard":
     if item_habis or item_kritis:
-        col_warn1, col_warn2 = st.columns([5, 1])
-        with col_warn1:
-            st.markdown(f"""
-                <div style="background-color: #FEF2F2; border: 1px solid #FCA5A5; padding: 10px 14px; border-radius: 8px; color: #991B1B; font-weight: 500; font-size: 13px; display: flex; align-items: center; gap: 8px;">
-                    ⚠️ <b>PERHATIAN:</b> {len(item_habis)} item stok habis, {len(item_kritis)} item stok kritis.
-                </div>
-            """, unsafe_allow_html=True)
-        with col_warn2:
-            pass
-        st.write("")
+        st.markdown(f"""
+            <div style="background-color: #FEF2F2; border: 1px solid #FCA5A5; padding: 10px 14px; border-radius: 8px; color: #991B1B; font-weight: 500; font-size: 13px; margin-bottom: 16px;">
+                ⚠️ <b>PERHATIAN:</b> {len(item_habis)} item stok habis, {len(item_kritis)} item stok kritis.
+            </div>
+        """, unsafe_allow_html=True)
         
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TOTAL JENIS", f"{total_jenis}", "Jenis Barang")
@@ -634,4 +649,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.markdown("#### Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.0 Pro Enterprise (Full Feature)")
+    st.info("Versi: 3.1 Pro Enterprise (Pixel-Perfect UI)")
