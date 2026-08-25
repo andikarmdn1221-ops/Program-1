@@ -195,108 +195,22 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
-# ADVANCED STYLING - CLEAN PROFESSIONAL DARK MODE
-# -----------------------------------------------------------------------------
-st.markdown("""
-    <style>
-    [data-testid="stSidebar"] {
-        background-color: #0F172A;
-        border-right: 1px solid #1E293B;
-        padding-top: 10px;
-    }
-    [data-testid="stSidebar"] * {
-        color: #94A3B8 !important;
-    }
-    .stApp {
-        background-color: #0B0F19;
-        color: #F8FAFC;
-    }
-    div[data-testid="stMetric"] {
-        background-color: #111827;
-        border: 1px solid #1F2937;
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-    }
-    div[data-testid="stMetricLabel"] p {
-        font-size: 11px !important;
-        font-weight: 700 !important;
-        color: #9CA3AF;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    div[data-testid="stMetricValue"] div {
-        font-size: 26px !important;
-        font-weight: 800 !important;
-        color: #F9FAFB;
-    }
-    .stButton button {
-        border-radius: 8px;
-        font-weight: 600;
-        border: 1px solid #374151;
-        background-color: #1F2937;
-        color: #F9FAFB;
-    }
-    .stButton button:hover {
-        border-color: #3B82F6;
-        color: #3B82F6;
-        background-color: #111827;
-    }
-    .stRadio div[role="radiogroup"] {
-        gap: 2px;
-    }
-    .stRadio div[role="radiogroup"] label {
-        background-color: transparent;
-        padding: 8px 12px;
-        border-radius: 8px;
-        margin-bottom: 2px;
-        transition: all 0.2s ease;
-        cursor: pointer;
-    }
-    .stRadio div[role="radiogroup"] label:hover {
-        background-color: #1E293B !important;
-    }
-    .stRadio div[role="radiogroup"] input[type="radio"] {
-        display: none;
-    }
-    .stRadio div[role="radiogroup"] label[data-baseweb="radio"] div[aria-checked="true"] {
-        background-color: #2563EB !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION
+# SIDEBAR NAVIGATION (TAMPILAN SEMULA)
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("""
-        <div style="padding: 15px 0 15px 5px;">
-            <div style="font-weight: 900; font-size: 16px; color: #FFFFFF !important; letter-spacing: 1px;">MICROCEMENT</div>
-            <div style="font-size: 10px; color: #64748B !important; letter-spacing: 1.5px; font-weight: 700;">WAREHOUSE</div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("### 📦 WMS Microcement")
+    st.markdown("---")
     
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-bottom: 4px; padding-left: 5px;'>MENU UTAMA</p>", unsafe_allow_html=True)
-    m_utama = st.radio("Menu Utama", ["🏠 Dashboard", "📋 Lihat Semua Stok", "➕ Kelola Master Item"], label_visibility="collapsed")
+    m_utama = st.radio("MENU UTAMA", ["🏠 Dashboard", "📋 Lihat Semua Stok", "➕ Kelola Master Item"])
+    st.markdown("---")
+    m_transaksi = st.radio("TRANSAKSI", ["📥 Barang Masuk", "📤 Barang Keluar"])
+    st.markdown("---")
+    m_laporan = st.radio("LAPORAN", ["📊 Riwayat Transaksi", "📈 Laporan Periodik"])
+    st.markdown("---")
+    m_sistem = st.radio("SISTEM", ["💾 Backup Data", "⚙️ Pengaturan & Reset", "ℹ️ Tentang Aplikasi"])
     
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>TRANSAKSI</p>", unsafe_allow_html=True)
-    m_transaksi = st.radio("Transaksi", ["📥 Barang Masuk", "📤 Barang Keluar"], label_visibility="collapsed")
-    
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>LAPORAN</p>", unsafe_allow_html=True)
-    m_laporan = st.radio("Laporan", ["📊 Riwayat Transaksi", "📈 Laporan Periodik"], label_visibility="collapsed")
-    
-    st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>SISTEM</p>", unsafe_allow_html=True)
-    m_sistem = st.radio("Sistem", ["💾 Backup Data", "⚙️ Pengaturan & Reset", "ℹ️ Tentang Aplikasi"], label_visibility="collapsed")
-    
-    st.divider()
-    st.markdown("""
-        <div style="background: #1E293B; padding: 12px; border-radius: 8px; border: 1px solid #334155; margin-top: 10px;">
-            <div style="font-size: 11px; font-weight: 700; color: #E2E8F0; display: flex; align-items: center; gap: 6px;">
-                <span>🔔</span> Notifikasi Telegram
-            </div>
-            <div style="font-size: 10px; color: #22C55E; margin-top: 4px; font-weight: 600;">🟢 Aktif - Terhubung</div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("---")
+    st.info("🟢 Notifikasi Telegram: Aktif")
 
 if "prev_utama" not in st.session_state: st.session_state.prev_utama = m_utama
 if "prev_transaksi" not in st.session_state: st.session_state.prev_transaksi = m_transaksi
@@ -321,47 +235,22 @@ active_menu_raw = st.session_state.active_tab
 active_menu = active_menu_raw.split(" ", 1)[1] if " " in active_menu_raw else active_menu_raw
 
 # -----------------------------------------------------------------------------
-# PRO HEADER BAR
+# HEADER & KONTROL UTAMA
 # -----------------------------------------------------------------------------
-col_h1, col_h2, col_h3, col_h4 = st.columns([2.4, 1.8, 1.1, 1.4])
-
+col_h1, col_h2, col_h3 = st.columns([3, 1.5, 1])
 with col_h1:
-    sub_teks = "Ringkasan stok gudang secara real-time" if active_menu == "Dashboard" else "Pengelolaan sistem warehouse"
-    st.markdown(f"""
-        <div style="padding-top: 2px;">
-            <div style="font-size: 21px; font-weight: 800; color: #F9FAFB; line-height: 1.1;">{active_menu}</div>
-            <div style="font-size: 11px; color: #9CA3AF; margin-top: 3px;">{sub_teks}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
+    st.title(f"📦 {active_menu}")
 with col_h2:
-    st.markdown(f"""
-        <div style="text-align: right; padding-top: 6px;">
-            <div style="font-size: 10px; color: #9CA3AF;">Terakhir diperbarui:</div>
-            <div style="font-size: 11px; font-weight: 600; color: #E5E7EB;">{dapatkan_waktu_wib()}</div>
-        </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown(f"<div style='text-align: right; font-size:12px; color:gray;'>Waktu: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
 with col_h3:
-    if st.button("🔄 Refresh Data", use_container_width=True):
+    if st.button("🔄 Refresh"):
         st.cache_data.clear()
         s_fresh, r_fresh, is_conn_fresh = load_data(force_refresh=True)
         st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_fresh, r_fresh, is_conn_fresh
         cek_dan_kirim_stok_kritis(s_fresh)
         st.rerun()
 
-with col_h4:
-    st.markdown("""
-        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; background: #111827; border: 1px solid #1F2937; padding: 5px 12px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.2);">
-            <div style="background: #374151; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #F9FAFB;">AG</div>
-            <div style="text-align: left;">
-                <div style="font-size: 11px; font-weight: 700; color: #F9FAFB; line-height: 1.1;">Admin Gudang</div>
-                <div style="font-size: 9px; color: #9CA3AF; font-weight: 500;">Administrator</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<hr style='margin: 14px 0 20px 0; border: none; border-top: 1px solid #1F2937;'>", unsafe_allow_html=True)
+st.markdown("---")
 
 if not st.session_state.is_connected:
     st.error("🚨 KONEKSI DATABASE TERPUTUS! Periksa koneksi internet / URL Google Sheets Anda.")
@@ -372,114 +261,59 @@ total_jenis = len(st.session_state.stok)
 total_unit = sum(st.session_state.stok.values())
 
 # -----------------------------------------------------------------------------
-# ROUTING HALAMAN & FITUR LENGKAP
+# ROUTING HALAMAN
 # -----------------------------------------------------------------------------
 if active_menu == "Dashboard":
     if item_habis or item_kritis:
-        st.markdown(f"""
-            <div style="background-color: #451A03; border: 1px solid #B45309; padding: 10px 14px; border-radius: 8px; color: #FDE68A; font-weight: 500; font-size: 13px; margin-bottom: 16px;">
-                ⚠️ <b>PERHATIAN:</b> {len(item_habis)} item stok habis, {len(item_kritis)} item stok kritis.
-            </div>
-        """, unsafe_allow_html=True)
+        st.warning(f"⚠️ **PERHATIAN:** {len(item_habis)} item stok habis, {len(item_kritis)} item stok kritis.")
         
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("TOTAL JENIS", f"{total_jenis}", "Jenis Barang")
-    m2.metric("TOTAL STOK", f"{total_unit}", "Total PCS")
-    m3.metric("STOK KRITIS", f"{len(item_kritis)}", "Stok < 5 pcs")
-    m4.metric("STOK HABIS", f"{len(item_habis)}", "Stok = 0 pcs")
+    m1.metric("Total Jenis Barang", f"{total_jenis}")
+    m2.metric("Total Keseluruhan Stok", f"{total_unit} pcs")
+    m3.metric("Stok Kritis (<5)", f"{len(item_kritis)}")
+    m4.metric("Stok Habis (0)", f"{len(item_habis)}")
     
-    st.write("")
-    col_chart, col_kritis_table = st.columns([1.1, 1.1])
+    st.markdown("---")
+    col_chart, col_kritis_table = st.columns([1, 1])
     
     with col_chart:
-        st.markdown("#### **Status Stok**")
+        st.subheader("📊 Status Stok")
         jumlah_aman = total_jenis - len(item_habis) - len(item_kritis)
         df_donut = pd.DataFrame({
             "Status": ["Stok Aman", "Stok Kritis", "Stok Habis"],
             "Jumlah": [jumlah_aman, len(item_kritis), len(item_habis)]
         })
-        fig_donut = px.pie(
-            df_donut, names="Status", values="Jumlah", hole=0.6,
-            color="Status",
-            color_discrete_map={"Stok Aman": "#22c55e", "Stok Kritis": "#eab308", "Stok Habis": "#ef4444"}
-        )
-        fig_donut.update_layout(
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            font=dict(color='#F8FAFC'),
-            margin=dict(t=10, b=10, l=10, r=10), 
-            height=250, 
-            showlegend=True
-        )
+        fig_donut = px.pie(df_donut, names="Status", values="Jumlah", hole=0.5, color="Status",
+                           color_discrete_map={"Stok Aman": "#2ecc71", "Stok Kritis": "#f1c40f", "Stok Habis": "#e74c3c"})
         st.plotly_chart(fig_donut, use_container_width=True)
-        st.success("✅ Stok aman mencukupi. Pertahankan ketersediaan barang.")
         
     with col_kritis_table:
-        st.markdown("#### **Stok Kritis & Habis**")
+        st.subheader("🚨 Stok Kritis & Habis")
         data_kritis_habis = []
         for b, q in st.session_state.stok.items():
             if q < 5:
-                status_label = "HABIS" if q == 0 else "KRITIS"
-                data_kritis_habis.append({
-                    "Nama Barang": b, 
-                    "Sisa Stok": f"{q} pcs", 
-                    "Status": status_label
-                })
-        
+                data_kritis_habis.append({"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "HABIS" if q == 0 else "KRITIS"})
         if data_kritis_habis:
-            df_kritis_ui = pd.DataFrame(data_kritis_habis)
-            st.dataframe(
-                df_kritis_ui,
-                column_config={
-                    "Status": st.column_config.TextColumn("Status", width="small")
-                },
-                use_container_width=True, hide_index=True
-            )
+            st.dataframe(pd.DataFrame(data_kritis_habis), use_container_width=True, hide_index=True)
         else:
-            st.info("Tidak ada barang dalam status kritis atau habis.")
+            st.success("Semua stok dalam kondisi aman!")
 
-    st.divider()
-    st.markdown("#### **Ringkasan Semua Stok**")
-    
-    col_search, col_filter_status = st.columns([2.5, 1])
-    with col_search:
-        keyword = st.text_input("🔍 Cari nama barang...", "", label_visibility="collapsed", placeholder="Cari nama barang...")
-    with col_filter_status:
-        pilih_status_filter = st.selectbox("Status", ["Semua Status", "AMAN", "KRITIS", "HABIS"], label_visibility="collapsed")
+    st.markdown("---")
+    st.subheader("📋 Ringkasan Semua Stok")
+    keyword = st.text_input("🔍 Cari nama barang...", "")
     
     data_tabel = []
-    max_stok = max(st.session_state.stok.values()) if st.session_state.stok else 30
     for barang in sorted(st.session_state.stok.keys(), key=kunci_urut_nama):
         jumlah = st.session_state.stok[barang]
         status = "HABIS" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
-        
-        match_keyword = keyword.lower() in barang.lower()
-        match_status = (pilih_status_filter == "Semua Status") or (status == pilih_status_filter)
-        
-        if match_keyword and match_status:
-            data_tabel.append({
-                "Nama Barang": barang, 
-                "Sisa Stok": f"{jumlah} pcs", 
-                "Indikator Stok": jumlah, 
-                "Status": status
-            })
+        if keyword.lower() in barang.lower():
+            data_tabel.append({"Nama Barang": barang, "Jumlah Stok": f"{jumlah} pcs", "Status": status})
             
     if data_tabel:
-        st.dataframe(
-            pd.DataFrame(data_tabel),
-            column_config={
-                "Nama Barang": st.column_config.TextColumn("Nama Barang"),
-                "Sisa Stok": st.column_config.TextColumn("Sisa Stok"),
-                "Indikator Stok": st.column_config.ProgressColumn("Indikator Stok", min_value=0, max_value=max(max_stok, 20), format="%d"),
-                "Status": st.column_config.TextColumn("Status")
-            },
-            hide_index=True, use_container_width=True
-        )
-    else:
-        st.warning("Tidak ditemukan barang yang sesuai dengan filter.")
+        st.dataframe(pd.DataFrame(data_tabel), use_container_width=True, hide_index=True)
 
 elif active_menu == "Lihat Semua Stok":
-    st.markdown("#### Daftar Keseluruhan Stok Gudang")
+    st.subheader("Daftar Keseluruhan Stok Gudang")
     data_all = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k,v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
     df_all = pd.DataFrame(data_all)
     st.dataframe(df_all, use_container_width=True, hide_index=True)
@@ -492,7 +326,7 @@ elif active_menu == "Lihat Semua Stok":
         st.download_button("📄 Cetak PDF", pdf_bytes, f"Stok_{datetime.now().strftime('%Y%m%d')}.pdf", use_container_width=True)
 
 elif active_menu == "Kelola Master Item":
-    st.markdown("#### Tambah Jenis Barang Baru")
+    st.subheader("Tambah Jenis Barang Baru")
     with st.form("form_tambah_barang", clear_on_submit=True):
         nama_baru = st.text_input("Nama Barang Baru")
         stok_awal = st.number_input("Stok Awal (pcs)", min_value=0, value=0, step=1)
@@ -510,7 +344,7 @@ elif active_menu == "Kelola Master Item":
                     st.rerun()
 
 elif active_menu == "Barang Masuk":
-    st.markdown("#### Form Transaksi Barang Masuk (Inbound)")
+    st.subheader("Form Transaksi Barang Masuk (Inbound)")
     with st.form("form_masuk", clear_on_submit=True):
         barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
         jumlah_masuk = st.number_input("Jumlah Masuk (pcs)", min_value=1, value=1, step=1)
@@ -528,7 +362,7 @@ elif active_menu == "Barang Masuk":
                 st.rerun()
 
 elif active_menu == "Barang Keluar":
-    st.markdown("#### Form Transaksi Barang Keluar (Outbound)")
+    st.subheader("Form Transaksi Barang Keluar (Outbound)")
     with st.form("form_keluar", clear_on_submit=True):
         barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
         stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
@@ -552,7 +386,7 @@ elif active_menu == "Barang Keluar":
                     st.rerun()
 
 elif active_menu == "Riwayat Transaksi":
-    st.markdown("#### Riwayat Log Transaksi Gudang")
+    st.subheader("Riwayat Log Transaksi Gudang")
     if not st.session_state.riwayat:
         st.info("Belum ada riwayat transaksi.")
     else:
@@ -580,7 +414,7 @@ elif active_menu == "Riwayat Transaksi":
             st.download_button("📄 Cetak Riwayat PDF", pdf_bytes, f"Riwayat_{datetime.now().strftime('%Y%m%d')}.pdf", use_container_width=True)
 
 elif active_menu == "Laporan Periodik":
-    st.markdown("#### Laporan Transaksi Berdasarkan Rentang Tanggal")
+    st.subheader("Laporan Transaksi Berdasarkan Rentang Tanggal")
     col_d1, col_d2 = st.columns(2)
     with col_d1:
         tgl_mulai = st.date_input("Tanggal Mulai", date.today().replace(day=1))
@@ -614,7 +448,7 @@ elif active_menu == "Laporan Periodik":
                 st.download_button("📄 Cetak Laporan PDF", pdf_bytes, f"Laporan_{tgl_mulai}_{tgl_selesai}.pdf", use_container_width=True)
 
 elif active_menu == "Backup Data":
-    st.markdown("#### Kirim Backup Database ke Telegram")
+    st.subheader("Kirim Backup Database ke Telegram")
     st.write("Klik tombol di bawah untuk membuat file backup lengkap database (stok & riwayat) dan mengirimkannya langsung ke Telegram.")
     
     if st.button("📤 Kirim Backup ke Telegram", use_container_width=True):
@@ -630,7 +464,7 @@ elif active_menu == "Backup Data":
                 st.error("❌ Gagal mengirim file ke Telegram. Periksa kembali token bot dan chat ID Anda.")
 
 elif active_menu == "Pengaturan & Reset":
-    st.markdown("#### Pengaturan & Reset Pabrik")
+    st.subheader("Pengaturan & Reset Pabrik")
     st.warning("⚠️ **Zona Bahaya:** Tindakan ini akan mengosongkan riwayat dan mengembalikan stok ke kondisi default awal.")
     
     langkah1 = st.checkbox("Saya memahami risiko ini")
@@ -649,6 +483,6 @@ elif active_menu == "Pengaturan & Reset":
             st.rerun()
 
 elif active_menu == "Tentang Aplikasi":
-    st.markdown("#### Tentang Aplikasi WMS Microcement")
+    st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.4 Pro Enterprise (Clean & Elegant Dark Mode)")
+    st.info("Versi: 3.4 Pro Enterprise (Original Layout)")
