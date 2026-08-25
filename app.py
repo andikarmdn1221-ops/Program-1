@@ -194,7 +194,7 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
-# ADVANCED STYLING (PIXEL PERFECT REFERENSI)
+# ADVANCED STYLING (PIXEL PERFECT REFERENSI TANPA KOTAK LOGO ATAS)
 # -----------------------------------------------------------------------------
 st.markdown("""
     <style>
@@ -274,30 +274,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION
+# SIDEBAR NAVIGATION (TANPA LOGO KOTAK DI ATAS)
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("""
-        <div style="display: flex; align-items: center; gap: 12px; padding: 10px 0 20px 5px;">
-            <div style="background: #FFFFFF; color: #0F172A; padding: 8px 10px; border-radius: 8px; font-weight: bold; font-size: 18px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">📦</div>
-            <div>
-                <div style="font-weight: 800; font-size: 15px; color: #FFFFFF !important; letter-spacing: 0.5px;">MICROCEMENT</div>
-                <div style="font-size: 10px; color: #64748B !important; letter-spacing: 1px; font-weight: 600;">WAREHOUSE</div>
-            </div>
+        <div style="padding: 15px 0 15px 5px;">
+            <div style="font-weight: 900; font-size: 16px; color: #FFFFFF !important; letter-spacing: 1px;">MICROCEMENT</div>
+            <div style="font-size: 10px; color: #64748B !important; letter-spacing: 1.5px; font-weight: 700;">WAREHOUSE</div>
         </div>
     """, unsafe_allow_html=True)
     
     st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-bottom: 4px; padding-left: 5px;'>MENU UTAMA</p>", unsafe_allow_html=True)
-    m_utama = st.radio("Menu Utama", ["Dashboard", "Lihat Semua Stok", "Kelola Master Item"], label_visibility="collapsed")
+    m_utama = st.radio("Menu Utama", ["🏠 Dashboard", "📋 Lihat Semua Stok", "➕ Kelola Master Item"], label_visibility="collapsed")
     
     st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>TRANSAKSI</p>", unsafe_allow_html=True)
-    m_transaksi = st.radio("Transaksi", ["Barang Masuk", "Barang Keluar"], label_visibility="collapsed")
+    m_transaksi = st.radio("Transaksi", ["📥 Barang Masuk", "📤 Barang Keluar"], label_visibility="collapsed")
     
     st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>LAPORAN</p>", unsafe_allow_html=True)
-    m_laporan = st.radio("Laporan", ["Riwayat Transaksi", "Laporan Periodik"], label_visibility="collapsed")
+    m_laporan = st.radio("Laporan", ["📊 Riwayat Transaksi", "📈 Laporan Periodik"], label_visibility="collapsed")
     
     st.markdown("<p style='font-size: 10px; font-weight: 700; color: #64748B; letter-spacing: 0.5px; margin-top: 15px; margin-bottom: 4px; padding-left: 5px;'>SISTEM</p>", unsafe_allow_html=True)
-    m_sistem = st.radio("Sistem", ["Backup Data", "Pengaturan & Reset", "Tentang Aplikasi"], label_visibility="collapsed")
+    m_sistem = st.radio("Sistem", ["💾 Backup Data", "⚙️ Pengaturan & Reset", "ℹ️ Tentang Aplikasi"], label_visibility="collapsed")
     
     st.divider()
     st.markdown("""
@@ -313,7 +310,7 @@ if "prev_utama" not in st.session_state: st.session_state.prev_utama = m_utama
 if "prev_transaksi" not in st.session_state: st.session_state.prev_transaksi = m_transaksi
 if "prev_laporan" not in st.session_state: st.session_state.prev_laporan = m_laporan
 if "prev_sistem" not in st.session_state: st.session_state.prev_sistem = m_sistem
-if "active_tab" not in st.session_state: st.session_state.active_tab = "Dashboard"
+if "active_tab" not in st.session_state: st.session_state.active_tab = "🏠 Dashboard"
 
 if m_utama != st.session_state.prev_utama:
     st.session_state.active_tab = m_utama
@@ -328,10 +325,11 @@ elif m_sistem != st.session_state.prev_sistem:
     st.session_state.active_tab = m_sistem
     st.session_state.prev_sistem = m_sistem
 
-active_menu = st.session_state.active_tab
+active_menu_raw = st.session_state.active_tab
+active_menu = active_menu_raw.split(" ", 1)[1] if " " in active_menu_raw else active_menu_raw
 
 # -----------------------------------------------------------------------------
-# PRO HEADER BAR (PIXEL PERFECT INTEGRATION)
+# PRO HEADER BAR
 # -----------------------------------------------------------------------------
 col_h1, col_h2, col_h3, col_h4 = st.columns([2.4, 1.8, 1.1, 1.4])
 
@@ -649,4 +647,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.markdown("#### Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.1 Pro Enterprise (Pixel-Perfect UI)")
+    st.info("Versi: 3.2 Pro Enterprise (UI Clean & Modern)")
