@@ -21,6 +21,7 @@ TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 # -----------------------------------------------------------------------------
 
 def kompres_dan_encode_gambar(file_uploaded, max_size=(600, 600), quality=70):
+    """Mekompresi gambar uploaded dan mengubah ke Base64 untuk dikirim ke GAS/GDrive."""
     if file_uploaded is None:
         return "", None
     try:
