@@ -564,13 +564,31 @@ elif menu == "⚙️ Reset & Backup Data":
     col3.download_button("📄 Download Stok (PDF)", data=pdf_bytes, file_name="Laporan_Stok_Mikrosemen.pdf", mime="application/pdf", use_container_width=True)
     
     st.divider()
-    st.subheader("🚨 Reset Data")
-    st.warning("Tombol di bawah ini akan menghapus riwayat dan mengembalikan stok ke kondisi awal.")
-    if st.button("🚨 Reset Semua Data"):
-        stok_reset = STOK_DEFAULT.copy()
-        riwayat_reset = []
-        if save_data_atomic(stok_reset, riwayat_reset):
-            st.session_state.stok = stok_reset
-            st.session_state.riwayat = riwayat_reset
-            st.success("Data berhasil di-reset!")
-            st.rerun()
+    st.subheader("🚨 Reset Data (Zona Bahaya)")
+    
+    st.error("""
+    ⚠️ **PERHATIAN PERINGATAN KEDUA:**
+    Tindakan di bawah ini akan menghapus **SELURUH** riwayat transaksi dan mengembalikan seluruh stok barang ke kondisi awal/pabrik.
+    Data yang sudah di-reset **TIDAK DAPAT DIKEMBALIKAN LAGI**.
+    """)
+    
+    # Verifikasi Langkah 1: Checkbox Persetujuan
+    paham_resiko = st.checkbox("Saya mengerti risiko dan mengonfirmasi ingin menghapus seluruh data gudang.")
+    
+    # Verifikasi Langkah 2: Input Teks Konfirmasi
+    konfirmasi_teks = st.text_input("Ketik kata kunci 'RESET DATA' di bawah untuk membuka kunci tombol:", placeholder="RESET DATA").strip()
+    
+    # Tombol reset hanya terbuka jika kedua syarat terpenuhi
+    tombol_reset_aktif = paham_resiko and (konfirmasi_teks == "RESET DATA")
+    
+    if st.button("🚨 Ya, Reset Semua Data Sekarang", disabled=not tombol_reset_aktif):
+        with st.spinner("Memproses reset seluruh database..."):
+            stok_reset = STOK_DEFAULT.copy()
+            riwayat_reset = []
+            if save_data_atomic(stok_reset, riwayat_reset):
+                st.session_state.stok = stok_reset
+                st.session_state.riwayat = riwayat_reset
+                st.success("✅ Seluruh data gudang berhasil di-reset ke kondisi awal!")
+                st.rerun()
+            else:
+                st.error("Gagal melakukan reset data. Silakan coba lagi nanti.")
