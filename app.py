@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 import re
 import io
+import base64
 from fpdf import FPDF
 from PIL import Image
 
@@ -14,14 +15,13 @@ st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout=
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
-IMGUR_CLIENT_ID = st.secrets.get("IMGUR_CLIENT_ID", "") # Pastikan ini ditambahkan di secrets.toml
 
 # -----------------------------------------------------------------------------
-# HELPER FUNCTIONS & COMPRESSION / UPLOAD
+# HELPER FUNCTIONS & COMPRESSION
 # -----------------------------------------------------------------------------
 
-def kompres_dan_upload_gambar(file_uploaded, max_size=(600, 600), quality=70):
-    """Mekompresi gambar dan mengunggahnya ke Imgur agar GSheet tidak penuh."""
+def kompres_dan_encode_gambar(file_uploaded, max_size=(600, 600), quality=70):
+    """Mekompresi gambar uploaded dan mengubah ke Base64 untuk dikirim ke GDrive."""
     if file_uploaded is None:
         return "", None
     try:
@@ -34,25 +34,12 @@ def kompres_dan_upload_gambar(file_uploaded, max_size=(600, 600), quality=70):
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=quality, optimize=True)
         img_bytes = buffer.getvalue()
-        
-        # Proses Upload ke Imgur
-        imgur_url = ""
-        if IMGUR_CLIENT_ID:
-            url_api = "https://api.imgur.com/3/image"
-            headers = {"Authorization": f"Client-ID {IMGUR_CLIENT_ID}"}
-            res = requests.post(url_api, headers=headers, files={"image": img_bytes}, timeout=15)
-            if res.status_code == 200:
-                imgur_url = res.json()["data"]["link"]
-            else:
-                st.warning("⚠️ Gagal mengunggah ke cloud storage. Menyimpan tanpa URL.")
-                imgur_url = "Gagal Upload URL"
-        else:
-            st.warning("⚠️ Kunci API Imgur belum diatur di secrets.toml.")
-            
-        return imgur_url, img_bytes
+        b64_str = base64.b64encode(img_bytes).decode('utf-8')
+        return b64_str, img_bytes
     except Exception as e:
-        st.warning(f"Gagal memproses gambar: {e}")
-        return "", None
+        st.warning(f"Gagal memproses/mengompresi gambar: {e}")
+        raw_bytes = file_uploaded.getvalue()
+        return base64.b64encode(raw_bytes).decode('utf-8'), raw_bytes
 
 def kirim_notifikasi_telegram(pesan, foto_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -232,7 +219,8 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
         "riwayat": riwayat_payload
     }
     try:
-        res = requests.post(URL_GSHEET_API, json=payload, timeout=30)
+        # Upload GDrive butuh waktu, timeout dinaikkan ke 45 detik
+        res = requests.post(URL_GSHEET_API, json=payload, timeout=45) 
         res.raise_for_status()
         st.cache_data.clear()
         return True
@@ -386,30 +374,30 @@ elif menu == "📥 Restok Barang Masuk":
     uploaded_file = st.file_uploader("📷 Upload Bukti Restok / Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
     
     if st.button("Simpan Barang Masuk"):
-        bukti_url, foto_bytes = kompres_dan_upload_gambar(uploaded_file)
-        
-        stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
-        
-        stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
-        riwayat_terbaru.append({
-            "Waktu": dapatkan_waktu_wib(), 
-            "Tipe": "MASUK", 
-            "Barang": barang, 
-            "Jumlah": f"+{jumlah} pcs", 
-            "Pembeli / Keterangan": keterangan or "Restok",
-            "Bukti": bukti_url
-        })
-        
-        if save_data_atomic(stok_terbaru, riwayat_terbaru):
-            st.session_state.stok = stok_terbaru
-            st.session_state.riwayat = riwayat_terbaru
+        with st.spinner('Menyimpan data dan mengunggah foto ke GDrive...'):
+            bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
+            stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
             
-            pesan_tg = f"📥 BARANG MASUK!\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
-            kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
-            st.balloons()
-            st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
-        else:
-            st.error("Gagal memperbarui stok ke database. Silakan coba lagi.")
+            stok_terbaru[barang] = stok_terbaru.get(barang, 0) + jumlah
+            riwayat_terbaru.append({
+                "Waktu": dapatkan_waktu_wib(), 
+                "Tipe": "MASUK", 
+                "Barang": barang, 
+                "Jumlah": f"+{jumlah} pcs", 
+                "Pembeli / Keterangan": keterangan or "Restok",
+                "Bukti": bukti_b64 # Dikirim sebagai base64, nanti akan diubah jadi URL GDrive oleh GAS
+            })
+            
+            if save_data_atomic(stok_terbaru, riwayat_terbaru):
+                # Ambil data terbaru dari server (yang bukti-nya sudah diubah jadi link Google Drive)
+                st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
+                
+                pesan_tg = f"📥 BARANG MASUK!\nBarang: {barang}\nJumlah: +{jumlah} pcs\nKeterangan: {keterangan or '-'}"
+                kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
+                st.balloons()
+                st.success(f"Berhasil menambahkan {jumlah} pcs ke {barang}!")
+            else:
+                st.error("Gagal memperbarui stok ke database. Silakan coba lagi.")
 
 elif menu == "📤 Pengiriman Barang Keluar":
     st.header("📤 Pengurangan Stok (Barang Keluar)")
@@ -427,40 +415,40 @@ elif menu == "📤 Pengiriman Barang Keluar":
         elif stok_ini == 0:
             st.error("❌ Barang habis!")
         else:
-            stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
-            stok_saat_ini = stok_terbaru.get(barang, 0)
-            
-            if jumlah > stok_saat_ini:
-                st.error(f"❌ Stok terbaru di server ({stok_saat_ini} pcs) tidak mencukupi!")
-            else:
-                bukti_url, foto_bytes = kompres_dan_upload_gambar(uploaded_file)
-                stok_terbaru[barang] = stok_saat_ini - jumlah
-                sisa = stok_terbaru[barang]
+            with st.spinner('Memproses pengiriman dan menyimpan data...'):
+                stok_terbaru, riwayat_terbaru = load_data(force_refresh=True)
+                stok_saat_ini = stok_terbaru.get(barang, 0)
                 
-                riwayat_terbaru.append({
-                    "Waktu": dapatkan_waktu_wib(), 
-                    "Tipe": "KELUAR", 
-                    "Barang": barang, 
-                    "Jumlah": f"-{jumlah} pcs", 
-                    "Pembeli / Keterangan": pembeli,
-                    "Bukti": bukti_url
-                })
-                
-                if save_data_atomic(stok_terbaru, riwayat_terbaru):
-                    st.session_state.stok = stok_terbaru
-                    st.session_state.riwayat = riwayat_terbaru
-                    
-                    pesan_tg = f"📤 BARANG KELUAR!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
-                    if sisa == 0:
-                        pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
-                    elif sisa < 5:
-                        pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
-                        
-                    kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
-                    st.balloons()
-                    st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
+                if jumlah > stok_saat_ini:
+                    st.error(f"❌ Stok terbaru di server ({stok_saat_ini} pcs) tidak mencukupi!")
                 else:
-                    st.error("Gagal memproses transaksi. Silakan coba lagi.")
+                    bukti_b64, foto_bytes = kompres_dan_encode_gambar(uploaded_file)
+                    stok_terbaru[barang] = stok_saat_ini - jumlah
+                    sisa = stok_terbaru[barang]
+                    
+                    riwayat_terbaru.append({
+                        "Waktu": dapatkan_waktu_wib(), 
+                        "Tipe": "KELUAR", 
+                        "Barang": barang, 
+                        "Jumlah": f"-{jumlah} pcs", 
+                        "Pembeli / Keterangan": pembeli,
+                        "Bukti": bukti_b64
+                    })
+                    
+                    if save_data_atomic(stok_terbaru, riwayat_terbaru):
+                        st.session_state.stok, st.session_state.riwayat = load_data(force_refresh=True)
+                        
+                        pesan_tg = f"📤 BARANG KELUAR!\nBarang: {barang}\nKeluar: {jumlah} pcs\nKlien: {pembeli}\nSisa Stok: {sisa} pcs"
+                        if sisa == 0:
+                            pesan_tg = "⚠️ PERHATIAN: STOK HABIS!\n" + pesan_tg
+                        elif sisa < 5:
+                            pesan_tg = "⚠️ PERHATIAN: STOK KRITIS!\n" + pesan_tg
+                            
+                        kirim_notifikasi_telegram(pesan_tg, foto_bytes=foto_bytes)
+                        st.balloons()
+                        st.success(f"Berhasil mengeluarkan {jumlah} pcs untuk {pembeli}!")
+                    else:
+                        st.error("Gagal memproses transaksi. Silakan coba lagi.")
 
 elif menu == "➕ Tambah Jenis Barang":
     st.header("➕ Tambah Jenis Barang Baru")
