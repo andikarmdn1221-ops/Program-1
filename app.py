@@ -41,6 +41,18 @@ IS_MOBILE = SCREEN_WIDTH < 768
 # HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 
+def safe_int(val, default=0):
+    """Konversi nilai ke integer secara aman tanpa memicu ValueError."""
+    try:
+        if val is None or pd.isna(val):
+            return default
+        val_str = str(val).strip()
+        if not val_str:
+            return default
+        return int(float(val_str))
+    except Exception:
+        return default
+
 def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
     """Mekompresi gambar untuk dikirim via Telegram."""
     if file_uploaded is None:
@@ -217,8 +229,8 @@ def load_data(force_refresh=False):
     stok_dict = {}
     if len(raw_stok) > 1:
         for row in raw_stok[1:]:
-            if len(row) >= 2 and str(row[1]).isdigit():
-                stok_dict[row[0]] = int(row[1])
+            if len(row) >= 2:
+                stok_dict[row[0]] = safe_int(row[1])
     
     raw_riwayat = data.get("riwayat", [])
     riwayat_list = []
@@ -230,7 +242,7 @@ def load_data(force_refresh=False):
                     "Waktu": row[0], 
                     "Tipe": row[1], 
                     "Barang": row[2], 
-                    "Jumlah": row[3], 
+                    "Jumlah": safe_int(row[3]), 
                     "Pembeli / Keterangan": pembeli
                 })
                 
@@ -522,7 +534,7 @@ elif menu == "📜 Riwayat Transaksi":
         if filter_tipe != "SEMUA":
             df_filtered = df_filtered[df_filtered["Tipe"] == filter_tipe]
         if search_item:
-            mask = df_filtered["Barang"].str.contains(search_item, case=False, na=False) | df_filtered["Pembeli / Keterangan"].str.contains(search_item, case=False, na=False)
+            mask = df_filtered["Barang"].astype(str).str.contains(search_item, case=False, na=False) | df_filtered["Pembeli / Keterangan"].astype(str).str.contains(search_item, case=False, na=False)
             df_filtered = df_filtered[mask]
             
         st.dataframe(df_filtered, use_container_width=True, hide_index=True)
@@ -559,8 +571,8 @@ elif menu == "🗓️ Laporan Periodik (Custom Tanggal)":
         else:
             df_periodik = pd.DataFrame(riwayat_filtered)
             
-            masuk_count = sum(int(item["Jumlah"]) for item in riwayat_filtered if item["Tipe"] == "MASUK")
-            keluar_count = sum(int(item["Jumlah"]) for item in riwayat_filtered if item["Tipe"] == "KELUAR")
+            masuk_count = sum(safe_int(item.get("Jumlah", 0)) for item in riwayat_filtered if item.get("Tipe") == "MASUK")
+            keluar_count = sum(safe_int(item.get("Jumlah", 0)) for item in riwayat_filtered if item.get("Tipe") == "KELUAR")
             
             c_m1, c_m2, c_m3 = st.columns(3)
             c_m1.metric("📥 Total Barang Masuk", f"{masuk_count} pcs")
