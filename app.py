@@ -20,8 +20,8 @@ TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 # HELPER FUNCTIONS & COMPRESSION
 # -----------------------------------------------------------------------------
 
-def kompres_dan_encode_gambar(file_uploaded, max_size=(600, 600), quality=70):
-    """Mekompresi gambar uploaded dan mengubah ke Base64 untuk dikirim ke GAS/GDrive."""
+def kompres_dan_encode_gambar(file_uploaded, max_size=(400, 400), quality=50):
+    """Mekompresi gambar uploaded agar ukuran kecil dan aman dikirim ke GAS."""
     if file_uploaded is None:
         return "", None
     try:
@@ -37,7 +37,7 @@ def kompres_dan_encode_gambar(file_uploaded, max_size=(600, 600), quality=70):
         b64_str = base64.b64encode(img_bytes).decode('utf-8')
         return b64_str, img_bytes
     except Exception as e:
-        st.warning(f"Gagal memproses/mengompresi gambar: {e}")
+        st.warning(f"Gagal memproses gambar: {e}")
         raw_bytes = file_uploaded.getvalue()
         return base64.b64encode(raw_bytes).decode('utf-8'), raw_bytes
 
