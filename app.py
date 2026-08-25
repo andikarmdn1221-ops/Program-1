@@ -211,58 +211,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION (STATE MANAGEMENT)
+# SIDEBAR NAVIGATION (RADIO BUTTON ASLI)
 # -----------------------------------------------------------------------------
-if "nav_menu" not in st.session_state:
-    st.session_state.nav_menu = "📊 Dashboard"
-
 with st.sidebar:
     st.markdown("### 📦 **MICROCEMENT**")
     st.caption("WAREHOUSE MANAGEMENT")
     st.divider()
     
     st.markdown("##### MENU UTAMA")
-    if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.nav_menu=="📊 Dashboard" else "secondary"):
-        st.session_state.nav_menu = "📊 Dashboard"
-        st.rerun()
-    if st.button("📋 Lihat Semua Stok", use_container_width=True, type="primary" if st.session_state.nav_menu=="📋 Lihat Semua Stok" else "secondary"):
-        st.session_state.nav_menu = "📋 Lihat Semua Stok"
-        st.rerun()
-    if st.button("➕ Kelola Master Item", use_container_width=True, type="primary" if st.session_state.nav_menu=="➕ Kelola Master Item" else "secondary"):
-        st.session_state.nav_menu = "➕ Kelola Master Item"
-        st.rerun()
-        
+    m_utama = st.radio("Menu Utama", ["Dashboard", "Lihat Semua Stok", "Kelola Master Item"], label_visibility="collapsed")
+    
     st.markdown("##### TRANSAKSI")
-    if st.button("📥 Barang Masuk", use_container_width=True, type="primary" if st.session_state.nav_menu=="📥 Barang Masuk" else "secondary"):
-        st.session_state.nav_menu = "📥 Barang Masuk"
-        st.rerun()
-    if st.button("📤 Barang Keluar", use_container_width=True, type="primary" if st.session_state.nav_menu=="📤 Barang Keluar" else "secondary"):
-        st.session_state.nav_menu = "📤 Barang Keluar"
-        st.rerun()
-        
+    m_transaksi = st.radio("Transaksi", ["Barang Masuk", "Barang Keluar"], label_visibility="collapsed")
+    
     st.markdown("##### LAPORAN")
-    if st.button("📜 Riwayat Transaksi", use_container_width=True, type="primary" if st.session_state.nav_menu=="📜 Riwayat Transaksi" else "secondary"):
-        st.session_state.nav_menu = "📜 Riwayat Transaksi"
-        st.rerun()
-    if st.button("🗓️ Laporan Periodik", use_container_width=True, type="primary" if st.session_state.nav_menu=="🗓️ Laporan Periodik" else "secondary"):
-        st.session_state.nav_menu = "🗓️ Laporan Periodik"
-        st.rerun()
-        
+    m_laporan = st.radio("Laporan", ["Riwayat Transaksi", "Laporan Periodik"], label_visibility="collapsed")
+    
     st.markdown("##### SISTEM")
-    if st.button("💾 Backup Data", use_container_width=True, type="primary" if st.session_state.nav_menu=="💾 Backup Data" else "secondary"):
-        st.session_state.nav_menu = "💾 Backup Data"
-        st.rerun()
-    if st.button("⚙️ Pengaturan & Reset", use_container_width=True, type="primary" if st.session_state.nav_menu=="⚙️ Pengaturan & Reset" else "secondary"):
-        st.session_state.nav_menu = "⚙️ Pengaturan & Reset"
-        st.rerun()
-    if st.button("ℹ️ Tentang Aplikasi", use_container_width=True, type="primary" if st.session_state.nav_menu=="ℹ️ Tentang Aplikasi" else "secondary"):
-        st.session_state.nav_menu = "ℹ️ Tentang Aplikasi"
-        st.rerun()
-        
+    m_sistem = st.radio("Sistem", ["Backup Data", "Pengaturan & Reset", "Tentang Aplikasi"], label_visibility="collapsed")
+    
     st.divider()
     st.info("🟢 **Notifikasi Telegram**\nAktif - Terhubung")
 
-active_menu = st.session_state.nav_menu
+# Logika penentuan menu aktif berdasarkan interaksi terakhir pengguna di radio button
+if "prev_utama" not in st.session_state: st.session_state.prev_utama = m_utama
+if "prev_transaksi" not in st.session_state: st.session_state.prev_transaksi = m_transaksi
+if "prev_laporan" not in st.session_state: st.session_state.prev_laporan = m_laporan
+if "prev_sistem" not in st.session_state: st.session_state.prev_sistem = m_sistem
+if "active_tab" not in st.session_state: st.session_state.active_tab = "Dashboard"
+
+if m_utama != st.session_state.prev_utama:
+    st.session_state.active_tab = m_utama
+    st.session_state.prev_utama = m_utama
+elif m_transaksi != st.session_state.prev_transaksi:
+    st.session_state.active_tab = m_transaksi
+    st.session_state.prev_transaksi = m_transaksi
+elif m_laporan != st.session_state.prev_laporan:
+    st.session_state.active_tab = m_laporan
+    st.session_state.prev_laporan = m_laporan
+elif m_sistem != st.session_state.prev_sistem:
+    st.session_state.active_tab = m_sistem
+    st.session_state.prev_sistem = m_sistem
+
+active_menu = st.session_state.active_tab
 
 # -----------------------------------------------------------------------------
 # HEADER UTAMA
@@ -290,7 +281,7 @@ total_unit = sum(st.session_state.stok.values())
 # -----------------------------------------------------------------------------
 # ROUTING HALAMAN & FITUR
 # -----------------------------------------------------------------------------
-if active_menu == "📊 Dashboard":
+if active_menu == "Dashboard":
     if item_habis or item_kritis:
         st.markdown(f"""
             <div style="background-color: #FEF2F2; border: 1px solid #FCA5A5; padding: 12px 16px; border-radius: 8px; color: #991B1B; font-weight: 500; margin-bottom: 20px;">
@@ -355,7 +346,7 @@ if active_menu == "📊 Dashboard":
             hide_index=True, use_container_width=True
         )
 
-elif active_menu == "📋 Lihat Semua Stok":
+elif active_menu == "Lihat Semua Stok":
     st.markdown("#### Daftar Keseluruhan Stok Gudang")
     data_all = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k,v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
     df_all = pd.DataFrame(data_all)
@@ -368,7 +359,7 @@ elif active_menu == "📋 Lihat Semua Stok":
         pdf_bytes = buat_pdf_tabel("LAPORAN STOK GUDANG", ["No", "Nama Barang", "Jumlah Stok", "Status"], [[str(i+1), r["Nama Barang"], r["Jumlah Stok"], r["Status"]] for i, r in enumerate(data_all)], [15, 95, 35, 45])
         st.download_button("📄 Cetak PDF", pdf_bytes, f"Stok_{datetime.now().strftime('%Y%m%d')}.pdf", use_container_width=True)
 
-elif active_menu == "➕ Kelola Master Item":
+elif active_menu == "Kelola Master Item":
     st.markdown("#### Tambah Jenis Barang Baru")
     with st.form("form_tambah_barang", clear_on_submit=True):
         nama_baru = st.text_input("Nama Barang Baru")
@@ -386,7 +377,7 @@ elif active_menu == "➕ Kelola Master Item":
                     threading.Thread(target=kirim_notifikasi_telegram, args=(f"✨ **ITEM BARU**\n📦 {nama_clean} | Stok Awal: {stok_awal} pcs",)).start()
                     st.rerun()
 
-elif active_menu == "📥 Barang Masuk":
+elif active_menu == "Barang Masuk":
     st.markdown("#### Form Transaksi Barang Masuk (Inbound)")
     with st.form("form_masuk", clear_on_submit=True):
         barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
@@ -404,7 +395,7 @@ elif active_menu == "📥 Barang Masuk":
                 threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                 st.rerun()
 
-elif active_menu == "📤 Barang Keluar":
+elif active_menu == "Barang Keluar":
     st.markdown("#### Form Transaksi Barang Keluar (Outbound)")
     with st.form("form_keluar", clear_on_submit=True):
         barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
@@ -428,7 +419,7 @@ elif active_menu == "📤 Barang Keluar":
                     threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                     st.rerun()
 
-elif active_menu == "📜 Riwayat Transaksi":
+elif active_menu == "Riwayat Transaksi":
     st.markdown("#### Riwayat Log Transaksi Gudang")
     if not st.session_state.riwayat:
         st.info("Belum ada riwayat transaksi.")
@@ -456,7 +447,7 @@ elif active_menu == "📜 Riwayat Transaksi":
             pdf_bytes = buat_pdf_tabel("RIWAYAT TRANSAKSI", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], [[str(r["Waktu"]), str(r["Tipe"]), str(r["Barang"]), f"{r['Jumlah']} pcs", str(r["Pembeli / Keterangan"])] for _, r in df_filtered.iterrows()], [35, 25, 60, 20, 50])
             st.download_button("📄 Cetak Riwayat PDF", pdf_bytes, f"Riwayat_{datetime.now().strftime('%Y%m%d')}.pdf", use_container_width=True)
 
-elif active_menu == "🗓️ Laporan Periodik":
+elif active_menu == "Laporan Periodik":
     st.markdown("#### Laporan Transaksi Berdasarkan Rentang Tanggal")
     col_d1, col_d2 = st.columns(2)
     with col_d1:
@@ -490,7 +481,7 @@ elif active_menu == "🗓️ Laporan Periodik":
                 pdf_bytes = buat_pdf_tabel("LAPORAN PERIODIK", ["Waktu", "Tipe", "Barang", "Jumlah", "Keterangan"], [[str(r["Waktu"]), str(r["Tipe"]), str(r["Barang"]), f"{r['Jumlah']} pcs", str(r["Pembeli / Keterangan"])] for _, r in df_periodik.iterrows()], [35, 25, 60, 20, 50], info_tambahan=info_tgl)
                 st.download_button("📄 Cetak Laporan PDF", pdf_bytes, f"Laporan_{tgl_mulai}_{tgl_selesai}.pdf", use_container_width=True)
 
-elif active_menu == "💾 Backup Data":
+elif active_menu == "Backup Data":
     st.markdown("#### Unduh Backup Lengkap Database")
     excel_backup = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
     st.download_button(
@@ -501,7 +492,7 @@ elif active_menu == "💾 Backup Data":
         use_container_width=True
     )
 
-elif active_menu == "⚙️ Pengaturan & Reset":
+elif active_menu == "Pengaturan & Reset":
     st.markdown("#### Pengaturan & Reset Pabrik")
     st.warning("⚠️ **Zona Bahaya:** Tindakan ini akan mengosongkan riwayat dan mengembalikan stok ke kondisi default awal.")
     
@@ -520,7 +511,7 @@ elif active_menu == "⚙️ Pengaturan & Reset":
             st.success("Database berhasil di-reset ke pengaturan awal!")
             st.rerun()
 
-elif active_menu == "ℹ️ Tentang Aplikasi":
+elif active_menu == "Tentang Aplikasi":
     st.markdown("#### Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
     st.info("Versi: 2.5 (Production Ready)")
