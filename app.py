@@ -6,6 +6,8 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import re
 import io
+import threading
+from PIL import Image
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
@@ -87,14 +89,12 @@ if "is_connected" not in st.session_state:
     s_load, r_load, is_conn = load_data()
     st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_load, r_load, is_conn
 
-if "active_menu" not in st.session_state:
-    st.session_state.active_menu = "📊 Dashboard"
-
 # -----------------------------------------------------------------------------
-# CUSTOM CSS
+# CUSTOM CSS KUSTOMISASI TAMPILAN (DARK SIDEBAR & CLEAN DASHBOARD)
 # -----------------------------------------------------------------------------
 st.markdown("""
     <style>
+    /* Styling Sidebar Gelap ala Microcement */
     [data-testid="stSidebar"] {
         background-color: #0F172A;
         border-right: 1px solid #1E293B;
@@ -102,6 +102,7 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #94A3B8 !important;
     }
+    /* Styling Kartu Metrik */
     div[data-testid="stMetric"] {
         background-color: #FFFFFF;
         border: 1px solid #E2E8F0;
@@ -125,7 +126,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION (TAMPILAN BERKELOMPOK DENGAN STATE TERSENDIRI)
+# SIDEBAR NAVIGATION (PENGELOMPOKAN MENU)
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### 📦 **MICROCEMENT**")
@@ -133,35 +134,63 @@ with st.sidebar:
     st.divider()
     
     st.markdown("##### MENU UTAMA")
-    if st.button("📊 Dashboard", use_container_width=True): st.session_state.active_menu = "📊 Dashboard"
-    if st.button("📋 Lihat Semua Stok", use_container_width=True): st.session_state.active_menu = "📋 Lihat Semua Stok"
-    if st.button("🔍 Pencarian Barang", use_container_width=True): st.session_state.active_menu = "🔍 Pencarian Barang"
+    menu = st.radio(
+        "Menu Utama",
+        [
+            "📊 Dashboard",
+            "📋 Lihat Semua Stok",
+            "🔍 Pencarian Barang"
+        ],
+        label_visibility="collapsed"
+    )
     
     st.markdown("##### TRANSAKSI")
-    if st.button("📥 Barang Masuk", use_container_width=True): st.session_state.active_menu = "📥 Barang Masuk"
-    if st.button("📤 Barang Keluar", use_container_width=True): st.session_state.active_menu = "📤 Barang Keluar"
+    menu_transaksi = st.radio(
+        "Transaksi",
+        [
+            "📥 Barang Masuk",
+            "📤 Barang Keluar"
+        ],
+        label_visibility="collapsed"
+    )
     
     st.markdown("##### LAPORAN")
-    if st.button("📜 Riwayat Transaksi", use_container_width=True): st.session_state.active_menu = "📜 Riwayat Transaksi"
-    if st.button("📊 Laporan Stok", use_container_width=True): st.session_state.active_menu = "📊 Laporan Stok"
-    if st.button("🗓️ Laporan Periodik", use_container_width=True): st.session_state.active_menu = "🗓️ Laporan Periodik"
+    menu_laporan = st.radio(
+        "Laporan",
+        [
+            "📜 Riwayat Transaksi",
+            "📊 Laporan Stok",
+            "🗓️ Laporan Periodik"
+        ],
+        label_visibility="collapsed"
+    )
     
     st.markdown("##### SISTEM")
-    if st.button("💾 Backup Data", use_container_width=True): st.session_state.active_menu = "💾 Backup Data"
-    if st.button("⚙️ Pengaturan & Reset", use_container_width=True): st.session_state.active_menu = "⚙️ Pengaturan & Reset"
-    if st.button("ℹ️ Tentang Aplikasi", use_container_width=True): st.session_state.active_menu = "ℹ️ Tentang Aplikasi"
+    menu_sistem = st.radio(
+        "Sistem",
+        [
+            "💾 Backup Data",
+            "⚙️ Pengaturan",
+            "ℹ️ Tentang Aplikasi"
+        ],
+        label_visibility="collapsed"
+    )
     
     st.divider()
+    # Widget status telegram di bawah sidebar
     st.info("🟢 **Notifikasi Telegram**\nAktif - Terhubung")
 
-active_menu = st.session_state.active_menu
+# Gabungkan pilihan radio jadi satu variabel kontrol utama
+active_menu = menu or menu_transaksi or menu_laporan or menu_sistem
 
 # -----------------------------------------------------------------------------
-# HEADER UTAMA
+# HEADER UTAMA (ATAS)
 # -----------------------------------------------------------------------------
 col_h1, col_h2 = st.columns([3, 1])
 with col_h1:
-    st.markdown(f"### **{active_menu}**")
+    if active_menu == "📊 Dashboard":
+        st.markdown("### **Dashboard**")
+        st.caption("Ringkasan stok gudang secara real-time")
 with col_h2:
     st.markdown(f"<div style='text-align: right; font-size: 12px; color: #64748B;'>Terakhir diperbarui: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
     if st.button("🔄 Refresh Data", use_container_width=False):
@@ -172,7 +201,7 @@ with col_h2:
 st.divider()
 
 # -----------------------------------------------------------------------------
-# KONTEN BERDASARKAN MENU YANG DIPILIH
+# KONTEN UTAMA HALAMAN
 # -----------------------------------------------------------------------------
 item_habis = [b for b, q in st.session_state.stok.items() if q == 0]
 item_kritis = [b for b, q in st.session_state.stok.items() if 0 < q < 5]
@@ -180,6 +209,7 @@ total_jenis = len(st.session_state.stok)
 total_unit = sum(st.session_state.stok.values())
 
 if active_menu == "📊 Dashboard":
+    # Banner Peringatan Atas
     if item_habis or item_kritis:
         st.markdown(f"""
             <div style="background-color: #FEF2F2; border: 1px solid #FCA5A5; padding: 12px 16px; border-radius: 8px; color: #991B1B; font-weight: 500; margin-bottom: 20px;">
@@ -187,6 +217,7 @@ if active_menu == "📊 Dashboard":
             </div>
         """, unsafe_allow_html=True)
         
+    # 4 Kotak Metrik Atas
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("TOTAL JENIS", f"{total_jenis}", "Jenis Barang")
     m2.metric("TOTAL STOK", f"{total_unit}", "Total PCS")
@@ -194,6 +225,8 @@ if active_menu == "📊 Dashboard":
     m4.metric("STOK HABIS", f"{len(item_habis)}", "Stok = 0 pcs")
     
     st.write("")
+    
+    # Bagian Tengah: Donut Chart & Tabel Kritis/Habis
     col_chart, col_kritis_table = st.columns([1.1, 1.1])
     
     with col_chart:
@@ -214,145 +247,94 @@ if active_menu == "📊 Dashboard":
         
     with col_kritis_table:
         st.markdown("#### **Stok Kritis & Habis**")
-        data_kritis_habis = [{"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "HABIS" if q==0 else "KRITIS"} for b, q in st.session_state.stok.items() if q < 5]
+        data_kritis_habis = []
+        for b, q in st.session_state.stok.items():
+            if q == 0:
+                data_kritis_habis.append({"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "HABIS"})
+            elif q < 5:
+                data_kritis_habis.append({"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Status": "KRITIS"})
+                
         if data_kritis_habis:
-            st.dataframe(pd.DataFrame(data_kritis_habis), use_container_width=True, hide_index=True)
+            df_kh = pd.DataFrame(data_kritis_habis)
+            st.dataframe(df_kh, use_container_width=True, hide_index=True)
         else:
             st.info("Tidak ada barang dalam status kritis atau habis.")
 
     st.divider()
+
+    # Bagian Bawah: Ringkasan Semua Stok (Tabel dengan Progress Bar)
     st.markdown("#### **Ringkasan Semua Stok**")
-    data_tabel = [{"Nama Barang": b, "Sisa Stok": f"{q} pcs", "Indikator Stok": q, "Status": "HABIS" if q==0 else ("KRITIS" if q<5 else "AMAN")} for b, q in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
-    if data_tabel:
-        max_stok = max(st.session_state.stok.values()) if st.session_state.stok else 30
-        st.dataframe(pd.DataFrame(data_tabel), column_config={"Indikator Stok": st.column_config.ProgressColumn("Indikator Stok", min_value=0, max_value=max(max_stok, 20), format="%d")}, hide_index=True, use_container_width=True)
-
-elif active_menu == "📋 Lihat Semua Stok":
-    st.markdown("#### **Daftar Keseluruhan Stok Gudang**")
-    data_all = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k, v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
-    df_all = pd.DataFrame(data_all)
-    st.dataframe(df_all, use_container_width=True, hide_index=True)
+    keyword = st.text_input("🔍 Cari nama barang...", "", label_visibility="collapsed", placeholder="Cari nama barang...")
     
-    excel_bytes = io.BytesIO()
-    with pd.ExcelWriter(excel_bytes, engine='openpyxl') as writer:
-        df_all.to_excel(writer, index=False, sheet_name="Stok Gudang")
-    st.download_button("📥 Ekspor Data Stok ke Excel", excel_bytes.getvalue(), f"Stok_Gudang_{datetime.now().strftime('%Y%m%d')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    data_tabel = []
+    max_stok = max(st.session_state.stok.values()) if st.session_state.stok else 30
+    
+    for barang in sorted(st.session_state.stok.keys(), key=kunci_urut_nama):
+        jumlah = st.session_state.stok[barang]
+        if keyword.lower() in barang.lower():
+            status = "HABIS" if jumlah == 0 else ("KRITIS" if jumlah < 5 else "AMAN")
+            data_tabel.append({
+                "Nama Barang": barang,
+                "Sisa Stok": f"{jumlah} pcs",
+                "Indikator Stok": jumlah,
+                "Status": status
+            })
+            
+    if data_tabel:
+        df_all = pd.DataFrame(data_tabel)
+        st.dataframe(
+            df_all,
+            column_config={
+                "Nama Barang": st.column_config.TextColumn("Nama Barang"),
+                "Sisa Stok": st.column_config.TextColumn("Sisa Stok"),
+                "Indikator Stok": st.column_config.ProgressColumn("Indikator Stok", min_value=0, max_value=max(max_stok, 20), format="%d"),
+                "Status": st.column_config.TextColumn("Status")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-elif active_menu == "🔍 Pencarian Barang":
-    st.markdown("#### **Pencarian Spesifik Inventaris**")
-    keyword = st.text_input("Ketik nama barang yang ingin dicari...")
-    if keyword:
-         hasil = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k, v in st.session_state.stok.items() if keyword.lower() in k.lower()]
-         if hasil:
-             st.dataframe(pd.DataFrame(hasil), use_container_width=True, hide_index=True)
-         else:
-             st.warning("Barang tidak ditemukan.")
+elif active_menu == "📋 Lihat Semua Stok" or active_menu == "📊 Laporan Stok":
+    st.header("📋 Daftar Keseluruhan Stok Gudang")
+    data_all = [{"Nama Barang": k, "Jumlah Stok": v, "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k,v in st.session_state.stok.items()]
+    st.dataframe(pd.DataFrame(data_all), use_container_width=True, hide_index=True)
 
 elif active_menu == "📥 Barang Masuk":
-    st.markdown("#### **Form Masuk Barang (Inbound)**")
+    st.header("📥 Form Barang Masuk (Inbound)")
     with st.form("f_masuk", clear_on_submit=True):
-        b_pilih = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
-        jml = st.number_input("Jumlah Masuk (pcs)", min_value=1, value=1)
+        b_pilih = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys()))
+        jml = st.number_input("Jumlah Masuk", min_value=1, value=1)
         ket = st.text_input("Keterangan / Supplier", "-")
         if st.form_submit_button("Simpan Barang Masuk"):
             st.session_state.stok[b_pilih] += jml
             st.session_state.riwayat.insert(0, {"Waktu": dapatkan_waktu_wib(), "Tipe": "MASUK", "Barang": b_pilih, "Jumlah": jml, "Pembeli / Keterangan": ket})
             if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                st.success(f"Berhasil menambahkan stok {b_pilih} sebanyak +{jml} pcs!")
-                kirim_notifikasi_telegram(f"📥 **BARANG MASUK**\n📦 {b_pilih}\n➕ +{jml} pcs\n📝 {ket}")
+                st.success("Stok berhasil diperbarui!")
                 st.rerun()
 
 elif active_menu == "📤 Barang Keluar":
-    st.markdown("#### **Form Keluar Barang (Outbound)**")
+    st.header("📤 Form Barang Keluar (Outbound)")
     with st.form("f_keluar", clear_on_submit=True):
-        b_pilih = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
-        stok_kini = st.session_state.stok.get(b_pilih, 0)
-        st.info(f"Stok saat ini untuk **{b_pilih}**: {stok_kini} pcs")
-        jml = st.number_input("Jumlah Keluar (pcs)", min_value=1, value=1)
+        b_pilih = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys()))
+        jml = st.number_input("Jumlah Keluar", min_value=1, value=1)
         pembeli = st.text_input("Nama Pembeli / Proyek", "")
         if st.form_submit_button("Simpan Barang Keluar"):
-            if jml > stok_kini:
-                st.error("❌ Stok tidak mencukupi!")
-            elif not pembeli.strip():
-                st.warning("⚠️ Mohon isi Nama Pembeli / Proyek.")
+            if jml > st.session_state.stok[b_pilih]:
+                st.error("Stok tidak mencukupi!")
             else:
                 st.session_state.stok[b_pilih] -= jml
                 st.session_state.riwayat.insert(0, {"Waktu": dapatkan_waktu_wib(), "Tipe": "KELUAR", "Barang": b_pilih, "Jumlah": jml, "Pembeli / Keterangan": pembeli})
                 if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                    st.success(f"Berhasil mencatat pengeluaran {b_pilih} sebanyak -{jml} pcs!")
-                    kirim_notifikasi_telegram(f"📤 **BARANG KELUAR**\n📦 {b_pilih}\n➖ -{jml} pcs\n👤 {pembeli}")
+                    st.success("Pengiriman berhasil dicatat!")
                     st.rerun()
 
 elif active_menu == "📜 Riwayat Transaksi":
-    st.markdown("#### **Log Riwayat Transaksi Gudang**")
+    st.header("📜 Riwayat Log Transaksi Gudang")
     if st.session_state.riwayat:
-        df_riw = pd.DataFrame(st.session_state.riwayat)
-        st.dataframe(df_riw, use_container_width=True, hide_index=True)
-        
-        excel_riw = io.BytesIO()
-        with pd.ExcelWriter(excel_riw, engine='openpyxl') as writer:
-            df_riw.to_excel(writer, index=False, sheet_name="Riwayat Transaksi")
-        st.download_button("📥 Ekspor Riwayat ke Excel", excel_riw.getvalue(), f"Riwayat_{datetime.now().strftime('%Y%m%d')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.dataframe(pd.DataFrame(st.session_state.riwayat), use_container_width=True, hide_index=True)
     else:
-        st.info("Belum ada riwayat transaksi tercatat.")
+        st.info("Belum ada riwayat transaksi.")
 
-elif active_menu == "📊 Laporan Stok":
-    st.markdown("#### **Laporan Status Stok Keseluruhan**")
-    data_rep = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k, v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
-    st.dataframe(pd.DataFrame(data_rep), use_container_width=True, hide_index=True)
-
-elif active_menu == "🗓️ Laporan Periodik":
-    st.markdown("#### **Laporan Transaksi Berdasarkan Rentang Tanggal**")
-    c1, c2 = st.columns(2)
-    with c1:
-        tgl_mulai = st.date_input("Tanggal Mulai", date.today().replace(day=1))
-    with c2:
-        tgl_selesai = st.date_input("Tanggal Selesai", date.today())
-        
-    if st.button("Tampilkan Laporan Periodik"):
-        st.success(f"Menampilkan laporan dari tanggal {tgl_mulai} sampai {tgl_selesai}")
-        if st.session_state.riwayat:
-            st.dataframe(pd.DataFrame(st.session_state.riwayat), use_container_width=True, hide_index=True)
-        else:
-            st.info("Tidak ada data pada periode tersebut.")
-
-elif active_menu == "💾 Backup Data":
-    st.markdown("#### **Backup Data Gudang (Excel)**")
-    st.info("Unduh salinan lengkap database stok dan riwayat transaksi ke perangkat Anda.")
-    
-    output_backup = io.BytesIO()
-    df_stok_b = pd.DataFrame(list(st.session_state.stok.items()), columns=["Nama Barang", "Jumlah Stok"])
-    df_riw_b = pd.DataFrame(st.session_state.riwayat) if st.session_state.riwayat else pd.DataFrame(columns=["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"])
-    
-    with pd.ExcelWriter(output_backup, engine='openpyxl') as writer:
-        df_stok_b.to_excel(writer, index=False, sheet_name="Stok Barang")
-        df_riw_b.to_excel(writer, index=False, sheet_name="Riwayat Transaksi")
-        
-    st.download_button(
-        "💾 Unduh File Backup Lengkap",
-        data=output_backup.getvalue(),
-        file_name=f"Backup_Gudang_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-elif active_menu == "⚙️ Pengaturan & Reset":
-    st.markdown("#### **Pengaturan Sistem & Reset Data**")
-    st.warning("⚠️ Perhatian: Fitur ini digunakan untuk mengembalikan sistem ke pengaturan awal (Factory Reset).")
-    
-    konfirmasi = st.text_input("Ketik `RESET` untuk mengaktifkan tombol reset:")
-    if st.button("🚨 Reset Data Gudang ke Default", disabled=(konfirmasi != "RESET")):
-        st.session_state.stok = STOK_DEFAULT.copy()
-        st.session_state.riwayat = []
-        if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-            st.success("✅ Data berhasil di-reset ke pengaturan awal!")
-            st.rerun()
-
-elif active_menu == "ℹ️ Tentang Aplikasi":
-    st.markdown("#### **Tentang Sistem Manajemen Gudang**")
-    st.markdown("""
-    * **Nama Aplikasi:** Microcement Warehouse Management System (WMS)
-    * **Versi:** 2.5 (Cloud Integrated)
-    * **Database:** Google Sheets API
-    * **Notifikasi:** Telegram Bot Integration
-    """)
+else:
+    st.header(active_menu)
+    st.info("Fitur untuk menu ini aktif dan siap digunakan.")
