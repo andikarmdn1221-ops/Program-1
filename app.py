@@ -444,6 +444,33 @@ if menu == "📊 Lihat Semua Stok":
         else:
             st.dataframe(df, column_config=config_tabel, hide_index=True, use_container_width=True)
             
+        # --- TAMBAHAN GRAFIK BAR CHART ---
+        st.divider()
+        st.subheader("📈 Visualisasi Ketersediaan Stok")
+        
+        fig = px.bar(
+            df.sort_values("Jumlah Stok", ascending=False),
+            x="Nama Barang",
+            y="Jumlah Stok",
+            color="Status",
+            color_discrete_map={
+                "🟢 AMAN": "#22c55e",    # Hijau
+                "🟡 KRITIS": "#eab308",   # Kuning
+                "🔴 HABIS!": "#ef4444"    # Merah
+            },
+            text="Jumlah Stok"
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(
+            xaxis_title="", 
+            yaxis_title="Jumlah Stok (pcs)", 
+            showlegend=True,
+            margin=dict(t=30, b=0, l=0, r=0)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        # ---------------------------------
+            
+        st.divider()
         col_exp1, col_exp2 = st.columns(2)
         with col_exp1:
             excel_bytes = buat_excel_bytes(df[["Nama Barang", "Jumlah Stok", "Status"]], "Stok Gudang")
