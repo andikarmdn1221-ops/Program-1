@@ -228,7 +228,7 @@ if "stok" not in st.session_state or "riwayat" not in st.session_state:
 # -----------------------------------------------------------------------------
 
 st.sidebar.title("⚙️ Pengaturan")
-dark_mode = st.sidebar.toggle("🌙 Mode Gelap Modern", value=True)
+dark_mode = st.sidebar.toggle("🌙 Mode Gelap Modern", value=False)
 
 if st.sidebar.button("🔄 Refresh / Sinkronkan Data", use_container_width=True):
     st.cache_data.clear()
