@@ -6,8 +6,6 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import re
 import io
-import threading
-from PIL import Image
 
 st.set_page_config(page_title="Microcement Warehouse", page_icon="📦", layout="wide")
 
@@ -89,6 +87,9 @@ if "is_connected" not in st.session_state:
     s_load, r_load, is_conn = load_data()
     st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_load, r_load, is_conn
 
+if "active_menu" not in st.session_state:
+    st.session_state.active_menu = "📊 Dashboard"
+
 # -----------------------------------------------------------------------------
 # CUSTOM CSS
 # -----------------------------------------------------------------------------
@@ -124,33 +125,36 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION (DIPERBAIKI MENJADI SATU RADIO UTAMA)
+# SIDEBAR NAVIGATION (TAMPILAN BERKELOMPOK DENGAN STATE TERSENDIRI)
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### 📦 **MICROCEMENT**")
     st.caption("WAREHOUSE MANAGEMENT")
     st.divider()
     
-    active_menu = st.radio(
-        "Navigasi Utama",
-        [
-            "📊 Dashboard",
-            "📋 Lihat Semua Stok",
-            "🔍 Pencarian Barang",
-            "📥 Barang Masuk",
-            "📤 Barang Keluar",
-            "📜 Riwayat Transaksi",
-            "📊 Laporan Stok",
-            "🗓️ Laporan Periodik",
-            "💾 Backup Data",
-            "⚙️ Pengaturan & Reset",
-            "ℹ️ Tentang Aplikasi"
-        ],
-        label_visibility="collapsed"
-    )
+    st.markdown("##### MENU UTAMA")
+    if st.button("📊 Dashboard", use_container_width=True): st.session_state.active_menu = "📊 Dashboard"
+    if st.button("📋 Lihat Semua Stok", use_container_width=True): st.session_state.active_menu = "📋 Lihat Semua Stok"
+    if st.button("🔍 Pencarian Barang", use_container_width=True): st.session_state.active_menu = "🔍 Pencarian Barang"
+    
+    st.markdown("##### TRANSAKSI")
+    if st.button("📥 Barang Masuk", use_container_width=True): st.session_state.active_menu = "📥 Barang Masuk"
+    if st.button("📤 Barang Keluar", use_container_width=True): st.session_state.active_menu = "📤 Barang Keluar"
+    
+    st.markdown("##### LAPORAN")
+    if st.button("📜 Riwayat Transaksi", use_container_width=True): st.session_state.active_menu = "📜 Riwayat Transaksi"
+    if st.button("📊 Laporan Stok", use_container_width=True): st.session_state.active_menu = "📊 Laporan Stok"
+    if st.button("🗓️ Laporan Periodik", use_container_width=True): st.session_state.active_menu = "🗓️ Laporan Periodik"
+    
+    st.markdown("##### SISTEM")
+    if st.button("💾 Backup Data", use_container_width=True): st.session_state.active_menu = "💾 Backup Data"
+    if st.button("⚙️ Pengaturan & Reset", use_container_width=True): st.session_state.active_menu = "⚙️ Pengaturan & Reset"
+    if st.button("ℹ️ Tentang Aplikasi", use_container_width=True): st.session_state.active_menu = "ℹ️ Tentang Aplikasi"
     
     st.divider()
     st.info("🟢 **Notifikasi Telegram**\nAktif - Terhubung")
+
+active_menu = st.session_state.active_menu
 
 # -----------------------------------------------------------------------------
 # HEADER UTAMA
@@ -223,13 +227,12 @@ if active_menu == "📊 Dashboard":
         max_stok = max(st.session_state.stok.values()) if st.session_state.stok else 30
         st.dataframe(pd.DataFrame(data_tabel), column_config={"Indikator Stok": st.column_config.ProgressColumn("Indikator Stok", min_value=0, max_value=max(max_stok, 20), format="%d")}, hide_index=True, use_container_width=True)
 
-elif active_menu in ["📋 Lihat Semua Stok", "📊 Laporan Stok"]:
+elif active_menu == "📋 Lihat Semua Stok":
     st.markdown("#### **Daftar Keseluruhan Stok Gudang**")
     data_all = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k, v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
     df_all = pd.DataFrame(data_all)
     st.dataframe(df_all, use_container_width=True, hide_index=True)
     
-    # Tombol Ekspor Excel
     excel_bytes = io.BytesIO()
     with pd.ExcelWriter(excel_bytes, engine='openpyxl') as writer:
         df_all.to_excel(writer, index=False, sheet_name="Stok Gudang")
@@ -286,13 +289,17 @@ elif active_menu == "📜 Riwayat Transaksi":
         df_riw = pd.DataFrame(st.session_state.riwayat)
         st.dataframe(df_riw, use_container_width=True, hide_index=True)
         
-        # Ekspor Riwayat Excel
         excel_riw = io.BytesIO()
         with pd.ExcelWriter(excel_riw, engine='openpyxl') as writer:
             df_riw.to_excel(writer, index=False, sheet_name="Riwayat Transaksi")
         st.download_button("📥 Ekspor Riwayat ke Excel", excel_riw.getvalue(), f"Riwayat_{datetime.now().strftime('%Y%m%d')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.info("Belum ada riwayat transaksi tercatat.")
+
+elif active_menu == "📊 Laporan Stok":
+    st.markdown("#### **Laporan Status Stok Keseluruhan**")
+    data_rep = [{"Nama Barang": k, "Jumlah Stok": f"{v} pcs", "Status": "HABIS" if v==0 else ("KRITIS" if v<5 else "AMAN")} for k, v in sorted(st.session_state.stok.items(), key=lambda x: kunci_urut_nama(x[0]))]
+    st.dataframe(pd.DataFrame(data_rep), use_container_width=True, hide_index=True)
 
 elif active_menu == "🗓️ Laporan Periodik":
     st.markdown("#### **Laporan Transaksi Berdasarkan Rentang Tanggal**")
