@@ -137,7 +137,7 @@ def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE
+# DATA ENGINE & AUTO CHECK NOTIFIKASI
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
@@ -175,6 +175,19 @@ def save_data_atomic(stok_terbaru, riwayat_terbaru):
 if "is_connected" not in st.session_state:
     s_load, r_load, is_conn = load_data()
     st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_load, r_load, is_conn
+
+    # -------------------------------------------------------------------------
+    # FITUR OTOMATIS: CEK STOK KRITIS / HABIS SAAT PERTAMA KALI APLIKASI DIBUKA
+    # -------------------------------------------------------------------------
+    habis_init = [b for b, q in s_load.items() if q == 0]
+    kritis_init = [b for b, q in s_load.items() if 0 < q < 5]
+    if habis_init or kritis_init:
+        pesan_auto = f"🚨 **LAPORAN OTOMATIS: STOK KRITIS & HABIS**\n📅 {dapatkan_waktu_wib()}\n\n"
+        if habis_init:
+            pesan_auto += "🔴 *Stok Habis (0 pcs)*:\n" + "".join([f"• {b}\n" for b in habis_init]) + "\n"
+        if kritis_init:
+            pesan_auto += "🟡 *Stok Kritis (< 5 pcs)*:\n" + "".join([f"• {b}: {s_load[b]} pcs\n" for b in kritis_init])
+        threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_auto,)).start()
 
 # -----------------------------------------------------------------------------
 # CUSTOM CSS
@@ -233,7 +246,6 @@ with st.sidebar:
     st.divider()
     st.info("🟢 **Notifikasi Telegram**\nAktif - Terhubung")
 
-# Logika penentuan menu aktif berdasarkan interaksi terakhir pengguna di radio button
 if "prev_utama" not in st.session_state: st.session_state.prev_utama = m_utama
 if "prev_transaksi" not in st.session_state: st.session_state.prev_transaksi = m_transaksi
 if "prev_laporan" not in st.session_state: st.session_state.prev_laporan = m_laporan
