@@ -609,9 +609,27 @@ elif menu == "⚙️ Reset & Backup Data":
     )
     
     st.divider()
-    tombol_reset_aktif = st.checkbox("Saya memahami risiko ini dan ingin mereset seluruh database")
     
-    if st.button("🚨 Ya, Reset Semua Data Sekarang", disabled=not tombol_reset_aktif):
+    # --- LAPISAN KEAMANAN BERLAPIS (2-STEP VERIFICATION) ---
+    st.subheader("🔒 Konfirmasi Keamanan Berlapis")
+    
+    # Langkah 1: Centang Persetujuan
+    langkah1_persetujuan = st.checkbox("Langkah 1: Saya memahami risiko ini dan ingin mereset seluruh database")
+    
+    # Langkah 2: Ketik Kata Kunci Konfirmasi
+    teks_konfirmasi = st.text_input(
+        "Langkah 2: Ketik kata kunci `RESET-DATABASE` di bawah untuk mengonfirmasi:",
+        placeholder="RESET-DATABASE",
+        disabled=not langkah1_persetujuan
+    )
+    
+    # Validasi Keamanan 2 Langkah
+    is_valid_reset = langkah1_persetujuan and (teks_konfirmasi.strip() == "RESET-DATABASE")
+    
+    if langkah1_persetujuan and teks_konfirmasi.strip() != "RESET-DATABASE" and teks_konfirmasi.strip() != "":
+        st.caption("❌ Kata kunci konfirmasi tidak cocok. Ketik tepat: `RESET-DATABASE`")
+        
+    if st.button("🚨 Ya, Reset Semua Data Sekarang", disabled=not is_valid_reset):
         with st.spinner("📦 Membuat auto-backup dan memproses reset database..."):
             # 1. Buat File Backup Excel (Stok + Riwayat)
             backup_bytes = buat_excel_backup_lengkap(st.session_state.stok, st.session_state.riwayat)
