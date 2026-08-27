@@ -475,7 +475,7 @@ with col_h1:
 with col_h2:
     st.markdown(f"<div style='text-align: right; font-size:12px; color:gray;'>Waktu: {dapatkan_waktu_wib()}</div>", unsafe_allow_html=True)
 with col_h3:
-    if st.button("🔄 Refresh"):
+    if st.button("🔄 Segarkan"):
         st.cache_data.clear()
         s_stok, s_master, s_riwayat, is_conn_fresh = load_data(force_refresh=True)
         st.session_state.stok = s_stok
@@ -668,8 +668,11 @@ elif active_menu == "Barang Keluar":
     else:
         with st.form("form_keluar", clear_on_submit=True):
             barang_pilihan = st.selectbox("Pilih Barang", barang_aktif_list)
+            
+            # --- SISA STOK DINAMIS SESUAI BARANG YANG DIPILIH ---
             stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
             st.info(f"Sisa Stok `{barang_pilihan}` saat ini: **{stok_saat_ini} pcs**")
+            # ----------------------------------------------------
             
             jumlah_keluar = st.number_input("Jumlah Keluar (pcs)", min_value=1, value=1, step=1)
             tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
@@ -830,7 +833,7 @@ elif active_menu == "Pengaturan & Reset":
     st.subheader("Pengaturan & Reset Pabrik")
     st.warning("⚠️ **Zona Bahaya:** Tindakan ini akan mengosongkan riwayat dan mengembalikan stok ke kondisi default awal.")
     
-    langkah1 = st.checkbox("Samar memahami risiko ini")
+    langkah1 = st.checkbox("Saya memahami risiko ini")
     teks_konfirmasi = st.text_input("Ketik `RESET-DATABASE` untuk mengonfirmasi:", disabled=not langkah1)
     
     if st.button("🚨 Reset Semua Data", disabled=not (langkah1 and teks_konfirmasi.strip() == "RESET-DATABASE")):
@@ -854,9 +857,9 @@ elif active_menu == "Pengaturan & Reset":
             st.success("Data berhasil di-reset!")
             st.rerun()
 
-        safe_api_call(_reset_db, error_message="Gagal meriset data server.")
+        safe_api_call(_reset_db, error_message="Gagal mereset data server.")
 
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 4.6 Pro Enterprise (Full Integration: Sheets, Drive, & Telegram)")
+    st.info("Versi: 4.7 Pro Enterprise (Full Integration: Sheets, Drive, & Telegram)")
