@@ -138,7 +138,7 @@ def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE
+# DATA ENGINE (MULTI-USER SAFE)
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
@@ -176,17 +176,66 @@ def cek_dan_kirim_stok_kritis(stok_dict):
         
         threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_auto,)).start()
 
-def save_data_atomic(stok_terbaru, riwayat_terbaru):
-    if not st.session_state.get("is_connected", False) or not URL_GSHEET_API: return False
-    payload = {
-        "stok": [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in stok_terbaru.items()],
-        "riwayat": [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]] + [[i.get("Waktu",""), i.get("Tipe",""), i.get("Barang",""), i.get("Jumlah",""), i.get("Pembeli / Keterangan","-")] for i in riwayat_terbaru]
-    }
+def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
+    """
+    Fungsi penyimpanan aman untuk multi-user:
+    1. Mengambil data paling mutakhir langsung dari server (mencegah data tertimpa user lain).
+    2. Melakukan validasi stok real-time (terutama untuk barang keluar).
+    3. Menyimpan perubahan secara atomik ke Google Sheets API.
+    """
+    if not st.session_state.get("is_connected", False) or not URL_GSHEET_API: 
+        st.error("Koneksi database terputus.")
+        return False
+    
     try:
-        requests.post(URL_GSHEET_API, json=payload, timeout=45)
+        # Tarik data paling fresh dari server saat tombol simpan ditekan
+        res_fresh = requests.get(URL_GSHEET_API, timeout=15)
+        res_fresh.raise_for_status()
+        server_data = res_fresh.json()
+        
+        server_stok = {row[0]: safe_int(row[1]) for row in server_data.get("stok", [])[1:] if len(row) >= 2}
+        server_riwayat = [{"Waktu": r[0], "Tipe": r[1], "Barang": r[2], "Jumlah": safe_int(r[3]), "Pembeli / Keterangan": r[4] if len(r)>4 else "-"} for r in server_data.get("riwayat", [])[1:] if len(r)>=4]
+        
+        if not server_stok:
+            server_stok = STOK_DEFAULT.copy()
+
+        # Validasi stok & kalkulasi sesuai tipe transaksi
+        waktu_sekarang = dapatkan_waktu_wib()
+        if tipe_transaksi == "KELUAR":
+            stok_terkini = server_stok.get(barang, 0)
+            if jumlah > stok_terkini:
+                st.error(f"Gagal! Stok `{barang}` sisa {stok_terkini} pcs (telah berubah karena transaksi pengguna lain). Silakan refresh.")
+                return False
+            server_stok[barang] -= jumlah
+        elif tipe_transaksi == "MASUK":
+            server_stok[barang] = server_stok.get(barang, 0) + jumlah
+        elif tipe_transaksi == "BARANG BARU":
+            server_stok[barang] = jumlah
+
+        # Masukkan riwayat baru ke urutan teratas
+        server_riwayat.insert(0, {
+            "Waktu": waktu_sekarang, 
+            "Tipe": tipe_transaksi, 
+            "Barang": barang, 
+            "Jumlah": jumlah, 
+            "Pembeli / Keterangan": keterangan_atau_pembeli
+        })
+
+        payload = {
+            "stok": [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in server_stok.items()],
+            "riwayat": [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]] + [[i.get("Waktu",""), i.get("Tipe",""), i.get("Barang",""), i.get("Jumlah",""), i.get("Pembeli / Keterangan","-")] for i in server_riwayat]
+        }
+        
+        res_post = requests.post(URL_GSHEET_API, json=payload, timeout=45)
+        res_post.raise_for_status()
+        
+        # Sinkronkan state session lokal
+        st.session_state.stok = server_stok
+        st.session_state.riwayat = server_riwayat
         st.cache_data.clear()
         return True
-    except:
+    except Exception as e:
+        st.error(f"Terjadi kesalahan saat menyimpan data ke server: {e}")
         return False
 
 if "is_connected" not in st.session_state:
@@ -195,7 +244,7 @@ if "is_connected" not in st.session_state:
     cek_dan_kirim_stok_kritis(s_load)
 
 # -----------------------------------------------------------------------------
-# SIDEBAR NAVIGATION (KEMBALI KE TAMPILAN AWAL / KATEGORI TERPISAH)
+# SIDEBAR NAVIGATION
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### 📦 WMS Microcement")
@@ -332,13 +381,13 @@ elif active_menu == "Kelola Master Item":
         stok_awal = st.number_input("Stok Awal (pcs)", min_value=0, value=0, step=1)
         if st.form_submit_button("➕ Tambah Barang"):
             nama_clean = nama_baru.strip()
-            if not nama_clean: st.warning("Nama barang tidak boleh kosong!")
-            elif nama_clean in st.session_state.stok: st.error("Barang sudah ada di database!")
+            if not nama_clean: 
+                st.warning("Nama barang tidak boleh kosong!")
+            elif nama_clean in st.session_state.stok: 
+                st.error("Barang sudah ada di database!")
             else:
-                waktu_sekarang = dapatkan_waktu_wib()
-                st.session_state.stok[nama_clean] = stok_awal
-                st.session_state.riwayat.insert(0, {"Waktu": waktu_sekarang, "Tipe": "BARANG BARU", "Barang": nama_clean, "Jumlah": stok_awal, "Pembeli / Keterangan": "Item baru"})
-                if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
+                berhasil = save_data_atomic("BARANG BARU", nama_clean, stok_awal, "Item baru")
+                if berhasil:
                     st.success(f"Item `{nama_clean}` berhasil ditambahkan!")
                     threading.Thread(target=kirim_notifikasi_telegram, args=(f"✨ **ITEM BARU**\n📦 {nama_clean} | Stok Awal: {stok_awal} pcs",)).start()
                     st.rerun()
@@ -349,19 +398,13 @@ elif active_menu == "Barang Masuk":
         barang_pilihan = st.selectbox("Pilih Barang", sorted(st.session_state.stok.keys(), key=kunci_urut_nama))
         jumlah_masuk = st.number_input("Jumlah Masuk (pcs)", min_value=1, value=1, step=1)
         
-        # FITUR TANGGAL MANUAL
         tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
-        
         foto_bukti = st.file_uploader("Upload Bukti / Nota (Opsional)", type=["jpg", "jpeg", "png"])
         catatan_masuk = st.text_input("Supplier / Keterangan", "-")
         
         if st.form_submit_button("📥 Simpan Barang Masuk"):
-            jam_sekarang = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%H:%M")
-            waktu_final = f"{tgl_transaksi.strftime('%d-%m-%Y')} {jam_sekarang}"
-            
-            st.session_state.stok[barang_pilihan] += jumlah_masuk
-            st.session_state.riwayat.insert(0, {"Waktu": waktu_final, "Tipe": "MASUK", "Barang": barang_pilihan, "Jumlah": jumlah_masuk, "Pembeli / Keterangan": catatan_masuk})
-            if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
+            berhasil = save_data_atomic("MASUK", barang_pilihan, jumlah_masuk, catatan_masuk)
+            if berhasil:
                 st.success(f"Berhasil menambah stok {barang_pilihan} (+{jumlah_masuk} pcs) untuk tanggal {tgl_transaksi.strftime('%d-%m-%Y')}!")
                 pesan_tg = f"📥 **BARANG MASUK**\n📦 {barang_pilihan}\n➕ +{jumlah_masuk} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs\n📝 {catatan_masuk}"
                 threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
@@ -375,24 +418,17 @@ elif active_menu == "Barang Keluar":
         st.info(f"Sisa Stok `{barang_pilihan}` saat ini: **{stok_saat_ini} pcs**")
         
         jumlah_keluar = st.number_input("Jumlah Keluar (pcs)", min_value=1, value=1, step=1)
-        
-        # FITUR TANGGAL MANUAL
         tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
-        
         nama_pembeli = st.text_input("Nama Pembeli / Proyek", "")
         foto_bukti = st.file_uploader("Upload Surat Jalan (Opsional)", type=["jpg", "jpeg", "png"])
         
         if st.form_submit_button("📤 Simpan Pengiriman"):
-            if jumlah_keluar > stok_saat_ini: st.error(f"Stok tidak cukup! Hanya tersedia {stok_saat_ini} pcs.")
-            elif not nama_pembeli.strip(): st.warning("⚠️ Mohon isi Nama Pembeli / Proyek!")
+            if not nama_pembeli.strip(): 
+                st.warning("⚠️ Mohon isi Nama Pembeli / Proyek!")
             else:
-                jam_sekarang = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%H:%M")
-                waktu_final = f"{tgl_transaksi.strftime('%d-%m-%Y')} {jam_sekarang}"
-                
-                st.session_state.stok[barang_pilihan] -= jumlah_keluar
-                st.session_state.riwayat.insert(0, {"Waktu": waktu_final, "Tipe": "KELUAR", "Barang": barang_pilihan, "Jumlah": jumlah_keluar, "Pembeli / Keterangan": nama_pembeli.strip()})
-                if save_data_atomic(st.session_state.stok, st.session_state.riwayat):
-                    st.success(f"Pengiriman {barang_pilihan} sebanyak {jumlah_keluar} pcs untuk tanggal {tgl_transaksi.strftime('%d-%m-%Y')} berhasil dicatat!")
+                berhasil = save_data_atomic("KELUAR", barang_pilihan, jumlah_keluar, nama_pembeli.strip())
+                if berhasil:
+                    st.success(f"Pengiriman {barang_pilihan} sebanyak {jumlah_keluar} pcs berhasil dicatat!")
                     pesan_tg = f"📤 **BARANG KELUAR**\n📦 {barang_pilihan}\n➖ -{jumlah_keluar} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n👤 Pembeli: {nama_pembeli}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs"
                     threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                     st.rerun()
@@ -488,13 +524,21 @@ elif active_menu == "Pengaturan & Reset":
         
         stok_reset = STOK_DEFAULT.copy()
         riwayat_reset = []
-        if save_data_atomic(stok_reset, riwayat_reset):
+        payload_reset = {
+            "stok": [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in stok_reset.items()],
+            "riwayat": [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]]
+        }
+        try:
+            requests.post(URL_GSHEET_API, json=payload_reset, timeout=45)
             st.session_state.stok = stok_reset
             st.session_state.riwayat = riwayat_reset
+            st.cache_data.clear()
             st.success("Data berhasil di-reset!")
             st.rerun()
+        except Exception as e:
+            st.error(f"Gagal meriset data: {e}")
 
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.4 Pro Enterprise (Original Layout)")
+    st.info("Versi: 3.4 Pro Enterprise (Multi-User Safe Original Layout)")
