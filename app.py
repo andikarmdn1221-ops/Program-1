@@ -17,8 +17,25 @@ TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 
 # -----------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# CENTRALIZED ERROR HANDLING & HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
+def safe_api_call(func, *args, default_return=None, error_message="Terjadi kesalahan sistem.", **kwargs):
+    """
+    Decorator / Wrapper terpusat untuk menangani error (Error Handling Terpusat).
+    Mencegah penulisan try-except berulang di setiap fungsi API atau request.
+    """
+    try:
+        return func(*args, **kwargs)
+    except requests.exceptions.Timeout:
+        st.error(f"{error_message} (Koneksi Timeout / Waktu Habis)")
+        return default_return
+    except requests.exceptions.RequestException as e:
+        st.error(f"{error_message} (Masalah Jaringan: {e})")
+        return default_return
+    except Exception as e:
+        st.error(f"{error_message} (Detail: {e})")
+        return default_return
+
 def safe_int(val, default=0):
     try:
         if pd.isna(val) or val is None: return default
@@ -32,7 +49,7 @@ def dapatkan_waktu_wib():
 
 def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
     if file_uploaded is None: return None
-    try:
+    def _process():
         file_uploaded.seek(0)
         img = Image.open(file_uploaded)
         if img.mode in ("RGBA", "P"): img = img.convert("RGB")
@@ -40,29 +57,31 @@ def kompres_gambar(file_uploaded, max_size=(600, 600), quality=70):
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=quality, optimize=True)
         return buffer.getvalue()
-    except:
-        return file_uploaded.getvalue()
+    return safe_api_call(_process, default_return=file_uploaded.getvalue(), error_message="Gagal kompres gambar")
+
+def _request_telegram(url, payload=None, files=None, timeout=15):
+    if files:
+        return requests.post(url, data=payload, files=files, timeout=timeout)
+    else:
+        return requests.post(url, json=payload, timeout=timeout)
 
 def kirim_notifikasi_telegram(pesan, foto_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return
     try:
         if foto_bytes:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-            requests.post(url, data={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"photo": ("bukti.jpg", foto_bytes, "image/jpeg")}, timeout=15)
+            safe_api_call(_request_telegram, url, payload={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"photo": ("bukti.jpg", foto_bytes, "image/jpeg")}, timeout=15)
         else:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            requests.post(url, json={"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan, "parse_mode": "Markdown"}, timeout=15)
+            safe_api_call(_request_telegram, url, payload={"chat_id": int(TELEGRAM_CHAT_ID), "text": pesan, "parse_mode": "Markdown"}, timeout=15)
     except:
         pass
 
 def kirim_dokumen_telegram(pesan, file_bytes, file_name):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID: return False
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
-        res = requests.post(url, data={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"document": (file_name, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, timeout=30)
-        return res.status_code == 200
-    except:
-        return False
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+    res = safe_api_call(_request_telegram, url, payload={"chat_id": int(TELEGRAM_CHAT_ID), "caption": pesan}, files={"document": (file_name, file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, timeout=30)
+    return res is not None and res.status_code == 200
 
 def buat_excel_bytes(df, sheet_name="Data"):
     output = io.BytesIO()
@@ -142,12 +161,11 @@ def kunci_urut_nama(nama):
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
-    try:
+    def _get():
         res = requests.get(url, timeout=15)
         res.raise_for_status()
         return res.json()
-    except:
-        return None
+    return safe_api_call(_get, default_return=None, error_message="Gagal mengambil data dari Google Sheets.")
 
 def load_data(force_refresh=False):
     if force_refresh:
@@ -164,20 +182,14 @@ def load_data(force_refresh=False):
     return stok_dict or STOK_DEFAULT.copy(), riwayat_list, True
 
 def cek_dan_kirim_stok_kritis(stok_dict):
-    """
-    Mengirim notifikasi stok kritis/habis HANYA SEKALI per sesi aktif 
-    kecuali terjadi perubahan item kritis baru, mencegah spam beruntun.
-    """
     habis = frozenset([b for b, q in stok_dict.items() if q == 0])
     kritis = frozenset([b for b, q in stok_dict.items() if 0 < q < 5])
     
-    # Inisialisasi state anti-spam jika belum ada
     if "notif_terkirim_habis" not in st.session_state:
         st.session_state.notif_terkirim_habis = frozenset()
     if "notif_terkirim_kritis" not in st.session_state:
         st.session_state.notif_terkirim_kritis = frozenset()
 
-    # Cari apakah ada item habis atau kritis BARU yang belum sempat dilaporkan di sesi ini
     item_habis_baru = habis - st.session_state.notif_terkirim_habis
     item_kritis_baru = kritis - st.session_state.notif_terkirim_kritis
 
@@ -190,7 +202,6 @@ def cek_dan_kirim_stok_kritis(stok_dict):
         
         threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_auto,)).start()
         
-        # Perbarui memori session agar tidak mengirim ulang item yang sama
         st.session_state.notif_terkirim_habis = habis
         st.session_state.notif_terkirim_kritis = kritis
 
@@ -199,7 +210,7 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         st.error("Koneksi database terputus.")
         return False
     
-    try:
+    def _process_save():
         res_fresh = requests.get(URL_GSHEET_API, timeout=15)
         res_fresh.raise_for_status()
         server_data = res_fresh.json()
@@ -242,16 +253,13 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         st.session_state.riwayat = server_riwayat
         st.cache_data.clear()
         
-        # Reset memori notifikasi jika ada transaksi masuk/keluar, 
-        # agar jika ada item *baru* yang menjadi kritis/habis setelah transaksi ini, tetap terkirim
         st.session_state.notif_terkirim_habis = frozenset()
         st.session_state.notif_terkirim_kritis = frozenset()
         cek_dan_kirim_stok_kritis(server_stok)
-        
         return True
-    except Exception as e:
-        st.error(f"Terjadi kesalahan saat menyimpan data ke server: {e}")
-        return False
+
+    result = safe_api_call(_process_save, default_return=False, error_message="Gagal menyimpan data ke database server.")
+    return result
 
 if "is_connected" not in st.session_state:
     s_load, r_load, is_conn = load_data(force_refresh=True)
@@ -545,8 +553,10 @@ elif active_menu == "Pengaturan & Reset":
             "stok": [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in stok_reset.items()],
             "riwayat": [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]]
         }
-        try:
-            requests.post(URL_GSHEET_API, json=payload_reset, timeout=45)
+        
+        def _reset_db():
+            res = requests.post(URL_GSHEET_API, json=payload_reset, timeout=45)
+            res.raise_for_status()
             st.session_state.stok = stok_reset
             st.session_state.riwayat = riwayat_reset
             st.session_state.notif_terkirim_habis = frozenset()
@@ -554,10 +564,10 @@ elif active_menu == "Pengaturan & Reset":
             st.cache_data.clear()
             st.success("Data berhasil di-reset!")
             st.rerun()
-        except Exception as e:
-            st.error(f"Gagal meriset data: {e}")
+
+        safe_api_call(_reset_db, error_message="Gagal meriset data server.")
 
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.5 Pro Enterprise (Multi-User Safe & Anti-Spam Notif)")
+    st.info("Versi: 3.6 Pro Enterprise (Multi-User Safe, Anti-Spam Notif & Centralized Error Handling)")
