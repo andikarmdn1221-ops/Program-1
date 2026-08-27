@@ -20,10 +20,6 @@ TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 # CENTRALIZED ERROR HANDLING & HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
 def safe_api_call(func, *args, default_return=None, error_message="Terjadi kesalahan sistem.", **kwargs):
-    """
-    Decorator / Wrapper terpusat untuk menangani error (Error Handling Terpusat).
-    Mencegah penulisan try-except berulang di setiap fungsi API atau request.
-    """
     try:
         return func(*args, **kwargs)
     except requests.exceptions.Timeout:
@@ -157,7 +153,7 @@ def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE (MULTI-USER SAFE & ANTI-SPAM NOTIF)
+# DATA ENGINE (MULTI-USER SAFE, ANTI-SPAM, & KOREKSI)
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
@@ -258,8 +254,86 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         cek_dan_kirim_stok_kritis(server_stok)
         return True
 
-    result = safe_api_call(_process_save, default_return=False, error_message="Gagal menyimpan data ke database server.")
-    return result
+    return safe_api_call(_process_save, default_return=False, error_message="Gagal menyimpan data ke database server.")
+
+def koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
+    if not st.session_state.get("is_connected", False) or not URL_GSHEET_API:
+        st.error("Koneksi database terputus.")
+        return False
+
+    def _process_koreksi():
+        res_fresh = requests.get(URL_GSHEET_API, timeout=15)
+        res_fresh.raise_for_status()
+        server_data = res_fresh.json()
+
+        server_stok = {row[0]: safe_int(row[1]) for row in server_data.get("stok", [])[1:] if len(row) >= 2}
+        server_riwayat = [{"Waktu": r[0], "Tipe": r[1], "Barang": r[2], "Jumlah": safe_int(r[3]), "Pembeli / Keterangan": r[4] if len(r)>4 else "-"} for r in server_data.get("riwayat", [])[1:] if len(r)>=4]
+
+        # 1. Cari Index transaksi lama di database server (Pencocokan presisi)
+        idx_found = -1
+        for i, tx in enumerate(server_riwayat):
+            if (tx['Waktu'] == old_tx['Waktu'] and tx['Tipe'] == old_tx['Tipe'] and
+                tx['Barang'] == old_tx['Barang'] and tx['Jumlah'] == old_tx['Jumlah'] and
+                tx['Pembeli / Keterangan'] == old_tx['Pembeli / Keterangan']):
+                idx_found = i
+                break
+
+        if idx_found == -1:
+            st.error("Transaksi asli tidak ditemukan di server (mungkin sudah dihapus/diubah pengguna lain). Silakan refresh.")
+            return False
+
+        # 2. Reverse/Batalkan efek transaksi lama terhadap stok
+        if old_tx['Tipe'] == 'MASUK':
+            server_stok[old_tx['Barang']] -= old_tx['Jumlah']
+        elif old_tx['Tipe'] == 'KELUAR':
+            server_stok[old_tx['Barang']] += old_tx['Jumlah']
+        elif old_tx['Tipe'] == 'BARANG BARU':
+            server_stok[old_tx['Barang']] -= old_tx['Jumlah']
+
+        if is_delete:
+            # Hapus log riwayat
+            server_riwayat.pop(idx_found)
+        else:
+            # 3. Terapkan efek transaksi baru terhadap stok
+            if new_tx['Tipe'] == 'MASUK':
+                server_stok[new_tx['Barang']] = server_stok.get(new_tx['Barang'], 0) + new_tx['Jumlah']
+            elif new_tx['Tipe'] == 'KELUAR':
+                if server_stok.get(new_tx['Barang'], 0) < new_tx['Jumlah']:
+                    st.error(f"Koreksi gagal! Sisa stok `{new_tx['Barang']}` tidak mencukupi untuk jumlah keluar ini.")
+                    return False
+                server_stok[new_tx['Barang']] -= new_tx['Jumlah']
+            elif new_tx['Tipe'] == 'BARANG BARU':
+                server_stok[new_tx['Barang']] = server_stok.get(new_tx['Barang'], 0) + new_tx['Jumlah']
+
+            # Update log riwayat
+            server_riwayat[idx_found] = new_tx
+
+        # 4. Validasi Final: Pastikan tidak ada stok minus
+        for k, v in server_stok.items():
+            if v < 0:
+                st.error(f"Koreksi gagal! Karena pengubahan ini, stok `{k}` akan menjadi minus ({v} pcs).")
+                return False
+
+        # 5. Eksekusi simpan ke Google Sheets
+        payload = {
+            "stok": [["Nama Barang", "Jumlah Stok"]] + [[k, v] for k, v in server_stok.items()],
+            "riwayat": [["Waktu", "Tipe", "Barang", "Jumlah", "Pembeli / Keterangan"]] + [[i.get("Waktu",""), i.get("Tipe",""), i.get("Barang",""), i.get("Jumlah",""), i.get("Pembeli / Keterangan","-")] for i in server_riwayat]
+        }
+
+        res_post = requests.post(URL_GSHEET_API, json=payload, timeout=45)
+        res_post.raise_for_status()
+
+        st.session_state.stok = server_stok
+        st.session_state.riwayat = server_riwayat
+        st.cache_data.clear()
+        
+        st.session_state.notif_terkirim_habis = frozenset()
+        st.session_state.notif_terkirim_kritis = frozenset()
+        cek_dan_kirim_stok_kritis(server_stok)
+        return True
+
+    return safe_api_call(_process_koreksi, default_return=False, error_message="Gagal menyimpan koreksi ke server.")
+
 
 if "is_connected" not in st.session_state:
     s_load, r_load, is_conn = load_data(force_refresh=True)
@@ -275,7 +349,7 @@ with st.sidebar:
     
     m_utama = st.radio("MENU UTAMA", ["🏠 Dashboard", "📋 Lihat Semua Stok", "➕ Kelola Master Item"])
     st.markdown("---")
-    m_transaksi = st.radio("TRANSAKSI", ["📥 Barang Masuk", "📤 Barang Keluar"])
+    m_transaksi = st.radio("TRANSAKSI", ["📥 Barang Masuk", "📤 Barang Keluar", "✏️ Koreksi Transaksi"])
     st.markdown("---")
     m_laporan = st.radio("LAPORAN", ["📊 Riwayat Transaksi", "📈 Laporan Periodik"])
     st.markdown("---")
@@ -458,6 +532,69 @@ elif active_menu == "Barang Keluar":
                     threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                     st.rerun()
 
+elif active_menu == "Koreksi Transaksi":
+    st.subheader("✏️ Koreksi / Hapus Transaksi")
+    st.info("Fitur ini memungkinkan Anda mengubah atau menghapus data transaksi jika terjadi salah input. Stok barang akan dihitung ulang secara otomatis.")
+    
+    if not st.session_state.riwayat:
+        st.warning("Belum ada riwayat transaksi yang dapat dikoreksi.")
+    else:
+        # Menampilkan 150 transaksi terakhir agar dropdown tidak terlalu berat
+        riwayat_options = st.session_state.riwayat[:150]
+        
+        def format_tx(tx):
+            return f"[{tx['Waktu']}] | {tx['Tipe']} - {tx['Barang']} ({tx['Jumlah']} pcs) | {tx['Pembeli / Keterangan']}"
+            
+        pilihan_tx_str = st.selectbox("Cari & Pilih Transaksi yang Ingin Dikoreksi:", [format_tx(tx) for tx in riwayat_options])
+        
+        # Cari transaksi asli berdasarkan format string yang dipilih
+        old_tx = next((tx for tx in riwayat_options if format_tx(tx) == pilihan_tx_str), None)
+        
+        if old_tx:
+            st.markdown("---")
+            with st.form("form_koreksi"):
+                st.write("**Form Edit Transaksi**")
+                
+                new_waktu = st.text_input("Waktu Transaksi", old_tx['Waktu'])
+                new_tipe = st.selectbox("Tipe Transaksi", ["MASUK", "KELUAR", "BARANG BARU"], index=["MASUK", "KELUAR", "BARANG BARU"].index(old_tx['Tipe']))
+                
+                list_barang = sorted(st.session_state.stok.keys(), key=kunci_urut_nama)
+                idx_barang = list_barang.index(old_tx['Barang']) if old_tx['Barang'] in list_barang else 0
+                new_barang = st.selectbox("Barang", list_barang, index=idx_barang)
+                
+                new_jumlah = st.number_input("Jumlah (pcs)", min_value=1, value=old_tx['Jumlah'], step=1)
+                new_ket = st.text_input("Keterangan / Pembeli", old_tx['Pembeli / Keterangan'])
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    btn_simpan = st.form_submit_button("💾 Simpan Perubahan")
+                with c2:
+                    btn_hapus = st.form_submit_button("🗑️ Hapus Transaksi Ini")
+                    
+                if btn_simpan:
+                    new_tx = {
+                        "Waktu": new_waktu,
+                        "Tipe": new_tipe,
+                        "Barang": new_barang,
+                        "Jumlah": new_jumlah,
+                        "Pembeli / Keterangan": new_ket
+                    }
+                    if new_tx == old_tx:
+                        st.warning("Tidak ada perubahan yang dilakukan.")
+                    else:
+                        if koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
+                            st.success("Koreksi berhasil disimpan dan stok telah diperbarui!")
+                            pesan_koreksi = f"✏️ **KOREKSI TRANSAKSI**\n*Data Lama:* {old_tx['Tipe']} {old_tx['Barang']} ({old_tx['Jumlah']} pcs)\n*Data Baru:* {new_tipe} {new_barang} ({new_jumlah} pcs)"
+                            threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_koreksi,)).start()
+                            st.rerun()
+                            
+                if btn_hapus:
+                    if koreksi_transaksi_atomic(old_tx, None, is_delete=True):
+                        st.success("Transaksi berhasil dihapus dan stok telah dikembalikan!")
+                        pesan_hapus = f"🗑️ **HAPUS TRANSAKSI**\nData {old_tx['Tipe']} {old_tx['Barang']} ({old_tx['Jumlah']} pcs) telah dihapus dari sistem."
+                        threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_hapus,)).start()
+                        st.rerun()
+
 elif active_menu == "Riwayat Transaksi":
     st.subheader("Riwayat Log Transaksi Gudang")
     if not st.session_state.riwayat:
@@ -570,4 +707,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.6 Pro Enterprise (Multi-User Safe, Anti-Spam Notif & Centralized Error Handling)")
+    st.info("Versi: 4.0 Pro Enterprise (Full Fitur dengan Sistem Koreksi Transaksi Atomic)")
