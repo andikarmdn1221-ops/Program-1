@@ -26,9 +26,12 @@ st.set_page_config(
 )
 
 WIB = ZoneInfo("Asia/Jakarta")
+APP_VERSION = "6.0"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
+API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+ALLOW_NO_LOGIN = bool(st.secrets.get("ALLOW_NO_LOGIN", False))
 
 STOK_DEFAULT = {
     "Microcement base": 16,
@@ -67,6 +70,33 @@ RIWAYAT_COLUMNS = [
     "Status",
     "Referensi",
 ]
+
+AUDIT_COLUMNS = ["Waktu", "User", "Role", "Aksi", "ID Transaksi", "Detail"]
+
+ROLE_DEVELOPER = "Developer"
+ROLE_BOSS = "Boss"
+ROLE_ADMIN = "Admin"
+ROLE_STAFF = "Staff"
+VALID_ROLES = {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN, ROLE_STAFF}
+
+ROLE_LABEL = {
+    ROLE_DEVELOPER: "👨‍💻 Developer",
+    ROLE_BOSS: "👔 Boss",
+    ROLE_ADMIN: "👑 Admin",
+    ROLE_STAFF: "👷 Staff",
+}
+
+PERMISSIONS = {
+    "view_stock": VALID_ROLES,
+    "transaction": VALID_ROLES,
+    "manage_master": {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN},
+    "stock_adjust": {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN},
+    "correct_transaction": {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN},
+    "view_reports": {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN},
+    "view_audit": {ROLE_DEVELOPER, ROLE_BOSS},
+    "backup": {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN},
+    "reset": {ROLE_DEVELOPER},
+}
 
 
 # ============================================================
@@ -170,7 +200,9 @@ def to_image_payload(uploaded_file):
 def api_get(timeout=20):
     if not URL_GSHEET_API:
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
-    response = requests.get(URL_GSHEET_API, timeout=timeout)
+    if not API_SHARED_KEY:
+        raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
+    response = requests.get(URL_GSHEET_API, params={"key": API_SHARED_KEY}, timeout=timeout)
     response.raise_for_status()
     data = response.json()
     if isinstance(data, dict) and data.get("ok") is False:
@@ -181,6 +213,9 @@ def api_get(timeout=20):
 def api_post(payload: dict, timeout=60):
     if not URL_GSHEET_API:
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
+    if not API_SHARED_KEY:
+        raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
+    payload = {**payload, "api_key": API_SHARED_KEY}
     response = requests.post(URL_GSHEET_API, json=payload, timeout=timeout)
     response.raise_for_status()
     data = response.json()
@@ -325,13 +360,49 @@ def normalize_history_rows(raw_rows):
     return result
 
 
+def normalize_audit_rows(raw_rows):
+    rows = raw_rows or []
+    if not rows:
+        return []
+
+    if isinstance(rows[0], list):
+        header = [str(x).strip() for x in rows[0]]
+        data_rows = rows[1:]
+    else:
+        header = []
+        data_rows = rows
+
+    if header and "Aksi" in header:
+        result = []
+        for row in data_rows:
+            row = list(row) + [""] * max(0, len(header) - len(row))
+            item = {header[i]: row[i] for i in range(len(header))}
+            result.append({col: item.get(col, "") for col in AUDIT_COLUMNS})
+        return result
+
+    # Kompatibilitas audit lama: Waktu, Aksi, ID Transaksi, Detail
+    result = []
+    for row in data_rows:
+        if not isinstance(row, list) or len(row) < 1:
+            continue
+        result.append({
+            "Waktu": row[0] if len(row) > 0 else "",
+            "User": "",
+            "Role": "",
+            "Aksi": row[1] if len(row) > 1 else "",
+            "ID Transaksi": row[2] if len(row) > 2 else "",
+            "Detail": row[3] if len(row) > 3 else "",
+        })
+    return result
+
+
 def normalize_server_data(data):
     if not isinstance(data, dict):
         return STOK_DEFAULT.copy(), MASTER_DEFAULT.copy(), [], []
 
     stock, master = normalize_stock_rows(data.get("stok", []))
     history = normalize_history_rows(data.get("riwayat", []))
-    audit = data.get("audit", []) or []
+    audit = normalize_audit_rows(data.get("audit", []))
 
     if not stock:
         stock = STOK_DEFAULT.copy()
@@ -372,7 +443,7 @@ def clear_and_refresh():
 
 
 # ============================================================
-# OPTIONAL LOGIN / ROLE
+# LOGIN & ROLE BASED ACCESS CONTROL
 # ============================================================
 def get_users_config():
     try:
@@ -380,6 +451,18 @@ def get_users_config():
         return dict(users) if users else {}
     except Exception:
         return {}
+
+
+def normalize_role(role: str) -> str:
+    txt = str(role or "").strip().lower()
+    mapping = {
+        "developer": ROLE_DEVELOPER,
+        "boss": ROLE_BOSS,
+        "bos": ROLE_BOSS,
+        "admin": ROLE_ADMIN,
+        "staff": ROLE_STAFF,
+    }
+    return mapping.get(txt, ROLE_STAFF)
 
 
 def password_matches(input_password: str, configured: dict) -> bool:
@@ -394,14 +477,20 @@ def password_matches(input_password: str, configured: dict) -> bool:
 def login_gate():
     users = get_users_config()
     if not users:
-        st.session_state.auth_user = "Local Admin"
-        st.session_state.auth_role = "Admin"
-        return
+        if ALLOW_NO_LOGIN:
+            st.session_state.auth_user = "Local Developer"
+            st.session_state.auth_role = ROLE_DEVELOPER
+            return
+        st.error("Konfigurasi USERS belum dibuat di Streamlit Secrets.")
+        st.info("Tambahkan akun Developer, Boss, Admin, dan Staff di Streamlit Secrets sebelum aplikasi digunakan.")
+        st.stop()
 
     if st.session_state.get("auth_user"):
+        st.session_state.auth_role = normalize_role(st.session_state.get("auth_role"))
         return
 
     st.title("🔐 Login WMS Microcement")
+    st.caption("Masuk menggunakan akun yang diberikan sesuai jabatan.")
     with st.form("login_form"):
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
@@ -411,14 +500,35 @@ def login_gate():
         cfg = users.get(username)
         if cfg and password_matches(password, dict(cfg)):
             st.session_state.auth_user = username
-            st.session_state.auth_role = str(cfg.get("role", "Staff"))
+            st.session_state.auth_role = normalize_role(dict(cfg).get("role", ROLE_STAFF))
             st.rerun()
         st.error("Username atau password salah.")
     st.stop()
 
 
-def can_admin():
-    return st.session_state.get("auth_role") == "Admin"
+def current_role() -> str:
+    return normalize_role(st.session_state.get("auth_role", ROLE_STAFF))
+
+
+def has_permission(permission: str) -> bool:
+    return current_role() in PERMISSIONS.get(permission, set())
+
+
+def actor_payload() -> dict:
+    return {
+        "actor": str(st.session_state.get("auth_user", "Unknown")),
+        "role": current_role(),
+    }
+
+
+def actor_label() -> str:
+    return f"{st.session_state.get('auth_user', 'Unknown')} ({current_role()})"
+
+
+def require_permission(permission: str):
+    if not has_permission(permission):
+        st.error("⛔ Anda tidak memiliki izin untuk membuka fitur ini.")
+        st.stop()
 
 
 # ============================================================
@@ -488,6 +598,7 @@ def do_transaction(tipe, barang, jumlah, tgl_transaksi, keterangan, file_uploade
         "jumlah": int(jumlah),
         "keterangan": keterangan.strip() or "-",
         **to_image_payload(file_uploaded),
+        **actor_payload(),
     }
     result = api_post(payload)
     clear_and_refresh()
@@ -504,6 +615,7 @@ def add_master(nama, stok_awal, min_stok):
             "status": "Aktif",
             "tx_id": make_tx_id("NEW"),
             "waktu": combine_manual_date(date.today()),
+            **actor_payload(),
         }
     )
     clear_and_refresh()
@@ -518,6 +630,7 @@ def update_master(old_nama, new_nama, status, min_stok):
             "new_nama": new_nama,
             "status": status,
             "min_stok": int(min_stok),
+            **actor_payload(),
         }
     )
     clear_and_refresh()
@@ -525,7 +638,7 @@ def update_master(old_nama, new_nama, status, min_stok):
 
 
 def delete_master(nama):
-    result = api_post({"action": "master_delete", "nama": nama})
+    result = api_post({"action": "master_delete", "nama": nama, **actor_payload()})
     clear_and_refresh()
     return result
 
@@ -542,6 +655,7 @@ def correct_transaction(old_tx, new_tx):
             "new_barang": new_tx["Barang"],
             "new_jumlah": int(new_tx["Jumlah"]),
             "new_keterangan": new_tx["Pembeli / Keterangan"],
+            **actor_payload(),
         }
     )
     clear_and_refresh()
@@ -549,13 +663,30 @@ def correct_transaction(old_tx, new_tx):
 
 
 def void_transaction(tx_id):
-    result = api_post({"action": "transaction_void", "tx_id": tx_id})
+    result = api_post({"action": "transaction_void", "tx_id": tx_id, **actor_payload()})
+    clear_and_refresh()
+    return result
+
+
+def adjust_stock(barang, stok_baru, alasan, tgl_transaksi):
+    result = api_post(
+        {
+            "action": "stock_adjust",
+            "tx_id": make_tx_id("ADJ"),
+            "barang": barang,
+            "stok_baru": int(stok_baru),
+            "alasan": alasan.strip() or "Penyesuaian stok",
+            "tanggal": tgl_transaksi.strftime("%d-%m-%Y"),
+            "waktu": combine_manual_date(tgl_transaksi),
+            **actor_payload(),
+        }
+    )
     clear_and_refresh()
     return result
 
 
 def reset_database():
-    result = api_post({"action": "reset", "confirm": "RESET-DATABASE"})
+    result = api_post({"action": "reset", "confirm": "RESET-DATABASE", **actor_payload()})
     clear_and_refresh()
     return result
 
@@ -578,32 +709,55 @@ history = st.session_state.riwayat
 # ============================================================
 with st.sidebar:
     st.markdown("### 📦 WMS Microcement")
-    st.caption(f"👤 {st.session_state.get('auth_user')} · {st.session_state.get('auth_role')}")
+    role_now = current_role()
+    st.caption(f"👤 {st.session_state.get('auth_user')}")
+    st.caption(ROLE_LABEL.get(role_now, role_now))
     st.markdown("---")
 
     menu_options = [
         "🏠 Dashboard",
         "📋 Lihat Semua Stok",
-        "📥 Barang Masuk",
-        "📤 Barang Keluar",
-        "📊 Riwayat Transaksi",
-        "📈 Laporan Periodik",
-        "💾 Backup Data",
-        "ℹ️ Tentang Aplikasi",
     ]
-    if can_admin():
-        menu_options.insert(2, "➕ Kelola Master Item")
-        menu_options.insert(5, "✏️ Koreksi Transaksi")
-        menu_options.insert(-1, "⚙️ Pengaturan & Reset")
+
+    if has_permission("manage_master"):
+        menu_options.append("➕ Kelola Master Item")
+
+    if has_permission("transaction"):
+        menu_options.extend(["📥 Barang Masuk", "📤 Barang Keluar"])
+
+    if has_permission("stock_adjust"):
+        menu_options.append("🧮 Penyesuaian Stok")
+
+    if has_permission("correct_transaction"):
+        menu_options.append("✏️ Koreksi Transaksi")
+
+    menu_options.append("📊 Riwayat Transaksi")
+
+    if has_permission("view_reports"):
+        menu_options.append("📈 Laporan Periodik")
+
+    if has_permission("view_audit"):
+        menu_options.append("📜 Audit Log")
+
+    if has_permission("backup"):
+        menu_options.append("💾 Backup Data")
+
+    if has_permission("reset"):
+        menu_options.append("⚙️ Pengaturan & Reset")
+
+    menu_options.append("ℹ️ Tentang Aplikasi")
 
     active_raw = st.radio("NAVIGASI", menu_options)
     active_menu = active_raw.split(" ", 1)[1]
 
     st.markdown("---")
-    st.success("Database terhubung" if st.session_state.get("is_connected") else "Database offline")
+    if st.session_state.get("is_connected"):
+        st.success("🟢 Database terhubung")
+    else:
+        st.error("🔴 Database offline")
     st.info("🟢 Telegram aktif" if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID else "⚪ Telegram belum dikonfigurasi")
 
-    if get_users_config() and st.button("Keluar", use_container_width=True):
+    if get_users_config() and st.button("🚪 Keluar", use_container_width=True):
         st.session_state.pop("auth_user", None)
         st.session_state.pop("auth_role", None)
         st.rerun()
@@ -740,6 +894,7 @@ elif active_menu == "Lihat Semua Stok":
 
 
 elif active_menu == "Kelola Master Item":
+    require_permission("manage_master")
     tab_add, tab_edit = st.tabs(["➕ Tambah Barang", "⚙️ Edit / Nonaktifkan"])
 
     with tab_add:
@@ -758,7 +913,7 @@ elif active_menu == "Kelola Master Item":
             else:
                 try:
                     add_master(nama, stok_awal, minimum)
-                    telegram_async(f"✨ *ITEM BARU*\n📦 {nama}\nStok awal: {stok_awal} pcs\nMinimum: {minimum} pcs")
+                    telegram_async(f"✨ *ITEM BARU*\n📦 {nama}\nStok awal: {stok_awal} pcs\nMinimum: {minimum} pcs\n👤 {actor_label()}")
                     st.success("Barang berhasil ditambahkan.")
                     st.rerun()
                 except Exception as exc:
@@ -802,6 +957,7 @@ elif active_menu == "Kelola Master Item":
 
 
 elif active_menu in ("Barang Masuk", "Barang Keluar"):
+    require_permission("transaction")
     tipe = "MASUK" if active_menu == "Barang Masuk" else "KELUAR"
     names = sorted(
         [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
@@ -840,7 +996,7 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
                         f"{'📥' if tipe == 'MASUK' else '📤'} *BARANG {tipe}*\n"
                         f"📦 {barang}\n{symbol} {jumlah} pcs\n"
                         f"📅 {tgl.strftime('%d-%m-%Y')}\n"
-                        f"📝 {keterangan.strip() or '-'}\n📊 Sisa: {remaining} pcs"
+                        f"📝 {keterangan.strip() or '-'}\n📊 Sisa: {remaining} pcs\n👤 {actor_label()}"
                     )
                     if proof_url:
                         msg += f"\n📁 {proof_url}"
@@ -854,7 +1010,50 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
                     show_api_error("Transaksi gagal", exc)
 
 
+elif active_menu == "Penyesuaian Stok":
+    require_permission("stock_adjust")
+    st.info("Gunakan fitur ini saat stok fisik berbeda dari stok sistem. Semua perubahan dicatat di riwayat dan audit log.")
+    names = sorted(
+        [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
+        key=natural_key,
+    )
+    if not names:
+        st.warning("Tidak ada barang aktif.")
+    else:
+        with st.form("stock_adjustment", clear_on_submit=False):
+            barang = st.selectbox("Pilih Barang", names)
+            stok_lama = stock.get(barang, 0)
+            st.metric("Stok Sistem Saat Ini", f"{stok_lama} pcs")
+            stok_baru = st.number_input("Stok Fisik / Stok Baru", min_value=0, value=int(stok_lama), step=1)
+            tgl = st.date_input("Tanggal Penyesuaian", value=date.today())
+            alasan = st.text_area("Alasan Penyesuaian", placeholder="Contoh: hasil stock opname / selisih pencatatan")
+            submit_adjust = st.form_submit_button("🧮 Simpan Penyesuaian Stok", use_container_width=True)
+
+        if submit_adjust:
+            if int(stok_baru) == int(stok_lama):
+                st.warning("Stok baru sama dengan stok saat ini. Tidak ada perubahan.")
+            elif not alasan.strip():
+                st.warning("Alasan penyesuaian wajib diisi.")
+            else:
+                try:
+                    result = adjust_stock(barang, stok_baru, alasan, tgl)
+                    delta = result.get("selisih", int(stok_baru) - int(stok_lama))
+                    telegram_async(
+                        f"🧮 *PENYESUAIAN STOK*\n📦 {barang}\n"
+                        f"Stok lama: {stok_lama} pcs\nStok baru: {stok_baru} pcs\n"
+                        f"Selisih: {delta:+d} pcs\n📝 {alasan.strip()}\n👤 {actor_label()}"
+                    )
+                    alert = result.get("alert")
+                    if alert:
+                        telegram_async(alert)
+                    st.success("Penyesuaian stok berhasil dan tercatat di audit log.")
+                    st.rerun()
+                except Exception as exc:
+                    show_api_error("Penyesuaian stok gagal", exc)
+
+
 elif active_menu == "Koreksi Transaksi":
+    require_permission("correct_transaction")
     editable = [tx for tx in history if tx.get("Status", "AKTIF") == "AKTIF" and tx.get("Tipe") in ("MASUK", "KELUAR")]
     if not editable:
         st.info("Tidak ada transaksi aktif yang dapat dikoreksi.")
@@ -896,7 +1095,7 @@ elif active_menu == "Koreksi Transaksi":
                 telegram_async(
                     f"✏️ *KOREKSI TRANSAKSI*\nID: {old['ID Transaksi']}\n"
                     f"Lama: {old['Tipe']} {old['Barang']} {old['Jumlah']} pcs\n"
-                    f"Baru: {tipe} {barang} {jumlah} pcs"
+                    f"Baru: {tipe} {barang} {jumlah} pcs\n👤 {actor_label()}"
                 )
                 st.success(f"Koreksi tersimpan sebagai transaksi baru {result.get('new_tx_id', '')}.")
                 st.rerun()
@@ -909,7 +1108,7 @@ elif active_menu == "Koreksi Transaksi":
         if st.button("🚫 Void Transaksi", disabled=not confirm_void):
             try:
                 void_transaction(old["ID Transaksi"])
-                telegram_async(f"🚫 *VOID TRANSAKSI*\nID: {old['ID Transaksi']}\n{old['Tipe']} {old['Barang']} {old['Jumlah']} pcs")
+                telegram_async(f"🚫 *VOID TRANSAKSI*\nID: {old['ID Transaksi']}\n{old['Tipe']} {old['Barang']} {old['Jumlah']} pcs\n👤 {actor_label()}")
                 st.success("Transaksi dibatalkan dan stok dikembalikan secara aman.")
                 st.rerun()
             except Exception as exc:
@@ -922,7 +1121,7 @@ elif active_menu == "Riwayat Transaksi":
     else:
         df = pd.DataFrame(history, columns=RIWAYAT_COLUMNS)
         f1, f2, f3 = st.columns(3)
-        tipe_filter = f1.selectbox("Tipe", ["SEMUA", "MASUK", "KELUAR", "BARANG BARU"])
+        tipe_filter = f1.selectbox("Tipe", ["SEMUA", "MASUK", "KELUAR", "PENYESUAIAN", "BARANG BARU"])
         status_filter = f2.selectbox("Status", ["SEMUA", "AKTIF", "VOID", "DIKOREKSI"])
         search = f3.text_input("Cari barang / keterangan")
 
@@ -964,6 +1163,7 @@ elif active_menu == "Riwayat Transaksi":
 
 
 elif active_menu == "Laporan Periodik":
+    require_permission("view_reports")
     d1, d2 = st.columns(2)
     start = d1.date_input("Tanggal Mulai", value=date.today().replace(day=1))
     end = d2.date_input("Tanggal Selesai", value=date.today())
@@ -996,7 +1196,39 @@ elif active_menu == "Laporan Periodik":
             )
 
 
+elif active_menu == "Audit Log":
+    require_permission("view_audit")
+    audit_rows = st.session_state.get("audit", [])
+    if not audit_rows:
+        st.info("Belum ada audit log.")
+    else:
+        df_audit = pd.DataFrame(audit_rows, columns=AUDIT_COLUMNS)
+        a1, a2, a3 = st.columns(3)
+        user_filter = a1.selectbox("User", ["SEMUA"] + sorted([x for x in df_audit["User"].dropna().astype(str).unique() if x]))
+        role_filter = a2.selectbox("Role", ["SEMUA"] + sorted([x for x in df_audit["Role"].dropna().astype(str).unique() if x]))
+        audit_search = a3.text_input("Cari aksi / detail")
+        if user_filter != "SEMUA":
+            df_audit = df_audit[df_audit["User"].astype(str) == user_filter]
+        if role_filter != "SEMUA":
+            df_audit = df_audit[df_audit["Role"].astype(str) == role_filter]
+        if audit_search:
+            mask = (
+                df_audit["Aksi"].astype(str).str.contains(audit_search, case=False, na=False)
+                | df_audit["Detail"].astype(str).str.contains(audit_search, case=False, na=False)
+                | df_audit["ID Transaksi"].astype(str).str.contains(audit_search, case=False, na=False)
+            )
+            df_audit = df_audit[mask]
+        st.dataframe(df_audit, use_container_width=True, hide_index=True)
+        st.download_button(
+            "📥 Ekspor Audit Excel",
+            excel_bytes(df_audit, "Audit"),
+            f"Audit_{sekarang_wib().strftime('%Y%m%d')}.xlsx",
+            use_container_width=True,
+        )
+
+
 elif active_menu == "Backup Data":
+    require_permission("backup")
     st.write("Backup berisi stok, riwayat transaksi, URL bukti, dan audit log.")
     backup = full_backup_bytes(stock, master, history, st.session_state.get("audit", []))
     filename = f"BACKUP_WMS_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx"
@@ -1010,6 +1242,7 @@ elif active_menu == "Backup Data":
 
 
 elif active_menu == "Pengaturan & Reset":
+    require_permission("reset")
     st.warning("Reset menghapus data operasional dan mengembalikan master awal. Backup dahulu.")
     backup = full_backup_bytes(stock, master, history, st.session_state.get("audit", []))
     st.download_button("💾 Download Backup Sebelum Reset", backup, f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx")
@@ -1031,5 +1264,6 @@ elif active_menu == "Tentang Aplikasi":
         "Aplikasi manajemen gudang berbasis Streamlit dengan Google Sheets sebagai penyimpanan data, "
         "Google Drive untuk bukti transaksi, dan Telegram untuk notifikasi operasional."
     )
-    st.info("Versi 5.0 · Internal WMS")
-    st.caption("Transaksi, koreksi, void, dan master item diproses server-side agar lebih aman untuk penggunaan multi-user.")
+    st.info(f"Versi {APP_VERSION} · Internal WMS")
+    st.caption("Role: Developer, Boss, Admin, Staff. Boss dapat mengelola dan menyesuaikan stok, sedangkan reset database hanya Developer.")
+    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item diproses server-side dengan LockService agar lebih aman untuk multi-user.")
