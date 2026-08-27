@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import re
 import io
 import threading
+import base64
 from fpdf import FPDF
 from PIL import Image
 
@@ -161,7 +162,7 @@ def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE (MULTI-USER SAFE, ANTI-SPAM, & KOREKSI)
+# DATA ENGINE (MULTI-USER SAFE, DRIVE UPLOAD, & KOREKSI)
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
@@ -210,7 +211,6 @@ def load_data(force_refresh=False):
     return s_stok, s_master, s_riwayat, True
 
 def cek_dan_kirim_stok_kritis(stok_dict, master_info):
-    # Hanya cek barang yang statusnya "Aktif"
     habis = frozenset([b for b, q in stok_dict.items() if q == 0 and master_info.get(b, {}).get("status", "Aktif") == "Aktif"])
     kritis = frozenset([b for b, q in stok_dict.items() if 0 < q <= master_info.get(b, {}).get("min_stok", 5) and master_info.get(b, {}).get("status", "Aktif") == "Aktif"])
     
@@ -234,12 +234,22 @@ def cek_dan_kirim_stok_kritis(stok_dict, master_info):
         st.session_state.notif_terkirim_habis = habis
         st.session_state.notif_terkirim_kritis = kritis
 
-def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
+def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli, file_uploaded=None):
     if not st.session_state.get("is_connected", False) or not URL_GSHEET_API: 
         st.error("Koneksi database terputus.")
-        return False
+        return False, None
     
     def _process_save():
+        img_base64 = None
+        img_name = None
+        img_mime = None
+        if file_uploaded is not None:
+            file_uploaded.seek(0)
+            raw_bytes = kompres_gambar(file_uploaded)
+            img_base64 = base64.b64encode(raw_bytes).decode('utf-8')
+            img_name = getattr(file_uploaded, 'name', 'bukti_transaksi.jpg')
+            img_mime = "image/jpeg"
+
         res_fresh = requests.get(URL_GSHEET_API, timeout=15)
         res_fresh.raise_for_status()
         server_data = res_fresh.json()
@@ -251,7 +261,7 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
             stok_terkini = server_stok.get(barang, 0)
             if jumlah > stok_terkini:
                 st.error(f"Gagal! Stok `{barang}` sisa {stok_terkini} pcs (telah berubah karena transaksi pengguna lain). Silakan refresh.")
-                return False
+                return False, None
             server_stok[barang] -= jumlah
         elif tipe_transaksi == "MASUK":
             server_stok[barang] = server_stok.get(barang, 0) + jumlah
@@ -268,8 +278,15 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         })
 
         payload = payload_generator(server_stok, server_master, server_riwayat)
+        if img_base64:
+            payload["image_base64"] = img_base64
+            payload["image_name"] = img_name
+            payload["image_mime"] = img_mime
+
         res_post = requests.post(URL_GSHEET_API, json=payload, timeout=45)
         res_post.raise_for_status()
+        res_json = res_post.json()
+        file_url_drive = res_json.get("file_url", None)
         
         st.session_state.stok = server_stok
         st.session_state.master_info = server_master
@@ -279,9 +296,9 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         st.session_state.notif_terkirim_habis = frozenset()
         st.session_state.notif_terkirim_kritis = frozenset()
         cek_dan_kirim_stok_kritis(server_stok, server_master)
-        return True
+        return True, file_url_drive
 
-    return safe_api_call(_process_save, default_return=False, error_message="Gagal menyimpan data ke database server.")
+    return safe_api_call(_process_save, default_return=(False, None), error_message="Gagal menyimpan data ke database server.")
 
 def update_master_item_atomic(old_nama, new_nama, new_status, new_min, is_delete=False):
     if not st.session_state.get("is_connected", False) or not URL_GSHEET_API:
@@ -296,28 +313,24 @@ def update_master_item_atomic(old_nama, new_nama, new_status, new_min, is_delete
         server_stok, server_master, server_riwayat = parse_server_data(server_data)
         
         if old_nama not in server_stok:
-            st.error("Gagal: Barang tidak ditemukan di server (Mungkin sudah dihapus orang lain).")
+            st.error("Gagal: Barang tidak ditemukan di server.")
             return False
 
         if is_delete:
             del server_stok[old_nama]
             if old_nama in server_master: del server_master[old_nama]
-            # Hapus dari riwayat (opsional, tapi disarankan jika dihapus permanen agar rapi)
             server_riwayat = [tx for tx in server_riwayat if tx['Barang'] != old_nama]
         else:
             if old_nama != new_nama:
                 if new_nama in server_stok:
                     st.error("Gagal: Nama barang baru sudah digunakan!")
                     return False
-                # Ganti kunci dict
                 server_stok[new_nama] = server_stok.pop(old_nama)
                 server_master[new_nama] = server_master.pop(old_nama, {})
-                # Ubah nama di seluruh riwayat transaksi
                 for tx in server_riwayat:
                     if tx['Barang'] == old_nama:
                         tx['Barang'] = new_nama
             
-            # Update properti
             server_master[new_nama]["status"] = new_status
             server_master[new_nama]["min_stok"] = new_min
 
@@ -349,7 +362,6 @@ def koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
 
         server_stok, server_master, server_riwayat = parse_server_data(server_data)
 
-        # Cari Index transaksi
         idx_found = -1
         for i, tx in enumerate(server_riwayat):
             if (tx['Waktu'] == old_tx['Waktu'] and tx['Tipe'] == old_tx['Tipe'] and
@@ -362,7 +374,6 @@ def koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
             st.error("Transaksi asli tidak ditemukan di server.")
             return False
 
-        # Reverse transaksi lama
         if old_tx['Tipe'] == 'MASUK':
             server_stok[old_tx['Barang']] -= old_tx['Jumlah']
         elif old_tx['Tipe'] == 'KELUAR':
@@ -373,7 +384,6 @@ def koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
         if is_delete:
             server_riwayat.pop(idx_found)
         else:
-            # Apply transaksi baru
             if new_tx['Tipe'] == 'MASUK':
                 server_stok[new_tx['Barang']] = server_stok.get(new_tx['Barang'], 0) + new_tx['Jumlah']
             elif new_tx['Tipe'] == 'KELUAR':
@@ -386,7 +396,6 @@ def koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
 
             server_riwayat[idx_found] = new_tx
 
-        # Validasi stok minus
         for k, v in server_stok.items():
             if v < 0:
                 st.error(f"Koreksi gagal! Stok `{k}` akan menjadi minus ({v} pcs).")
@@ -483,7 +492,6 @@ st.markdown("---")
 if not st.session_state.is_connected:
     st.error("🚨 KONEKSI DATABASE TERPUTUS! Periksa koneksi internet / URL Google Sheets Anda.")
 
-# Statistik global (hanya menghitung yang Aktif)
 item_aktif = {k: v for k, v in st.session_state.stok.items() if st.session_state.master_info.get(k, {}).get("status", "Aktif") == "Aktif"}
 item_habis = [b for b, q in item_aktif.items() if q == 0]
 item_kritis = [b for b, q in item_aktif.items() if 0 < q <= st.session_state.master_info.get(b, {}).get("min_stok", 5)]
@@ -585,7 +593,7 @@ elif active_menu == "Kelola Master Item":
                 elif nama_clean in st.session_state.stok: 
                     st.error("Barang sudah ada di database!")
                 else:
-                    berhasil = save_data_atomic("BARANG BARU", nama_clean, stok_awal, "Item baru")
+                    berhasil, url_drive = save_data_atomic("BARANG BARU", nama_clean, stok_awal, "Item baru")
                     if berhasil:
                         update_master_item_atomic(nama_clean, nama_clean, "Aktif", batas_min)
                         st.success(f"Item `{nama_clean}` berhasil ditambahkan!")
@@ -643,10 +651,11 @@ elif active_menu == "Barang Masuk":
             catatan_masuk = st.text_input("Supplier / Keterangan", "-")
             
             if st.form_submit_button("📥 Simpan Barang Masuk"):
-                berhasil = save_data_atomic("MASUK", barang_pilihan, jumlah_masuk, catatan_masuk)
+                berhasil, url_drive = save_data_atomic("MASUK", barang_pilihan, jumlah_masuk, catatan_masuk, foto_bukti)
                 if berhasil:
                     st.success(f"Berhasil menambah stok {barang_pilihan} (+{jumlah_masuk} pcs) untuk tanggal {tgl_transaksi.strftime('%d-%m-%Y')}!")
-                    pesan_tg = f"📥 **BARANG MASUK**\n📦 {barang_pilihan}\n➕ +{jumlah_masuk} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs\n📝 {catatan_masuk}"
+                    info_drive = f"\n📁 [Link Google Drive]({url_drive})" if url_drive else ""
+                    pesan_tg = f"📥 **BARANG MASUK**\n📦 {barang_pilihan}\n➕ +{jumlah_masuk} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs\n📝 {catatan_masuk}{info_drive}"
                     threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                     st.rerun()
 
@@ -671,10 +680,11 @@ elif active_menu == "Barang Keluar":
                 if not nama_pembeli.strip(): 
                     st.warning("⚠️ Mohon isi Nama Pembeli / Proyek!")
                 else:
-                    berhasil = save_data_atomic("KELUAR", barang_pilihan, jumlah_keluar, nama_pembeli.strip())
+                    berhasil, url_drive = save_data_atomic("KELUAR", barang_pilihan, jumlah_keluar, nama_pembeli.strip(), foto_bukti)
                     if berhasil:
                         st.success(f"Pengiriman {barang_pilihan} sebanyak {jumlah_keluar} pcs berhasil dicatat!")
-                        pesan_tg = f"📤 **BARANG KELUAR**\n📦 {barang_pilihan}\n➖ -{jumlah_keluar} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n👤 Pembeli: {nama_pembeli}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs"
+                        info_drive = f"\n📁 [Link Google Drive]({url_drive})" if url_drive else ""
+                        pesan_tg = f"📤 **BARANG KELUAR**\n📦 {barang_pilihan}\n➖ -{jumlah_keluar} pcs\n📅 Tanggal: {tgl_transaksi.strftime('%d-%m-%Y')}\n👤 Pembeli: {nama_pembeli}\n📊 Sisa: {st.session_state.stok[barang_pilihan]} pcs{info_drive}"
                         threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_tg, kompres_gambar(foto_bukti))).start()
                         st.rerun()
 
@@ -801,7 +811,7 @@ elif active_menu == "Laporan Periodik":
                 st.download_button("📄 Cetak Laporan PDF", pdf_bytes, f"Laporan_{tgl_mulai}_{tgl_selesai}.pdf", use_container_width=True)
 
 elif active_menu == "Backup Data":
-    st.subheader("Kirim Backup Database ke Telegram")
+    st.subheader("Kirim Backup Database ke Telegram & Simpan Drive")
     st.write("Klik tombol di bawah untuk membuat file backup lengkap database (stok & riwayat) dan mengirimkannya langsung ke Telegram.")
     
     if st.button("📤 Kirim Backup ke Telegram", use_container_width=True):
@@ -820,7 +830,7 @@ elif active_menu == "Pengaturan & Reset":
     st.subheader("Pengaturan & Reset Pabrik")
     st.warning("⚠️ **Zona Bahaya:** Tindakan ini akan mengosongkan riwayat dan mengembalikan stok ke kondisi default awal.")
     
-    langkah1 = st.checkbox("Saya memahami risiko ini")
+    langkah1 = st.checkbox("Samar memahami risiko ini")
     teks_konfirmasi = st.text_input("Ketik `RESET-DATABASE` untuk mengonfirmasi:", disabled=not langkah1)
     
     if st.button("🚨 Reset Semua Data", disabled=not (langkah1 and teks_konfirmasi.strip() == "RESET-DATABASE")):
@@ -849,4 +859,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 4.5.1 Pro Enterprise (Patch Fix: KeyError master_info)")
+    st.info("Versi: 4.6 Pro Enterprise (Full Integration: Sheets, Drive, & Telegram)")
