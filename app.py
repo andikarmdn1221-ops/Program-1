@@ -138,7 +138,7 @@ def kunci_urut_nama(nama):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', nama)]
 
 # -----------------------------------------------------------------------------
-# DATA ENGINE (MULTI-USER SAFE)
+# DATA ENGINE (MULTI-USER SAFE & ANTI-SPAM NOTIF)
 # -----------------------------------------------------------------------------
 def fetch_data_from_gsheet_direct(url):
     if not url: return None
@@ -164,10 +164,24 @@ def load_data(force_refresh=False):
     return stok_dict or STOK_DEFAULT.copy(), riwayat_list, True
 
 def cek_dan_kirim_stok_kritis(stok_dict):
-    habis = [b for b, q in stok_dict.items() if q == 0]
-    kritis = [b for b, q in stok_dict.items() if 0 < q < 5]
+    """
+    Mengirim notifikasi stok kritis/habis HANYA SEKALI per sesi aktif 
+    kecuali terjadi perubahan item kritis baru, mencegah spam beruntun.
+    """
+    habis = frozenset([b for b, q in stok_dict.items() if q == 0])
+    kritis = frozenset([b for b, q in stok_dict.items() if 0 < q < 5])
     
-    if habis or kritis:
+    # Inisialisasi state anti-spam jika belum ada
+    if "notif_terkirim_habis" not in st.session_state:
+        st.session_state.notif_terkirim_habis = frozenset()
+    if "notif_terkirim_kritis" not in st.session_state:
+        st.session_state.notif_terkirim_kritis = frozenset()
+
+    # Cari apakah ada item habis atau kritis BARU yang belum sempat dilaporkan di sesi ini
+    item_habis_baru = habis - st.session_state.notif_terkirim_habis
+    item_kritis_baru = kritis - st.session_state.notif_terkirim_kritis
+
+    if item_habis_baru or item_kritis_baru:
         pesan_auto = f"🚨 **LAPORAN OTOMATIS: STOK KRITIS & HABIS**\n📅 {dapatkan_waktu_wib()}\n\n"
         if habis:
             pesan_auto += "🔴 *Stok Habis (0 pcs)*:\n" + "".join([f"• {b}\n" for b in habis]) + "\n"
@@ -175,20 +189,17 @@ def cek_dan_kirim_stok_kritis(stok_dict):
             pesan_auto += "🟡 *Stok Kritis (< 5 pcs)*:\n" + "".join([f"• {b}: {stok_dict[b]} pcs\n" for b in kritis])
         
         threading.Thread(target=kirim_notifikasi_telegram, args=(pesan_auto,)).start()
+        
+        # Perbarui memori session agar tidak mengirim ulang item yang sama
+        st.session_state.notif_terkirim_habis = habis
+        st.session_state.notif_terkirim_kritis = kritis
 
 def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
-    """
-    Fungsi penyimpanan aman untuk multi-user:
-    1. Mengambil data paling mutakhir langsung dari server (mencegah data tertimpa user lain).
-    2. Melakukan validasi stok real-time (terutama untuk barang keluar).
-    3. Menyimpan perubahan secara atomik ke Google Sheets API.
-    """
     if not st.session_state.get("is_connected", False) or not URL_GSHEET_API: 
         st.error("Koneksi database terputus.")
         return False
     
     try:
-        # Tarik data paling fresh dari server saat tombol simpan ditekan
         res_fresh = requests.get(URL_GSHEET_API, timeout=15)
         res_fresh.raise_for_status()
         server_data = res_fresh.json()
@@ -199,7 +210,6 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         if not server_stok:
             server_stok = STOK_DEFAULT.copy()
 
-        # Validasi stok & kalkulasi sesuai tipe transaksi
         waktu_sekarang = dapatkan_waktu_wib()
         if tipe_transaksi == "KELUAR":
             stok_terkini = server_stok.get(barang, 0)
@@ -212,7 +222,6 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         elif tipe_transaksi == "BARANG BARU":
             server_stok[barang] = jumlah
 
-        # Masukkan riwayat baru ke urutan teratas
         server_riwayat.insert(0, {
             "Waktu": waktu_sekarang, 
             "Tipe": tipe_transaksi, 
@@ -229,10 +238,16 @@ def save_data_atomic(tipe_transaksi, barang, jumlah, keterangan_atau_pembeli):
         res_post = requests.post(URL_GSHEET_API, json=payload, timeout=45)
         res_post.raise_for_status()
         
-        # Sinkronkan state session lokal
         st.session_state.stok = server_stok
         st.session_state.riwayat = server_riwayat
         st.cache_data.clear()
+        
+        # Reset memori notifikasi jika ada transaksi masuk/keluar, 
+        # agar jika ada item *baru* yang menjadi kritis/habis setelah transaksi ini, tetap terkirim
+        st.session_state.notif_terkirim_habis = frozenset()
+        st.session_state.notif_terkirim_kritis = frozenset()
+        cek_dan_kirim_stok_kritis(server_stok)
+        
         return True
     except Exception as e:
         st.error(f"Terjadi kesalahan saat menyimpan data ke server: {e}")
@@ -296,6 +311,8 @@ with col_h3:
         st.cache_data.clear()
         s_fresh, r_fresh, is_conn_fresh = load_data(force_refresh=True)
         st.session_state.stok, st.session_state.riwayat, st.session_state.is_connected = s_fresh, r_fresh, is_conn_fresh
+        st.session_state.notif_terkirim_habis = frozenset()
+        st.session_state.notif_terkirim_kritis = frozenset()
         cek_dan_kirim_stok_kritis(s_fresh)
         st.rerun()
 
@@ -532,6 +549,8 @@ elif active_menu == "Pengaturan & Reset":
             requests.post(URL_GSHEET_API, json=payload_reset, timeout=45)
             st.session_state.stok = stok_reset
             st.session_state.riwayat = riwayat_reset
+            st.session_state.notif_terkirim_habis = frozenset()
+            st.session_state.notif_terkirim_kritis = frozenset()
             st.cache_data.clear()
             st.success("Data berhasil di-reset!")
             st.rerun()
@@ -541,4 +560,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 3.4 Pro Enterprise (Multi-User Safe Original Layout)")
+    st.info("Versi: 3.5 Pro Enterprise (Multi-User Safe & Anti-Spam Notif)")
