@@ -25,6 +25,113 @@ st.set_page_config(
     layout="wide",
 )
 
+
+# ============================================================
+# RESPONSIVE UI (MOBILE / TABLET)
+# Hanya mengatur tampilan pada layar kecil.
+# Fitur dan logika stok tetap sama.
+# ============================================================
+def inject_responsive_css():
+    st.markdown(
+        r"""
+        <style>
+        /* Desktop/laptop tidak diubah. Aturan berikut hanya aktif <= 768px. */
+        @media (max-width: 768px) {
+            .block-container {
+                padding-top: 0.75rem !important;
+                padding-left: 0.8rem !important;
+                padding-right: 0.8rem !important;
+                padding-bottom: 1.5rem !important;
+            }
+
+            /* Kolom ditumpuk agar form, metric, dan header tidak sempit di HP. */
+            [data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap !important;
+                gap: 0.6rem !important;
+            }
+
+            [data-testid="column"] {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+                min-width: 100% !important;
+            }
+
+            h1 {
+                font-size: 1.65rem !important;
+                line-height: 1.2 !important;
+            }
+
+            h2 {
+                font-size: 1.35rem !important;
+            }
+
+            h3 {
+                font-size: 1.1rem !important;
+            }
+
+            /* Tombol lebih besar dan mudah ditekan di layar sentuh. */
+            .stButton > button,
+            .stDownloadButton > button,
+            [data-testid="stFormSubmitButton"] > button {
+                width: 100% !important;
+                min-height: 2.9rem !important;
+                font-size: 0.95rem !important;
+            }
+
+            /* Input mobile nyaman dan tidak terlalu kecil. */
+            input, textarea, select {
+                font-size: 16px !important;
+            }
+
+            [data-testid="stMetric"] {
+                padding: 0.35rem 0 !important;
+            }
+
+            [data-testid="stMetricValue"] {
+                font-size: 1.55rem !important;
+            }
+
+            /* Grafik mengikuti lebar layar HP. */
+            [data-testid="stPlotlyChart"],
+            [data-testid="stPlotlyChart"] > div {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+
+            /* Tabel tetap dapat digeser ke samping tanpa melebarkan halaman. */
+            [data-testid="stDataFrame"] {
+                max-width: 100vw !important;
+                overflow-x: auto !important;
+            }
+
+            [data-testid="stCaptionContainer"],
+            [data-testid="stAlert"] {
+                line-height: 1.35 !important;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .block-container {
+                padding-left: 0.55rem !important;
+                padding-right: 0.55rem !important;
+            }
+
+            h1 {
+                font-size: 1.45rem !important;
+            }
+
+            [data-testid="stMetricValue"] {
+                font-size: 1.35rem !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+inject_responsive_css()
+
 WIB = ZoneInfo("Asia/Jakarta")
 APP_VERSION = "6.0"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
