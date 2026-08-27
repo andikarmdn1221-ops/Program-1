@@ -3,5 +3,5 @@ pandas
 requests
 plotly
 fpdf2
-pillow
+Pillow
 openpyxl
