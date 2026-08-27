@@ -409,7 +409,7 @@ def koreksi_transaksi_atomic(old_tx, new_tx, is_delete=False):
     return safe_api_call(_process_koreksi, default_return=False, error_message="Gagal menyimpan koreksi ke server.")
 
 
-if "is_connected" not in st.session_state:
+if "is_connected" not in st.session_state or "master_info" not in st.session_state:
     s_stok, s_master, s_riwayat, is_conn = load_data(force_refresh=True)
     st.session_state.stok = s_stok
     st.session_state.master_info = s_master
@@ -849,4 +849,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 4.5 Pro Enterprise (Fitur Advanced Master Item, Anti-Spam, & Atomic Sync)")
+    st.info("Versi: 4.5.1 Pro Enterprise (Patch Fix: KeyError master_info)")
