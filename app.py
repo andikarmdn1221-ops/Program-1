@@ -669,10 +669,10 @@ elif active_menu == "Barang Keluar":
         with st.form("form_keluar", clear_on_submit=True):
             barang_pilihan = st.selectbox("Pilih Barang", barang_aktif_list)
             
-            # --- SISA STOK DINAMIS SESUAI BARANG YANG DIPILIH ---
+            # --- SISA STOK DINAMIS SESUAI DROPDOWN ---
             stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
-            st.info(f"Sisa Stok `{barang_pilihan}` saat ini: **{stok_saat_ini} pcs**")
-            # ----------------------------------------------------
+            st.info(f"Sisa Stok {barang_pilihan} saat ini: **{stok_saat_ini} pcs**")
+            # ----------------------------------------
             
             jumlah_keluar = st.number_input("Jumlah Keluar (pcs)", min_value=1, value=1, step=1)
             tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
@@ -862,4 +862,4 @@ elif active_menu == "Pengaturan & Reset":
 elif active_menu == "Tentang Aplikasi":
     st.subheader("Tentang Aplikasi WMS Microcement")
     st.write("Aplikasi Manajemen Gudang berbasis Streamlit yang terintegrasi dengan Google Sheets sebagai Database dan Telegram Bot sebagai sistem notifikasi otomatis.")
-    st.info("Versi: 4.7 Pro Enterprise (Full Integration: Sheets, Drive, & Telegram)")
+    st.info("Versi: 4.8 Pro Enterprise (Full Integration: Sheets, Drive, & Telegram)")
