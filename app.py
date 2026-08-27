@@ -642,10 +642,13 @@ elif active_menu == "Barang Masuk":
     if not barang_aktif_list:
         st.warning("Tidak ada barang dengan status 'Aktif'. Silakan tambahkan atau aktifkan barang di menu Kelola Master Item.")
     else:
+        # Pindahkan selectbox & tampilan stok ke luar form agar interaktif (real-time)
+        barang_pilihan = st.selectbox("Pilih Barang", barang_aktif_list, key="sb_barang_masuk")
+        stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
+        st.info(f"Sisa Stok **{barang_pilihan}** saat ini: **{stok_saat_ini} pcs**")
+        
         with st.form("form_masuk", clear_on_submit=True):
-            barang_pilihan = st.selectbox("Pilih Barang", barang_aktif_list)
             jumlah_masuk = st.number_input("Jumlah Masuk (pcs)", min_value=1, value=1, step=1)
-            
             tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
             foto_bukti = st.file_uploader("Upload Bukti / Nota (Opsional)", type=["jpg", "jpeg", "png"])
             catatan_masuk = st.text_input("Supplier / Keterangan", "-")
@@ -666,14 +669,12 @@ elif active_menu == "Barang Keluar":
     if not barang_aktif_list:
         st.warning("Tidak ada barang dengan status 'Aktif'. Silakan tambahkan atau aktifkan barang di menu Kelola Master Item.")
     else:
+        # Pindahkan selectbox & info stok ke luar form agar responsif real-time
+        barang_pilihan = st.selectbox("Pilih Barang", barang_aktif_list, key="sb_barang_keluar")
+        stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
+        st.info(f"Sisa Stok **{barang_pilihan}** saat ini: **{stok_saat_ini} pcs**")
+        
         with st.form("form_keluar", clear_on_submit=True):
-            barang_pilihan = st.selectbox("Pilih Barang", barang_aktif_list)
-            
-            # --- SISA STOK DINAMIS SESUAI DROPDOWN ---
-            stok_saat_ini = st.session_state.stok.get(barang_pilihan, 0)
-            st.info(f"Sisa Stok {barang_pilihan} saat ini: **{stok_saat_ini} pcs**")
-            # ----------------------------------------
-            
             jumlah_keluar = st.number_input("Jumlah Keluar (pcs)", min_value=1, value=1, step=1)
             tgl_transaksi = st.date_input("Tanggal Transaksi", value=date.today())
             nama_pembeli = st.text_input("Nama Pembeli / Proyek", "")
