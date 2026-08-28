@@ -142,7 +142,8 @@ def inject_responsive_css():
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "7.0.1-stable"
+APP_VERSION = "7.1-production"
+EXPECTED_BACKEND_VERSION = "7.1-production"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
@@ -163,6 +164,9 @@ AUTO_SYNC_ENABLED = bool(st.secrets.get("AUTO_SYNC_ENABLED", True))
 AUTO_SYNC_SECONDS = max(10, int(st.secrets.get("AUTO_SYNC_SECONDS", 15)))
 HEALTH_TIMEOUT_SECONDS = max(3, min(20, int(st.secrets.get("HEALTH_TIMEOUT_SECONDS", 8))))
 WRITE_BLOCK_WHEN_OFFLINE = bool(st.secrets.get("WRITE_BLOCK_WHEN_OFFLINE", True))
+REQUIRE_HMAC = bool(st.secrets.get("REQUIRE_HMAC", True))
+ALLOW_LEGACY_PASSWORDS = bool(st.secrets.get("ALLOW_LEGACY_PASSWORDS", False))
+REQUIRE_SERVER_BACKUP_BEFORE_RESET = bool(st.secrets.get("REQUIRE_SERVER_BACKUP_BEFORE_RESET", True))
 
 STOK_DEFAULT = {
     "Microcement base": 16,
@@ -401,6 +405,8 @@ def _post_json(payload: dict, timeout=60):
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
     if not API_SHARED_KEY:
         raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
+    if REQUIRE_HMAC and not AUTH_SIGNING_KEY:
+        raise RuntimeError("AUTH_SIGNING_KEY wajib diisi karena REQUIRE_HMAC=true.")
 
     signed_payload = make_request_signature(payload)
     signed_payload = {**signed_payload, "api_key": API_SHARED_KEY}
@@ -418,9 +424,11 @@ def _post_json(payload: dict, timeout=60):
 
 
 def api_get(timeout=20):
-    """Baca database. Jika HMAC aktif gunakan POST aman; GET lama hanya fallback kompatibilitas."""
+    """Baca database lewat signed POST. GET legacy hanya jika REQUIRE_HMAC dimatikan sengaja."""
     if AUTH_SIGNING_KEY:
         return _post_json({"action": "read", **actor_payload()}, timeout=timeout)
+    if REQUIRE_HMAC:
+        raise RuntimeError("Mode aman aktif tetapi AUTH_SIGNING_KEY belum tersedia.")
 
     if not URL_GSHEET_API:
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
@@ -441,9 +449,12 @@ def api_health(timeout=HEALTH_TIMEOUT_SECONDS):
     """Health check ringan untuk auto-sync berdasarkan revision backend."""
     if AUTH_SIGNING_KEY:
         return _post_json({"action": "health", **actor_payload()}, timeout=timeout)
+    if REQUIRE_HMAC:
+        raise RuntimeError("Mode aman aktif tetapi AUTH_SIGNING_KEY belum tersedia.")
     data = api_get(timeout=timeout)
     return {
         "ok": True,
+        "backend_version": data.get("backend_version", ""),
         "data_revision": data.get("data_revision", ""),
         "server_time": data.get("server_time", ""),
     }
@@ -763,8 +774,12 @@ def refresh_data(force=False, quiet=False):
         st.session_state.last_server_sync = waktu_display()
         st.session_state.last_server_sync_epoch = time.time()
         revision = str(raw.get("data_revision", "") or "") if isinstance(raw, dict) else ""
+        backend_version = str(raw.get("backend_version", "") or "") if isinstance(raw, dict) else ""
         if revision:
             st.session_state.server_revision = revision
+        if backend_version:
+            st.session_state.backend_version = backend_version
+            st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
         return True
     except Exception as exc:
         st.session_state.is_connected = False
@@ -798,8 +813,12 @@ def sync_if_changed():
     try:
         health = api_health()
         revision = str(health.get("data_revision", "") or "")
+        backend_version = str(health.get("backend_version", "") or "")
         st.session_state.last_health_check = waktu_display()
         st.session_state.is_connected = True
+        if backend_version:
+            st.session_state.backend_version = backend_version
+            st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
 
         current_revision = str(st.session_state.get("server_revision", "") or "")
         if not revision or revision != current_revision:
@@ -813,10 +832,56 @@ def sync_if_changed():
 
 
 def require_online_operation():
-    """Jangan izinkan form mutasi bekerja dari snapshot/offline data."""
-    if WRITE_BLOCK_WHEN_OFFLINE and not st.session_state.get("is_connected"):
+    """Preflight ringan agar form mutasi tidak bekerja dari status koneksi yang sudah basi."""
+    if not WRITE_BLOCK_WHEN_OFFLINE:
+        return
+    try:
+        health = api_health()
+        st.session_state.is_connected = True
+        backend_version = str(health.get("backend_version", "") or "")
+        if backend_version:
+            st.session_state.backend_version = backend_version
+            st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
+    except Exception:
+        st.session_state.is_connected = False
+        if "stok" in st.session_state:
+            st.session_state.data_source = "last_known_session"
+
+    if not st.session_state.get("is_connected"):
         st.error("⛔ Operasi perubahan stok dinonaktifkan karena database sedang offline. Segarkan koneksi terlebih dahulu.")
         st.stop()
+
+
+def validate_runtime_security():
+    """Fail-closed untuk konfigurasi yang seharusnya wajib pada deployment production."""
+    missing = []
+    if not URL_GSHEET_API:
+        missing.append("URL_GSHEET_API")
+    if not API_SHARED_KEY:
+        missing.append("API_SHARED_KEY")
+    if REQUIRE_HMAC and not AUTH_SIGNING_KEY:
+        missing.append("AUTH_SIGNING_KEY")
+    if missing:
+        st.error("⛔ Konfigurasi production belum lengkap: " + ", ".join(missing))
+        st.stop()
+
+
+def account_security_report():
+    """Klasifikasikan penyimpanan password tanpa pernah menampilkan password/hash lengkap."""
+    report = []
+    for username, raw_cfg in get_users_config().items():
+        cfg = dict(raw_cfg)
+        configured_hash = str(cfg.get("password_hash", "") or "").strip()
+        if configured_hash.startswith("pbkdf2_sha256$"):
+            status = "PBKDF2"
+        elif configured_hash:
+            status = "LEGACY_SHA256"
+        elif cfg.get("password") is not None:
+            status = "PLAIN_PASSWORD"
+        else:
+            status = "TIDAK_VALID"
+        report.append((str(username), status))
+    return report
 
 
 # ============================================================
@@ -867,12 +932,14 @@ def password_matches(input_password: str, configured: dict) -> bool:
             except (ValueError, TypeError):
                 return False
 
-        # Kompatibilitas hash SHA-256 lama.
+        if not ALLOW_LEGACY_PASSWORDS:
+            return False
         supplied_hash = hashlib.sha256(input_password.encode("utf-8")).hexdigest()
         return hmac.compare_digest(supplied_hash, configured_hash.lower())
 
-    # Kompatibilitas password plain lama. Sebaiknya dimigrasikan ke PBKDF2.
     if configured.get("password") is not None:
+        if not ALLOW_LEGACY_PASSWORDS:
+            return False
         return hmac.compare_digest(str(input_password), str(configured["password"]))
     return False
 
@@ -961,6 +1028,7 @@ def actor_payload() -> dict:
     return {
         "actor": str(st.session_state.get("auth_user", "Unknown")),
         "role": current_role(),
+        "app_version": APP_VERSION,
     }
 
 
@@ -1133,13 +1201,14 @@ def void_transaction(tx_id):
     return result
 
 
-def adjust_stock(barang, stok_baru, alasan, tgl_transaksi):
+def adjust_stock(barang, stok_baru, alasan, tgl_transaksi, expected_stock_before):
     result = api_post(
         {
             "action": "stock_adjust",
             "tx_id": make_tx_id("ADJ"),
             "barang": barang,
             "stok_baru": int(stok_baru),
+            "expected_stock_before": int(expected_stock_before),
             "alasan": alasan.strip() or "Penyesuaian stok",
             "tanggal": tgl_transaksi.strftime("%d-%m-%Y"),
             "waktu": combine_manual_date(tgl_transaksi),
@@ -1313,10 +1382,167 @@ def render_stock_live():
     )
 
 
+
+@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+def render_history_live():
+    sync_if_changed()
+    history_now = st.session_state.get("riwayat", [])
+    sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
+    if AUTO_SYNC_ENABLED:
+        st.caption(f"🔄 Riwayat live · sinkron terakhir {sync_text}")
+    if not st.session_state.get("is_connected"):
+        st.warning("⚠️ Database offline. Riwayat yang tampil adalah snapshot sesi terakhir.")
+    if not history_now:
+        st.info("Belum ada riwayat transaksi.")
+        return
+
+    df = pd.DataFrame(history_now, columns=RIWAYAT_COLUMNS)
+    f1, f2, f3 = st.columns(3)
+    tipe_filter = f1.selectbox(
+        "Tipe", ["SEMUA", "MASUK", "KELUAR", "PENYESUAIAN", "BARANG BARU"],
+        key="history_type_live",
+    )
+    status_filter = f2.selectbox(
+        "Status", ["SEMUA", "AKTIF", "VOID", "DIKOREKSI"],
+        key="history_status_live",
+    )
+    search = f3.text_input("Cari barang / keterangan", key="history_search_live")
+
+    if tipe_filter != "SEMUA":
+        df = df[df["Tipe"] == tipe_filter]
+    if status_filter != "SEMUA":
+        df = df[df["Status"] == status_filter]
+    if search:
+        mask = (
+            df["Barang"].astype(str).str.contains(search, case=False, na=False)
+            | df["Pembeli / Keterangan"].astype(str).str.contains(search, case=False, na=False)
+            | df["ID Transaksi"].astype(str).str.contains(search, case=False, na=False)
+        )
+        df = df[mask]
+
+    column_config = {}
+    if "Bukti URL" in df.columns:
+        column_config["Bukti URL"] = st.column_config.LinkColumn("Bukti", display_text="📷 Buka Bukti")
+    st.dataframe(df, use_container_width=True, hide_index=True, column_config=column_config)
+
+    x1, x2 = st.columns(2)
+    x1.download_button(
+        "📥 Ekspor Riwayat Excel",
+        excel_bytes(df, "Riwayat"),
+        f"Riwayat_{sekarang_wib().strftime('%Y%m%d')}.xlsx",
+        use_container_width=True,
+        key="download_history_live",
+    )
+    pdf_rows = [
+        [r["Waktu"], r["Tipe"], r["Barang"], r["Jumlah"], r["Pembeli / Keterangan"], r["Status"]]
+        for _, r in df.iterrows()
+    ]
+    pdf = pdf_table(
+        "RIWAYAT TRANSAKSI",
+        ["Waktu", "Tipe", "Barang", "Qty", "Keterangan", "Status"],
+        pdf_rows,
+        [40, 25, 65, 20, 95, 30],
+    )
+    x2.download_button(
+        "📄 Cetak Riwayat PDF",
+        pdf,
+        f"Riwayat_{sekarang_wib().strftime('%Y%m%d')}.pdf",
+        use_container_width=True,
+        key="download_history_pdf_live",
+    )
+
+
+@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+def render_reports_live():
+    sync_if_changed()
+    history_now = st.session_state.get("riwayat", [])
+    sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
+    if AUTO_SYNC_ENABLED:
+        st.caption(f"🔄 Laporan live · sinkron terakhir {sync_text}")
+    if not st.session_state.get("is_connected"):
+        st.warning("⚠️ Database offline. Laporan menggunakan snapshot sesi terakhir.")
+
+    d1, d2 = st.columns(2)
+    start = d1.date_input("Tanggal Mulai", value=date.today().replace(day=1), key="report_start_live")
+    end = d2.date_input("Tanggal Selesai", value=date.today(), key="report_end_live")
+    if start > end:
+        st.error("Tanggal mulai tidak boleh melebihi tanggal selesai.")
+        return
+
+    selected = []
+    for tx in history_now:
+        if tx.get("Status", "AKTIF") != "AKTIF":
+            continue
+        parsed = parse_tx_datetime(tx.get("Waktu", ""))
+        if parsed and start <= parsed.date() <= end:
+            selected.append(tx)
+    if not selected:
+        st.info("Tidak ada transaksi aktif pada periode ini.")
+        return
+
+    df = pd.DataFrame(selected, columns=RIWAYAT_COLUMNS)
+    masuk = df.loc[df["Tipe"] == "MASUK", "Jumlah"].apply(safe_int).sum()
+    keluar = df.loc[df["Tipe"] == "KELUAR", "Jumlah"].apply(safe_int).sum()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Masuk", f"{masuk} pcs")
+    m2.metric("Total Keluar", f"{keluar} pcs")
+    m3.metric("Total Transaksi", len(df))
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.download_button(
+        "📥 Ekspor Laporan Excel",
+        excel_bytes(df, "Laporan Periodik"),
+        f"Laporan_{start}_{end}.xlsx",
+        use_container_width=True,
+        key="download_report_live",
+    )
+
+
+@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+def render_audit_live():
+    sync_if_changed()
+    audit_rows = st.session_state.get("audit", [])
+    sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
+    if AUTO_SYNC_ENABLED:
+        st.caption(f"🔄 Audit live · sinkron terakhir {sync_text}")
+    if not st.session_state.get("is_connected"):
+        st.warning("⚠️ Database offline. Audit yang tampil adalah snapshot sesi terakhir.")
+    if not audit_rows:
+        st.info("Belum ada audit log.")
+        return
+
+    df_audit = pd.DataFrame(audit_rows, columns=AUDIT_COLUMNS)
+    a1, a2, a3 = st.columns(3)
+    users = [x for x in df_audit["User"].dropna().astype(str).unique() if x]
+    roles = [x for x in df_audit["Role"].dropna().astype(str).unique() if x]
+    user_filter = a1.selectbox("User", ["SEMUA"] + sorted(users), key="audit_user_live")
+    role_filter = a2.selectbox("Role", ["SEMUA"] + sorted(roles), key="audit_role_live")
+    audit_search = a3.text_input("Cari aksi / detail", key="audit_search_live")
+    if user_filter != "SEMUA":
+        df_audit = df_audit[df_audit["User"].astype(str) == user_filter]
+    if role_filter != "SEMUA":
+        df_audit = df_audit[df_audit["Role"].astype(str) == role_filter]
+    if audit_search:
+        mask = (
+            df_audit["Aksi"].astype(str).str.contains(audit_search, case=False, na=False)
+            | df_audit["Detail"].astype(str).str.contains(audit_search, case=False, na=False)
+            | df_audit["ID Transaksi"].astype(str).str.contains(audit_search, case=False, na=False)
+        )
+        df_audit = df_audit[mask]
+    st.dataframe(df_audit, use_container_width=True, hide_index=True)
+    st.download_button(
+        "📥 Ekspor Audit Excel",
+        excel_bytes(df_audit, "Audit"),
+        f"Audit_{sekarang_wib().strftime('%Y%m%d')}.xlsx",
+        use_container_width=True,
+        key="download_audit_live",
+    )
+
+
 # ============================================================
 # STARTUP
 # ============================================================
 login_gate()
+validate_runtime_security()
 
 if "stok" not in st.session_state:
     refresh_data(force=True)
@@ -1379,6 +1605,10 @@ with st.sidebar:
             st.caption(f"Sinkron: {st.session_state.get('last_server_sync')}")
     else:
         st.error("🔴 Database offline")
+    if st.session_state.get("backend_version_mismatch"):
+        st.warning(
+            f"⚠️ Versi backend {st.session_state.get('backend_version', '?')} tidak sama dengan app {EXPECTED_BACKEND_VERSION}."
+        )
 
     telegram_status = st.session_state.get("telegram_test_status")
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -1605,7 +1835,7 @@ elif active_menu == "Penyesuaian Stok":
                 st.warning("Alasan penyesuaian wajib diisi.")
             else:
                 try:
-                    result = adjust_stock(barang, stok_baru, alasan, tgl)
+                    result = adjust_stock(barang, stok_baru, alasan, tgl, stok_lama)
                     delta = result.get("selisih", int(stok_baru) - int(stok_lama))
                     telegram_async(
                         f"🧮 *PENYESUAIAN STOK*\n📦 {barang}\n"
@@ -1686,123 +1916,36 @@ elif active_menu == "Koreksi Transaksi":
 
 
 elif active_menu == "Riwayat Transaksi":
-    if not history:
-        st.info("Belum ada riwayat transaksi.")
-    else:
-        df = pd.DataFrame(history, columns=RIWAYAT_COLUMNS)
-        f1, f2, f3 = st.columns(3)
-        tipe_filter = f1.selectbox("Tipe", ["SEMUA", "MASUK", "KELUAR", "PENYESUAIAN", "BARANG BARU"])
-        status_filter = f2.selectbox("Status", ["SEMUA", "AKTIF", "VOID", "DIKOREKSI"])
-        search = f3.text_input("Cari barang / keterangan")
-
-        if tipe_filter != "SEMUA":
-            df = df[df["Tipe"] == tipe_filter]
-        if status_filter != "SEMUA":
-            df = df[df["Status"] == status_filter]
-        if search:
-            mask = (
-                df["Barang"].astype(str).str.contains(search, case=False, na=False)
-                | df["Pembeli / Keterangan"].astype(str).str.contains(search, case=False, na=False)
-                | df["ID Transaksi"].astype(str).str.contains(search, case=False, na=False)
-            )
-            df = df[mask]
-
-        column_config = {}
-        if "Bukti URL" in df.columns:
-            column_config["Bukti URL"] = st.column_config.LinkColumn("Bukti", display_text="📷 Buka Bukti")
-        st.dataframe(df, use_container_width=True, hide_index=True, column_config=column_config)
-
-        x1, x2 = st.columns(2)
-        x1.download_button(
-            "📥 Ekspor Riwayat Excel",
-            excel_bytes(df, "Riwayat"),
-            f"Riwayat_{sekarang_wib().strftime('%Y%m%d')}.xlsx",
-            use_container_width=True,
-        )
-        pdf_rows = [
-            [r["Waktu"], r["Tipe"], r["Barang"], r["Jumlah"], r["Pembeli / Keterangan"], r["Status"]]
-            for _, r in df.iterrows()
-        ]
-        pdf = pdf_table("RIWAYAT TRANSAKSI", ["Waktu", "Tipe", "Barang", "Qty", "Keterangan", "Status"], pdf_rows, [40, 25, 65, 20, 95, 30])
-        x2.download_button(
-            "📄 Cetak Riwayat PDF",
-            pdf,
-            f"Riwayat_{sekarang_wib().strftime('%Y%m%d')}.pdf",
-            use_container_width=True,
-        )
+    render_history_live()
 
 
 elif active_menu == "Laporan Periodik":
     require_permission("view_reports")
-    d1, d2 = st.columns(2)
-    start = d1.date_input("Tanggal Mulai", value=date.today().replace(day=1))
-    end = d2.date_input("Tanggal Selesai", value=date.today())
-    if start > end:
-        st.error("Tanggal mulai tidak boleh melebihi tanggal selesai.")
-    else:
-        selected = []
-        for tx in history:
-            if tx.get("Status", "AKTIF") != "AKTIF":
-                continue
-            parsed = parse_tx_datetime(tx.get("Waktu", ""))
-            if parsed and start <= parsed.date() <= end:
-                selected.append(tx)
-        if not selected:
-            st.info("Tidak ada transaksi aktif pada periode ini.")
-        else:
-            df = pd.DataFrame(selected, columns=RIWAYAT_COLUMNS)
-            masuk = df.loc[df["Tipe"] == "MASUK", "Jumlah"].apply(safe_int).sum()
-            keluar = df.loc[df["Tipe"] == "KELUAR", "Jumlah"].apply(safe_int).sum()
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Total Masuk", f"{masuk} pcs")
-            m2.metric("Total Keluar", f"{keluar} pcs")
-            m3.metric("Total Transaksi", len(df))
-            st.dataframe(df, use_container_width=True, hide_index=True)
-            st.download_button(
-                "📥 Ekspor Laporan Excel",
-                excel_bytes(df, "Laporan Periodik"),
-                f"Laporan_{start}_{end}.xlsx",
-                use_container_width=True,
-            )
+    render_reports_live()
 
 
 elif active_menu == "Audit Log":
     require_permission("view_audit")
-    audit_rows = st.session_state.get("audit", [])
-    if not audit_rows:
-        st.info("Belum ada audit log.")
-    else:
-        df_audit = pd.DataFrame(audit_rows, columns=AUDIT_COLUMNS)
-        a1, a2, a3 = st.columns(3)
-        user_filter = a1.selectbox("User", ["SEMUA"] + sorted([x for x in df_audit["User"].dropna().astype(str).unique() if x]))
-        role_filter = a2.selectbox("Role", ["SEMUA"] + sorted([x for x in df_audit["Role"].dropna().astype(str).unique() if x]))
-        audit_search = a3.text_input("Cari aksi / detail")
-        if user_filter != "SEMUA":
-            df_audit = df_audit[df_audit["User"].astype(str) == user_filter]
-        if role_filter != "SEMUA":
-            df_audit = df_audit[df_audit["Role"].astype(str) == role_filter]
-        if audit_search:
-            mask = (
-                df_audit["Aksi"].astype(str).str.contains(audit_search, case=False, na=False)
-                | df_audit["Detail"].astype(str).str.contains(audit_search, case=False, na=False)
-                | df_audit["ID Transaksi"].astype(str).str.contains(audit_search, case=False, na=False)
-            )
-            df_audit = df_audit[mask]
-        st.dataframe(df_audit, use_container_width=True, hide_index=True)
-        st.download_button(
-            "📥 Ekspor Audit Excel",
-            excel_bytes(df_audit, "Audit"),
-            f"Audit_{sekarang_wib().strftime('%Y%m%d')}.xlsx",
-            use_container_width=True,
-        )
+    render_audit_live()
 
 
 elif active_menu == "Backup Data":
     require_permission("backup")
+    if st.session_state.get("is_connected"):
+        sync_if_changed()
     st.write("Backup berisi stok, riwayat transaksi, audit log, serta manifest URL bukti transaksi.")
     st.caption("Catatan: gambar/nota asli tetap berada di Google Drive; workbook menyimpan daftar URL-nya.")
-    backup = full_backup_bytes(stock, master, history, st.session_state.get("audit", []))
-    filename = f"BACKUP_WMS_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    backup_is_snapshot = not st.session_state.get("is_connected")
+    if backup_is_snapshot:
+        st.warning("⚠️ Database offline. File lokal di bawah adalah SNAPSHOT sesi terakhir, bukan backup database real-time.")
+    backup = full_backup_bytes(
+        st.session_state.get("stok", {}),
+        st.session_state.get("master_info", {}),
+        st.session_state.get("riwayat", []),
+        st.session_state.get("audit", []),
+    )
+    prefix = "SNAPSHOT_WMS" if backup_is_snapshot else "BACKUP_WMS"
+    filename = f"{prefix}_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx"
     b1, b2 = st.columns(2)
     b1.download_button("💾 Download Backup", backup, filename, use_container_width=True)
     if b2.button("📤 Kirim Backup ke Telegram", use_container_width=True):
@@ -1820,75 +1963,23 @@ elif active_menu == "Backup Data":
     st.subheader("☁️ Backup Database Otomatis")
     st.caption("Backup server membuat salinan Google Spreadsheet langsung ke folder WMS_Backups di Google Drive.")
 
-    # Flash message dipertahankan setelah st.rerun() agar user tetap melihat hasil operasi.
-    backup_flash = st.session_state.pop("backup_flash", None)
-    if backup_flash:
-        level, message = backup_flash
-        if level == "success":
-            st.success(message)
-        elif level == "warning":
-            st.warning(message)
-        else:
-            st.info(message)
+    try:
+        backup_status = backup_server_status() if st.session_state.get("is_connected") else {}
+    except Exception:
+        backup_status = {}
 
-    # Ambil status aktual dari backend. Jangan diam-diam mengubah error menjadi "Belum ada".
-    backup_status = {}
-    backup_status_error = None
-    if st.session_state.get("is_connected"):
-        try:
-            backup_status = backup_server_status()
-            # Cache status valid ke session sebagai fallback bila request status berikutnya sesaat gagal.
-            st.session_state.backup_last_time = backup_status.get("last_backup_time") or st.session_state.get("backup_last_time", "")
-            st.session_state.backup_last_url = backup_status.get("last_backup_url") or st.session_state.get("backup_last_url", "")
-            st.session_state.backup_last_name = backup_status.get("last_backup_name") or st.session_state.get("backup_last_name", "")
-            st.session_state.backup_trigger_active = bool(backup_status.get("trigger_installed", False))
-        except Exception as exc:
-            backup_status_error = api_error_detail(exc)
-    else:
-        backup_status_error = "database sedang offline"
-
-    last_backup = (
-        backup_status.get("last_backup_time")
-        or st.session_state.get("backup_last_time")
-        or "Belum ada"
-    )
-    last_backup_name = (
-        backup_status.get("last_backup_name")
-        or st.session_state.get("backup_last_name")
-        or ""
-    )
-    last_backup_url = (
-        backup_status.get("last_backup_url")
-        or st.session_state.get("backup_last_url")
-        or ""
-    )
-    trigger_active = bool(
-        backup_status.get("trigger_installed", st.session_state.get("backup_trigger_active", False))
-    )
-
-    if backup_status_error:
-        st.warning(f"Status backup server belum dapat diperbarui: {backup_status_error}. Status terakhir yang tersimpan di sesi tetap ditampilkan.")
-
+    last_backup = backup_status.get("last_backup_time") or "Belum ada"
+    trigger_active = bool(backup_status.get("trigger_installed", False))
     bs1, bs2 = st.columns(2)
     bs1.metric("Backup terakhir", last_backup)
     bs2.metric("Backup harian", "Aktif" if trigger_active else "Belum aktif")
-    if last_backup_name:
-        st.caption(f"Backup terakhir: {last_backup_name}")
-    if last_backup_url:
-        st.link_button("📂 Buka Backup Terakhir di Google Drive", last_backup_url, use_container_width=True)
 
     if st.button("☁️ Buat Backup Server Sekarang", use_container_width=True, disabled=not st.session_state.get("is_connected")):
         try:
             result = server_backup_now()
-            # Simpan hasil langsung sehingga UI tidak bergantung pada request status kedua.
-            backup_time = result.get("backup_time") or waktu_display()
-            backup_name = result.get("backup_name") or "WMS backup"
-            backup_url = result.get("backup_url") or ""
-            st.session_state.backup_last_time = backup_time
-            st.session_state.backup_last_name = backup_name
-            st.session_state.backup_last_url = backup_url
-            st.session_state.backup_flash = ("success", f"Backup server berhasil: {backup_name}")
-            st.rerun()
+            st.success(f"Backup server berhasil: {result.get('backup_name', 'WMS backup')}")
+            if result.get("backup_url"):
+                st.link_button("Buka Backup di Google Drive", result["backup_url"], use_container_width=True)
         except Exception as exc:
             show_api_error("Backup server gagal", exc)
 
@@ -1896,21 +1987,15 @@ elif active_menu == "Backup Data":
         bt1, bt2 = st.columns(2)
         if bt1.button("🕑 Aktifkan Backup Harian", use_container_width=True, disabled=trigger_active or not st.session_state.get("is_connected")):
             try:
-                result = install_backup_trigger()
-                st.session_state.backup_trigger_active = bool(result.get("trigger_installed", True)) if isinstance(result, dict) else True
-                if isinstance(result, dict):
-                    st.session_state.backup_last_time = result.get("last_backup_time") or st.session_state.get("backup_last_time", "")
-                    st.session_state.backup_last_url = result.get("last_backup_url") or st.session_state.get("backup_last_url", "")
-                    st.session_state.backup_last_name = result.get("last_backup_name") or st.session_state.get("backup_last_name", "")
-                st.session_state.backup_flash = ("success", "Backup otomatis harian berhasil diaktifkan. Akan dijalankan sekitar pukul 02.00 waktu project Apps Script.")
+                install_backup_trigger()
+                st.success("Backup otomatis harian berhasil diaktifkan. Jalankan sekitar pukul 02.00 waktu project Apps Script.")
                 st.rerun()
             except Exception as exc:
                 show_api_error("Gagal mengaktifkan backup harian", exc)
         if bt2.button("⏹️ Nonaktifkan Backup Harian", use_container_width=True, disabled=(not trigger_active) or not st.session_state.get("is_connected")):
             try:
-                result = remove_backup_trigger()
-                st.session_state.backup_trigger_active = bool(result.get("trigger_installed", False)) if isinstance(result, dict) else False
-                st.session_state.backup_flash = ("success", "Backup otomatis harian dinonaktifkan.")
+                remove_backup_trigger()
+                st.success("Backup otomatis harian dinonaktifkan.")
                 st.rerun()
             except Exception as exc:
                 show_api_error("Gagal menonaktifkan backup harian", exc)
@@ -1918,6 +2003,8 @@ elif active_menu == "Backup Data":
 
 elif active_menu == "Pengaturan & Reset":
     require_permission("reset")
+    sync_if_changed()
+    require_online_operation()
 
     with st.expander("🔐 Generator Password Hash PBKDF2", expanded=False):
         st.caption("Gunakan hasil ini sebagai password_hash di secrets.toml. Password tidak disimpan oleh aplikasi.")
@@ -1939,21 +2026,41 @@ elif active_menu == "Pengaturan & Reset":
         st.write(f"Login lock: **{LOGIN_MAX_ATTEMPTS} percobaan / {LOGIN_LOCK_SECONDS} detik**")
         st.write(f"Auto-sync: **{'Aktif' if AUTO_SYNC_ENABLED else 'Nonaktif'} / {AUTO_SYNC_SECONDS} detik**")
         st.write(f"Revision backend: **{st.session_state.get('server_revision', '-')}**")
-        if AUTH_SIGNING_KEY:
-            st.success("AUTH_SIGNING_KEY aktif — request mutasi membawa HMAC signature.")
+        st.write(f"Backend: **{st.session_state.get('backend_version', 'belum diketahui')}**")
+        st.write(f"Mode HMAC wajib: **{'Ya' if REQUIRE_HMAC else 'Tidak'}**")
+        st.write(f"Password legacy diizinkan: **{'Ya' if ALLOW_LEGACY_PASSWORDS else 'Tidak'}**")
+        if AUTH_SIGNING_KEY and REQUIRE_HMAC:
+            st.success("AUTH_SIGNING_KEY aktif dan mode fail-closed HMAC aktif.")
+        elif AUTH_SIGNING_KEY:
+            st.info("AUTH_SIGNING_KEY tersedia, tetapi REQUIRE_HMAC=false.")
         else:
-            st.warning("AUTH_SIGNING_KEY belum diisi. App tetap kompatibel, tetapi Code.gs belum bisa memverifikasi signature actor/role.")
+            st.error("AUTH_SIGNING_KEY belum diisi.")
+
+        account_report = account_security_report()
+        weak_accounts = [name for name, status in account_report if status != "PBKDF2"]
+        if weak_accounts:
+            st.warning("Akun belum PBKDF2: " + ", ".join(weak_accounts))
+        else:
+            st.success("Semua akun menggunakan PBKDF2.")
 
     st.warning("Reset menghapus data operasional dan mengembalikan master awal. Backup dahulu.")
-    backup = full_backup_bytes(stock, master, history, st.session_state.get("audit", []))
+    backup = full_backup_bytes(
+        st.session_state.get("stok", {}),
+        st.session_state.get("master_info", {}),
+        st.session_state.get("riwayat", []),
+        st.session_state.get("audit", []),
+    )
     st.download_button("💾 Download Backup Sebelum Reset", backup, f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx")
     understood = st.checkbox("Saya memahami bahwa data operasional akan di-reset")
     confirm = st.text_input("Ketik RESET-DATABASE", disabled=not understood)
     if st.button("🚨 Reset Database", disabled=not (understood and confirm == "RESET-DATABASE")):
         try:
+            if REQUIRE_SERVER_BACKUP_BEFORE_RESET:
+                result_backup = server_backup_now()
+                st.info(f"Backup server sebelum reset berhasil: {result_backup.get('backup_name', 'WMS backup')}")
             send_telegram_document("🚨 AUTO BACKUP SEBELUM RESET", backup, f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx")
             reset_database()
-            st.success("Database berhasil di-reset.")
+            st.success("Database berhasil di-reset setelah prosedur pengamanan.")
             st.rerun()
         except Exception as exc:
             show_api_error("Reset gagal", exc)
@@ -1967,4 +2074,4 @@ elif active_menu == "Tentang Aplikasi":
     )
     st.info(f"Versi {APP_VERSION} · Internal WMS")
     st.caption("Role: Developer, Boss, Admin, Staff. Boss dapat mengelola dan menyesuaikan stok, sedangkan reset database hanya Developer.")
-    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item tetap diproses server-side. Versi ini menambah auto-sync berbasis revision, secure POST read, anti-bruteforce login, session timeout, PBKDF2, sanitasi secret, retry Telegram, backup server harian, dan HMAC signature end-to-end.")
+    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item tetap diproses server-side. Versi production ini menambah live-sync Dashboard/Stok/Riwayat/Laporan/Audit, secure POST read fail-closed, PBKDF2-only secara default, stale-stock guard untuk penyesuaian, backup server wajib sebelum reset, backup harian, sanitasi secret, retry Telegram, dan HMAC signature end-to-end.")
