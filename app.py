@@ -38,111 +38,146 @@ def inject_responsive_css():
     st.markdown(
         r"""
         <style>
-        /* Desktop/laptop tidak diubah. Aturan berikut hanya aktif <= 768px. */
+        /* =====================================================
+           v7.2 PERFORMANCE + MOBILE
+           Desktop tetap lebar; iPhone/Android dibuat touch-safe.
+           ===================================================== */
+        html, body, [class*="css"] {
+            -webkit-text-size-adjust: 100%;
+        }
+
+        /* Tombol/link tidak memotong label panjang. */
+        .stButton > button,
+        .stDownloadButton > button,
+        [data-testid="stFormSubmitButton"] > button,
+        [data-testid="stLinkButton"] a {
+            white-space: normal !important;
+            overflow-wrap: anywhere !important;
+        }
+
         @media (max-width: 768px) {
+            /* Safe-area penting untuk iPhone dengan notch / Dynamic Island. */
             .block-container {
-                /* Tambah ruang atas agar konten tidak tertutup toolbar Streamlit di HP. */
-                padding-top: 4.25rem !important;
-                padding-left: 0.8rem !important;
-                padding-right: 0.8rem !important;
-                padding-bottom: 1.5rem !important;
+                padding-top: max(4.15rem, calc(3.75rem + env(safe-area-inset-top))) !important;
+                padding-left: max(0.72rem, env(safe-area-inset-left)) !important;
+                padding-right: max(0.72rem, env(safe-area-inset-right)) !important;
+                padding-bottom: max(1.4rem, env(safe-area-inset-bottom)) !important;
+                max-width: 100% !important;
             }
 
-            /* Kolom ditumpuk agar form, metric, dan header tidak sempit di HP. */
+            /* Sidebar menjadi panel yang muat di iPhone/Android kecil. */
+            section[data-testid="stSidebar"] {
+                width: min(88vw, 320px) !important;
+                min-width: min(88vw, 320px) !important;
+            }
+            section[data-testid="stSidebar"] > div {
+                width: min(88vw, 320px) !important;
+            }
+
+            /* Kolom ditumpuk supaya form tidak terpotong. */
             [data-testid="stHorizontalBlock"] {
                 flex-wrap: wrap !important;
-                gap: 0.6rem !important;
+                gap: 0.55rem !important;
             }
-
             [data-testid="column"] {
                 flex: 1 1 100% !important;
                 width: 100% !important;
-                min-width: 100% !important;
+                min-width: 0 !important;
             }
 
             h1 {
-                font-size: 1.55rem !important;
-                line-height: 1.25 !important;
-                word-break: normal !important;
+                font-size: 1.52rem !important;
+                line-height: 1.18 !important;
                 overflow-wrap: anywhere !important;
                 margin-top: 0 !important;
             }
+            h2 { font-size: 1.28rem !important; line-height: 1.2 !important; }
+            h3 { font-size: 1.08rem !important; }
 
-            h2 {
-                font-size: 1.35rem !important;
-            }
-
-            h3 {
-                font-size: 1.1rem !important;
-            }
-
-            /* Tombol lebih besar dan mudah ditekan di layar sentuh. */
-            .stButton > button,
-            .stDownloadButton > button,
-            [data-testid="stFormSubmitButton"] > button {
-                width: 100% !important;
-                min-height: 2.9rem !important;
-                font-size: 0.95rem !important;
-            }
-
-            /* Input mobile nyaman dan tidak terlalu kecil. */
-            input, textarea, select {
+            /* 16px mencegah Safari iOS melakukan zoom otomatis saat input fokus. */
+            input, textarea, select,
+            [data-baseweb="select"] input {
                 font-size: 16px !important;
             }
 
+            /* Target sentuh minimal ~48px. */
+            .stButton > button,
+            .stDownloadButton > button,
+            [data-testid="stFormSubmitButton"] > button,
+            [data-testid="stLinkButton"] a {
+                width: 100% !important;
+                min-height: 3rem !important;
+                font-size: 0.95rem !important;
+                padding: 0.55rem 0.75rem !important;
+            }
+
             [data-testid="stMetric"] {
-                padding: 0.35rem 0 !important;
+                padding: 0.25rem 0 !important;
             }
-
             [data-testid="stMetricValue"] {
-                font-size: 1.55rem !important;
+                font-size: 1.48rem !important;
             }
 
-            /* Grafik mengikuti lebar layar HP. */
+            /* Tabs dapat digeser horizontal, tidak memaksa layar melebar. */
+            [data-baseweb="tab-list"] {
+                overflow-x: auto !important;
+                scrollbar-width: thin;
+                white-space: nowrap !important;
+            }
+
+            /* Dataframe & chart tidak membuat horizontal page overflow. */
+            [data-testid="stDataFrame"],
             [data-testid="stPlotlyChart"],
             [data-testid="stPlotlyChart"] > div {
                 width: 100% !important;
                 max-width: 100% !important;
             }
-
-            /* Tabel tetap dapat digeser ke samping tanpa melebarkan halaman. */
             [data-testid="stDataFrame"] {
-                max-width: 100vw !important;
                 overflow-x: auto !important;
             }
 
-            [data-testid="stCaptionContainer"],
-            [data-testid="stAlert"] {
+            /* Uploader tetap berada di viewport HP. */
+            [data-testid="stFileUploader"],
+            [data-testid="stFileUploaderDropzone"] {
+                max-width: 100% !important;
+                min-width: 0 !important;
+            }
+            [data-testid="stFileUploaderDropzone"] {
+                padding: 0.75rem !important;
+            }
+
+            [data-testid="stAlert"],
+            [data-testid="stCaptionContainer"] {
                 line-height: 1.35 !important;
+                overflow-wrap: anywhere !important;
+            }
+
+            /* Navigasi sidebar lebih enak disentuh. */
+            section[data-testid="stSidebar"] [role="radiogroup"] label {
+                min-height: 2.2rem !important;
+                padding-top: 0.15rem !important;
+                padding-bottom: 0.15rem !important;
             }
         }
 
-        @media (max-width: 420px) {
+        @media (max-width: 430px) {
             .block-container {
-                padding-top: 4.5rem !important;
-                padding-left: 0.55rem !important;
-                padding-right: 0.55rem !important;
+                padding-top: max(4.35rem, calc(3.95rem + env(safe-area-inset-top))) !important;
+                padding-left: max(0.52rem, env(safe-area-inset-left)) !important;
+                padding-right: max(0.52rem, env(safe-area-inset-right)) !important;
             }
-
-            h1 {
-                font-size: 1.4rem !important;
-                line-height: 1.25 !important;
-            }
-
-            [data-testid="stMetricValue"] {
-                font-size: 1.35rem !important;
-            }
+            h1 { font-size: 1.36rem !important; }
+            [data-testid="stMetricValue"] { font-size: 1.30rem !important; }
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "7.1-production"
+APP_VERSION = "7.2-performance-mobile"
 EXPECTED_BACKEND_VERSION = "7.1-production"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
@@ -152,7 +187,7 @@ TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 ALLOW_NO_LOGIN = bool(st.secrets.get("ALLOW_NO_LOGIN", False))
 
 # Pengaturan keamanan / reliabilitas. Semua punya default aman dan tetap kompatibel.
-DATA_CACHE_TTL_SECONDS = max(5, int(st.secrets.get("DATA_CACHE_TTL_SECONDS", 15)))
+DATA_CACHE_TTL_SECONDS = max(15, int(st.secrets.get("DATA_CACHE_TTL_SECONDS", 30)))
 LOGIN_MAX_ATTEMPTS = max(3, int(st.secrets.get("LOGIN_MAX_ATTEMPTS", 5)))
 LOGIN_LOCK_SECONDS = max(30, int(st.secrets.get("LOGIN_LOCK_SECONDS", 300)))
 SESSION_TIMEOUT_MINUTES = max(5, int(st.secrets.get("SESSION_TIMEOUT_MINUTES", 60)))
@@ -161,12 +196,16 @@ OFFLINE_USE_DEFAULT_STOCK = bool(st.secrets.get("OFFLINE_USE_DEFAULT_STOCK", Fal
 SERVER_EMPTY_USE_DEFAULT_STOCK = bool(st.secrets.get("SERVER_EMPTY_USE_DEFAULT_STOCK", False))
 PBKDF2_ITERATIONS = max(200_000, int(st.secrets.get("PBKDF2_ITERATIONS", 310_000)))
 AUTO_SYNC_ENABLED = bool(st.secrets.get("AUTO_SYNC_ENABLED", True))
-AUTO_SYNC_SECONDS = max(10, int(st.secrets.get("AUTO_SYNC_SECONDS", 15)))
-HEALTH_TIMEOUT_SECONDS = max(3, min(20, int(st.secrets.get("HEALTH_TIMEOUT_SECONDS", 8))))
+AUTO_SYNC_SECONDS = max(20, int(st.secrets.get("AUTO_SYNC_SECONDS", 30)))
+HEALTH_TIMEOUT_SECONDS = max(3, min(12, int(st.secrets.get("HEALTH_TIMEOUT_SECONDS", 5))))
 WRITE_BLOCK_WHEN_OFFLINE = bool(st.secrets.get("WRITE_BLOCK_WHEN_OFFLINE", True))
 REQUIRE_HMAC = bool(st.secrets.get("REQUIRE_HMAC", True))
 ALLOW_LEGACY_PASSWORDS = bool(st.secrets.get("ALLOW_LEGACY_PASSWORDS", False))
 REQUIRE_SERVER_BACKUP_BEFORE_RESET = bool(st.secrets.get("REQUIRE_SERVER_BACKUP_BEFORE_RESET", True))
+# Performance mode: health-check berulang pada rerun cepat menggunakan hasil sesi terbaru.
+HEALTH_CACHE_SECONDS = max(5, int(st.secrets.get("HEALTH_CACHE_SECONDS", 20)))
+SECONDARY_SYNC_SECONDS = max(AUTO_SYNC_SECONDS, int(st.secrets.get("SECONDARY_SYNC_SECONDS", 60)))
+BACKUP_STATUS_TTL_SECONDS = max(20, int(st.secrets.get("BACKUP_STATUS_TTL_SECONDS", 60)))
 
 STOK_DEFAULT = {
     "Microcement base": 16,
@@ -780,6 +819,13 @@ def refresh_data(force=False, quiet=False):
         if backend_version:
             st.session_state.backend_version = backend_version
             st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
+        st.session_state.health_cache = {
+            "ok": True,
+            "backend_version": backend_version,
+            "data_revision": revision,
+        }
+        st.session_state.last_health_epoch = time.time()
+        st.session_state.last_health_check = waktu_display()
         return True
     except Exception as exc:
         st.session_state.is_connected = False
@@ -806,20 +852,40 @@ def clear_and_refresh():
     refresh_data(force=True)
 
 
-def sync_if_changed():
-    """Polling ringan. Data penuh hanya diambil jika revision backend berubah."""
-    if not AUTO_SYNC_ENABLED:
+def _apply_health_to_session(health: dict):
+    """Simpan hasil health check agar rerun Streamlit tidak memanggil Apps Script berulang."""
+    health = health or {}
+    revision = str(health.get("data_revision", "") or "")
+    backend_version = str(health.get("backend_version", "") or "")
+    st.session_state.health_cache = dict(health)
+    st.session_state.last_health_epoch = time.time()
+    st.session_state.last_health_check = waktu_display()
+    st.session_state.is_connected = True
+    if backend_version:
+        st.session_state.backend_version = backend_version
+        st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
+    return revision
+
+
+def get_server_health(force=False):
+    """Health-check bertingkat: gunakan hasil sesi singkat sebelum meminta Apps Script lagi."""
+    now = time.time()
+    cached = st.session_state.get("health_cache")
+    last = float(st.session_state.get("last_health_epoch", 0) or 0)
+    if not force and isinstance(cached, dict) and (now - last) < HEALTH_CACHE_SECONDS:
+        return cached
+    health = api_health()
+    _apply_health_to_session(health)
+    return health
+
+
+def sync_if_changed(force_health=False):
+    """Polling ringan; full read hanya saat revision backend berubah."""
+    if not AUTO_SYNC_ENABLED and not force_health:
         return False
     try:
-        health = api_health()
+        health = get_server_health(force=force_health)
         revision = str(health.get("data_revision", "") or "")
-        backend_version = str(health.get("backend_version", "") or "")
-        st.session_state.last_health_check = waktu_display()
-        st.session_state.is_connected = True
-        if backend_version:
-            st.session_state.backend_version = backend_version
-            st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
-
         current_revision = str(st.session_state.get("server_revision", "") or "")
         if not revision or revision != current_revision:
             return refresh_data(force=True, quiet=True)
@@ -832,16 +898,11 @@ def sync_if_changed():
 
 
 def require_online_operation():
-    """Preflight ringan agar form mutasi tidak bekerja dari status koneksi yang sudah basi."""
+    """Gunakan health terbaru bila masih fresh; server tetap memvalidasi setiap mutation saat submit."""
     if not WRITE_BLOCK_WHEN_OFFLINE:
         return
     try:
-        health = api_health()
-        st.session_state.is_connected = True
-        backend_version = str(health.get("backend_version", "") or "")
-        if backend_version:
-            st.session_state.backend_version = backend_version
-            st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
+        get_server_health(force=False)
     except Exception:
         st.session_state.is_connected = False
         if "stok" in st.session_state:
@@ -1045,6 +1106,7 @@ def require_permission(permission: str):
 # ============================================================
 # EXPORT
 # ============================================================
+@st.cache_data(ttl=180, show_spinner=False)
 def excel_bytes(df, sheet_name="Data"):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -1052,6 +1114,7 @@ def excel_bytes(df, sheet_name="Data"):
     return output.getvalue()
 
 
+@st.cache_data(ttl=180, show_spinner=False)
 def full_backup_bytes(stock, master, history, audit):
     stock_rows = []
     for nama in sorted(stock, key=natural_key):
@@ -1094,6 +1157,7 @@ def full_backup_bytes(stock, master, history, audit):
     return out.getvalue()
 
 
+@st.cache_data(ttl=180, show_spinner=False)
 def pdf_table(title, headers, rows, col_widths, subtitle=""):
     pdf = FPDF(orientation="L" if sum(col_widths) > 195 else "P")
     pdf.add_page()
@@ -1245,6 +1309,19 @@ def backup_server_status():
     return _post_json({"action": "backup_status", **actor_payload()}, timeout=20)
 
 
+def backup_server_status_cached(force=False):
+    """Status backup tidak perlu dipanggil ulang pada setiap widget rerun."""
+    now = time.time()
+    cached = st.session_state.get("backup_status_cache")
+    last = float(st.session_state.get("backup_status_epoch", 0) or 0)
+    if not force and isinstance(cached, dict) and (now - last) < BACKUP_STATUS_TTL_SECONDS:
+        return cached
+    data = backup_server_status()
+    st.session_state.backup_status_cache = dict(data or {})
+    st.session_state.backup_status_epoch = now
+    return data
+
+
 def _live_fragment(run_every_seconds):
     if hasattr(st, "fragment"):
         return st.fragment(run_every=run_every_seconds)
@@ -1383,13 +1460,13 @@ def render_stock_live():
 
 
 
-@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+@_live_fragment(SECONDARY_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
 def render_history_live():
     sync_if_changed()
     history_now = st.session_state.get("riwayat", [])
     sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
     if AUTO_SYNC_ENABLED:
-        st.caption(f"🔄 Riwayat live · sinkron terakhir {sync_text}")
+        st.caption(f"🔄 Riwayat sinkron otomatis tiap {SECONDARY_SYNC_SECONDS} detik · terakhir {sync_text}")
     if not st.session_state.get("is_connected"):
         st.warning("⚠️ Database offline. Riwayat yang tampil adalah snapshot sesi terakhir.")
     if not history_now:
@@ -1452,13 +1529,13 @@ def render_history_live():
     )
 
 
-@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+@_live_fragment(SECONDARY_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
 def render_reports_live():
     sync_if_changed()
     history_now = st.session_state.get("riwayat", [])
     sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
     if AUTO_SYNC_ENABLED:
-        st.caption(f"🔄 Laporan live · sinkron terakhir {sync_text}")
+        st.caption(f"🔄 Laporan sinkron otomatis tiap {SECONDARY_SYNC_SECONDS} detik · terakhir {sync_text}")
     if not st.session_state.get("is_connected"):
         st.warning("⚠️ Database offline. Laporan menggunakan snapshot sesi terakhir.")
 
@@ -1497,13 +1574,13 @@ def render_reports_live():
     )
 
 
-@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+@_live_fragment(SECONDARY_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
 def render_audit_live():
     sync_if_changed()
     audit_rows = st.session_state.get("audit", [])
     sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
     if AUTO_SYNC_ENABLED:
-        st.caption(f"🔄 Audit live · sinkron terakhir {sync_text}")
+        st.caption(f"🔄 Audit sinkron otomatis tiap {SECONDARY_SYNC_SECONDS} detik · terakhir {sync_text}")
     if not st.session_state.get("is_connected"):
         st.warning("⚠️ Database offline. Audit yang tampil adalah snapshot sesi terakhir.")
     if not audit_rows:
@@ -1642,15 +1719,11 @@ with st.sidebar:
 # ============================================================
 # HEADER
 # ============================================================
-h1, h2, h3 = st.columns([3, 1.5, 1])
+h1, h2 = st.columns([4, 1])
 with h1:
     st.title(f"📦 {active_menu}")
+    st.caption(f"{waktu_display()} · v{APP_VERSION}")
 with h2:
-    st.markdown(
-        f"<div style='text-align:right;font-size:12px;color:gray;padding-top:14px'>{waktu_display()}</div>",
-        unsafe_allow_html=True,
-    )
-with h3:
     if st.button("🔄 Segarkan", use_container_width=True):
         clear_and_refresh()
         st.rerun()
@@ -1931,13 +2004,14 @@ elif active_menu == "Audit Log":
 
 elif active_menu == "Backup Data":
     require_permission("backup")
-    if st.session_state.get("is_connected"):
-        sync_if_changed()
     st.write("Backup berisi stok, riwayat transaksi, audit log, serta manifest URL bukti transaksi.")
     st.caption("Catatan: gambar/nota asli tetap berada di Google Drive; workbook menyimpan daftar URL-nya.")
+
     backup_is_snapshot = not st.session_state.get("is_connected")
     if backup_is_snapshot:
         st.warning("⚠️ Database offline. File lokal di bawah adalah SNAPSHOT sesi terakhir, bukan backup database real-time.")
+
+    # full_backup_bytes dicache berdasarkan isi data sehingga rerun tombol tidak membuat XLSX berulang-ulang.
     backup = full_backup_bytes(
         st.session_state.get("stok", {}),
         st.session_state.get("master_info", {}),
@@ -1963,23 +2037,65 @@ elif active_menu == "Backup Data":
     st.subheader("☁️ Backup Database Otomatis")
     st.caption("Backup server membuat salinan Google Spreadsheet langsung ke folder WMS_Backups di Google Drive.")
 
-    try:
-        backup_status = backup_server_status() if st.session_state.get("is_connected") else {}
-    except Exception:
-        backup_status = {}
+    backup_flash = st.session_state.pop("backup_flash", None)
+    if backup_flash:
+        level, message = backup_flash
+        if level == "success":
+            st.success(message)
+        elif level == "warning":
+            st.warning(message)
+        else:
+            st.info(message)
 
-    last_backup = backup_status.get("last_backup_time") or "Belum ada"
-    trigger_active = bool(backup_status.get("trigger_installed", False))
+    backup_status = {}
+    backup_status_error = None
+    if st.session_state.get("is_connected"):
+        try:
+            backup_status = backup_server_status_cached(force=False)
+            st.session_state.backup_last_time = backup_status.get("last_backup_time") or st.session_state.get("backup_last_time", "")
+            st.session_state.backup_last_url = backup_status.get("last_backup_url") or st.session_state.get("backup_last_url", "")
+            st.session_state.backup_last_name = backup_status.get("last_backup_name") or st.session_state.get("backup_last_name", "")
+            st.session_state.backup_trigger_active = bool(backup_status.get("trigger_installed", False))
+        except Exception as exc:
+            backup_status_error = api_error_detail(exc)
+    else:
+        backup_status_error = "database sedang offline"
+
+    last_backup = backup_status.get("last_backup_time") or st.session_state.get("backup_last_time") or "Belum ada"
+    last_backup_name = backup_status.get("last_backup_name") or st.session_state.get("backup_last_name") or ""
+    last_backup_url = backup_status.get("last_backup_url") or st.session_state.get("backup_last_url") or ""
+    trigger_active = bool(backup_status.get("trigger_installed", st.session_state.get("backup_trigger_active", False)))
+
+    if backup_status_error:
+        st.warning(f"Status backup server belum dapat diperbarui: {backup_status_error}. Status terakhir yang tersimpan tetap ditampilkan.")
+
     bs1, bs2 = st.columns(2)
     bs1.metric("Backup terakhir", last_backup)
     bs2.metric("Backup harian", "Aktif" if trigger_active else "Belum aktif")
+    if last_backup_name:
+        st.caption(f"Backup terakhir: {last_backup_name}")
+    if last_backup_url:
+        st.link_button("📂 Buka Backup Terakhir di Google Drive", last_backup_url, use_container_width=True)
 
     if st.button("☁️ Buat Backup Server Sekarang", use_container_width=True, disabled=not st.session_state.get("is_connected")):
         try:
             result = server_backup_now()
-            st.success(f"Backup server berhasil: {result.get('backup_name', 'WMS backup')}")
-            if result.get("backup_url"):
-                st.link_button("Buka Backup di Google Drive", result["backup_url"], use_container_width=True)
+            backup_time = result.get("backup_time") or waktu_display()
+            backup_name = result.get("backup_name") or "WMS backup"
+            backup_url = result.get("backup_url") or ""
+            st.session_state.backup_last_time = backup_time
+            st.session_state.backup_last_name = backup_name
+            st.session_state.backup_last_url = backup_url
+            st.session_state.backup_status_cache = {
+                **st.session_state.get("backup_status_cache", {}),
+                "last_backup_time": backup_time,
+                "last_backup_name": backup_name,
+                "last_backup_url": backup_url,
+                "trigger_installed": trigger_active,
+            }
+            st.session_state.backup_status_epoch = time.time()
+            st.session_state.backup_flash = ("success", f"Backup server berhasil: {backup_name}")
+            st.rerun()
         except Exception as exc:
             show_api_error("Backup server gagal", exc)
 
@@ -1987,15 +2103,27 @@ elif active_menu == "Backup Data":
         bt1, bt2 = st.columns(2)
         if bt1.button("🕑 Aktifkan Backup Harian", use_container_width=True, disabled=trigger_active or not st.session_state.get("is_connected")):
             try:
-                install_backup_trigger()
-                st.success("Backup otomatis harian berhasil diaktifkan. Jalankan sekitar pukul 02.00 waktu project Apps Script.")
+                result = install_backup_trigger()
+                st.session_state.backup_trigger_active = bool(result.get("trigger_installed", True)) if isinstance(result, dict) else True
+                st.session_state.backup_status_cache = {
+                    **st.session_state.get("backup_status_cache", {}),
+                    "trigger_installed": st.session_state.backup_trigger_active,
+                }
+                st.session_state.backup_status_epoch = time.time()
+                st.session_state.backup_flash = ("success", "Backup otomatis harian berhasil diaktifkan.")
                 st.rerun()
             except Exception as exc:
                 show_api_error("Gagal mengaktifkan backup harian", exc)
         if bt2.button("⏹️ Nonaktifkan Backup Harian", use_container_width=True, disabled=(not trigger_active) or not st.session_state.get("is_connected")):
             try:
-                remove_backup_trigger()
-                st.success("Backup otomatis harian dinonaktifkan.")
+                result = remove_backup_trigger()
+                st.session_state.backup_trigger_active = bool(result.get("trigger_installed", False)) if isinstance(result, dict) else False
+                st.session_state.backup_status_cache = {
+                    **st.session_state.get("backup_status_cache", {}),
+                    "trigger_installed": st.session_state.backup_trigger_active,
+                }
+                st.session_state.backup_status_epoch = time.time()
+                st.session_state.backup_flash = ("success", "Backup otomatis harian dinonaktifkan.")
                 st.rerun()
             except Exception as exc:
                 show_api_error("Gagal menonaktifkan backup harian", exc)
@@ -2003,7 +2131,6 @@ elif active_menu == "Backup Data":
 
 elif active_menu == "Pengaturan & Reset":
     require_permission("reset")
-    sync_if_changed()
     require_online_operation()
 
     with st.expander("🔐 Generator Password Hash PBKDF2", expanded=False):
@@ -2024,7 +2151,9 @@ elif active_menu == "Pengaturan & Reset":
         st.write(f"Cache data: **{DATA_CACHE_TTL_SECONDS} detik**")
         st.write(f"Session timeout: **{SESSION_TIMEOUT_MINUTES} menit**")
         st.write(f"Login lock: **{LOGIN_MAX_ATTEMPTS} percobaan / {LOGIN_LOCK_SECONDS} detik**")
-        st.write(f"Auto-sync: **{'Aktif' if AUTO_SYNC_ENABLED else 'Nonaktif'} / {AUTO_SYNC_SECONDS} detik**")
+        st.write(f"Auto-sync Dashboard/Stok: **{'Aktif' if AUTO_SYNC_ENABLED else 'Nonaktif'} / {AUTO_SYNC_SECONDS} detik**")
+        st.write(f"Auto-sync Riwayat/Laporan/Audit: **{SECONDARY_SYNC_SECONDS} detik**")
+        st.write(f"Health cache: **{HEALTH_CACHE_SECONDS} detik**")
         st.write(f"Revision backend: **{st.session_state.get('server_revision', '-')}**")
         st.write(f"Backend: **{st.session_state.get('backend_version', 'belum diketahui')}**")
         st.write(f"Mode HMAC wajib: **{'Ya' if REQUIRE_HMAC else 'Tidak'}**")
