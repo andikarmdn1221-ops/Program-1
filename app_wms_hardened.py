@@ -3,7 +3,9 @@ import hashlib
 import hmac
 import io
 import re
+import secrets
 import threading
+import time
 import uuid
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -139,12 +141,23 @@ def inject_responsive_css():
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "6.0"
+APP_VERSION = "6.1-security"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
+AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
 ALLOW_NO_LOGIN = bool(st.secrets.get("ALLOW_NO_LOGIN", False))
+
+# Pengaturan keamanan / reliabilitas. Semua punya default aman dan tetap kompatibel.
+DATA_CACHE_TTL_SECONDS = max(5, int(st.secrets.get("DATA_CACHE_TTL_SECONDS", 15)))
+LOGIN_MAX_ATTEMPTS = max(3, int(st.secrets.get("LOGIN_MAX_ATTEMPTS", 5)))
+LOGIN_LOCK_SECONDS = max(30, int(st.secrets.get("LOGIN_LOCK_SECONDS", 300)))
+SESSION_TIMEOUT_MINUTES = max(5, int(st.secrets.get("SESSION_TIMEOUT_MINUTES", 60)))
+TELEGRAM_RETRY_ATTEMPTS = max(1, min(5, int(st.secrets.get("TELEGRAM_RETRY_ATTEMPTS", 3))))
+OFFLINE_USE_DEFAULT_STOCK = bool(st.secrets.get("OFFLINE_USE_DEFAULT_STOCK", False))
+SERVER_EMPTY_USE_DEFAULT_STOCK = bool(st.secrets.get("SERVER_EMPTY_USE_DEFAULT_STOCK", False))
+PBKDF2_ITERATIONS = max(200_000, int(st.secrets.get("PBKDF2_ITERATIONS", 310_000)))
 
 STOK_DEFAULT = {
     "Microcement base": 16,
@@ -233,6 +246,57 @@ def safe_int(value, default=0) -> int:
         return default
 
 
+def redact_sensitive(value) -> str:
+    """Hilangkan secret dari pesan error sebelum tampil ke UI/log."""
+    text = str(value or "")
+    for secret_value, label in (
+        (API_SHARED_KEY, "***API_KEY***"),
+        (AUTH_SIGNING_KEY, "***SIGNING_KEY***"),
+        (TELEGRAM_BOT_TOKEN, "***TELEGRAM_TOKEN***"),
+    ):
+        if secret_value:
+            text = text.replace(str(secret_value), label)
+    # Redaksi key pada query URL jika exception requests menyertakan URL lengkap.
+    text = re.sub(r"([?&](?:key|api_key)=)[^&\s]+", r"\1***REDACTED***", text, flags=re.I)
+    return text
+
+
+def api_error_detail(exc: Exception) -> str:
+    """Pesan jaringan yang informatif tanpa membocorkan URL/secret."""
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "koneksi ke server timeout"
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return f"server mengembalikan HTTP {status}" if status else "server mengembalikan HTTP error"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "server tidak dapat dijangkau"
+    if isinstance(exc, requests.exceptions.RequestException):
+        return "gangguan jaringan/API"
+    return redact_sensitive(exc)
+
+
+def make_request_signature(payload: dict) -> dict:
+    """
+    Tambahkan tanda tangan HMAC opsional untuk diverifikasi Code.gs.
+    Bila AUTH_SIGNING_KEY belum diisi, payload tetap persis kompatibel dengan backend lama.
+    """
+    if not AUTH_SIGNING_KEY:
+        return payload
+    ts = str(int(time.time()))
+    nonce = uuid.uuid4().hex
+    action = str(payload.get("action", ""))
+    actor = str(payload.get("actor", ""))
+    role = str(payload.get("role", ""))
+    tx_id = str(payload.get("tx_id", ""))
+    message = "|".join([action, actor, role, tx_id, ts, nonce])
+    signature = hmac.new(
+        str(AUTH_SIGNING_KEY).encode("utf-8"),
+        message.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return {**payload, "auth_ts": ts, "auth_nonce": nonce, "auth_sig": signature}
+
+
 def natural_key(text: str):
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", str(text))]
 
@@ -315,11 +379,15 @@ def api_get(timeout=20):
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
     if not API_SHARED_KEY:
         raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
+    # Backend lama Code.gs memakai query key. Secret tidak pernah ditampilkan kembali ke UI.
     response = requests.get(URL_GSHEET_API, params={"key": API_SHARED_KEY}, timeout=timeout)
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Respons server bukan JSON yang valid.") from exc
     if isinstance(data, dict) and data.get("ok") is False:
-        raise RuntimeError(data.get("message", "Server menolak permintaan."))
+        raise RuntimeError(redact_sensitive(data.get("message", "Server menolak permintaan.")))
     return data
 
 
@@ -328,24 +396,23 @@ def api_post(payload: dict, timeout=60):
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
     if not API_SHARED_KEY:
         raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
-    payload = {**payload, "api_key": API_SHARED_KEY}
-    response = requests.post(URL_GSHEET_API, json=payload, timeout=timeout)
+    signed_payload = make_request_signature(payload)
+    signed_payload = {**signed_payload, "api_key": API_SHARED_KEY}
+    response = requests.post(URL_GSHEET_API, json=signed_payload, timeout=timeout)
     response.raise_for_status()
-    data = response.json()
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Respons server bukan JSON yang valid.") from exc
     if not isinstance(data, dict):
         raise RuntimeError("Respons server tidak valid.")
     if data.get("ok") is False:
-        raise RuntimeError(data.get("message", "Operasi ditolak server."))
+        raise RuntimeError(redact_sensitive(data.get("message", "Operasi ditolak server.")))
     return data
 
 
 def show_api_error(prefix: str, exc: Exception):
-    if isinstance(exc, requests.exceptions.Timeout):
-        st.error(f"{prefix}: koneksi ke server timeout.")
-    elif isinstance(exc, requests.exceptions.RequestException):
-        st.error(f"{prefix}: gangguan jaringan/API ({exc}).")
-    else:
-        st.error(f"{prefix}: {exc}")
+    st.error(f"{prefix}: {api_error_detail(exc)}.")
 
 
 # ============================================================
@@ -365,11 +432,8 @@ def telegram_response_detail(response) -> str:
 
 
 def telegram_safe_exception(exc: Exception) -> str:
-    """Jangan sampai token Telegram ikut muncul di pesan/log error."""
-    text = str(exc)
-    if TELEGRAM_BOT_TOKEN:
-        text = text.replace(str(TELEGRAM_BOT_TOKEN), "***TOKEN***")
-    return text
+    """Jangan sampai token Telegram / API key ikut muncul di pesan/log error."""
+    return redact_sensitive(exc)
 
 
 def test_telegram_connection():
@@ -413,63 +477,101 @@ def test_telegram_connection():
 
 
 def send_telegram(message: str, image_bytes=None):
+    """Kirim Telegram dengan retry dan fallback jika Markdown gagal diparse."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return False
-    try:
-        if image_bytes:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-            res = requests.post(
-                url,
-                data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": message},
-                files={"photo": ("bukti.jpg", image_bytes, "image/jpeg")},
-                timeout=20,
-            )
-        else:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            res = requests.post(
-                url,
-                json={"chat_id": str(TELEGRAM_CHAT_ID), "text": message, "parse_mode": "Markdown"},
-                timeout=20,
-            )
-        if not res.ok:
-            print(f"[Telegram error] {telegram_response_detail(res)}")
-            return False
-        return True
-    except Exception as exc:
-        # Jangan mematikan transaksi hanya karena Telegram gagal.
-        print(f"[Telegram error] {telegram_safe_exception(exc)}")
-        return False
+
+    last_error = ""
+    for attempt in range(1, TELEGRAM_RETRY_ATTEMPTS + 1):
+        try:
+            if image_bytes:
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+                res = requests.post(
+                    url,
+                    data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": message},
+                    files={"photo": ("bukti.jpg", image_bytes, "image/jpeg")},
+                    timeout=20,
+                )
+            else:
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                res = requests.post(
+                    url,
+                    json={"chat_id": str(TELEGRAM_CHAT_ID), "text": message, "parse_mode": "Markdown"},
+                    timeout=20,
+                )
+                # Keterangan/nama barang dapat mengandung karakter Markdown.
+                # Jika Telegram menolak entity Markdown, kirim ulang sebagai plain text.
+                if res.status_code == 400:
+                    detail_lower = telegram_response_detail(res).lower()
+                    if "parse" in detail_lower or "entity" in detail_lower:
+                        res = requests.post(
+                            url,
+                            json={"chat_id": str(TELEGRAM_CHAT_ID), "text": message},
+                            timeout=20,
+                        )
+
+            if res.ok:
+                return True
+
+            last_error = telegram_response_detail(res)
+            # 4xx selain rate-limit biasanya tidak akan sembuh dengan retry.
+            if 400 <= res.status_code < 500 and res.status_code != 429:
+                break
+        except requests.exceptions.Timeout:
+            last_error = "timeout"
+        except requests.exceptions.RequestException as exc:
+            last_error = telegram_safe_exception(exc)
+        except Exception as exc:
+            last_error = telegram_safe_exception(exc)
+            break
+
+        if attempt < TELEGRAM_RETRY_ATTEMPTS:
+            time.sleep(min(4.0, 0.8 * attempt))
+
+    print(f"[Telegram error] {redact_sensitive(last_error)}")
+    return False
 
 
 def send_telegram_document_detailed(message: str, file_bytes: bytes, file_name: str):
-    """Versi detail untuk tombol backup agar penyebab gagal terlihat."""
+    """Kirim backup dengan retry dan detail error yang sudah disanitasi."""
     if not TELEGRAM_BOT_TOKEN:
         return False, "TELEGRAM_BOT_TOKEN belum diisi."
     if not TELEGRAM_CHAT_ID:
         return False, "TELEGRAM_CHAT_ID belum diisi."
-    try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
-        res = requests.post(
-            url,
-            data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": message},
-            files={
-                "document": (
-                    file_name,
-                    file_bytes,
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            },
-            timeout=40,
-        )
-        if not res.ok:
-            return False, telegram_response_detail(res)
-        return True, "Backup berhasil dikirim ke Telegram."
-    except requests.exceptions.Timeout:
-        return False, "Koneksi Telegram timeout saat mengirim backup."
-    except requests.exceptions.RequestException as exc:
-        return False, f"Gangguan koneksi Telegram: {telegram_safe_exception(exc)}"
-    except Exception as exc:
-        return False, f"Pengiriman backup gagal: {telegram_safe_exception(exc)}"
+
+    last_error = ""
+    for attempt in range(1, TELEGRAM_RETRY_ATTEMPTS + 1):
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
+            res = requests.post(
+                url,
+                data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": message},
+                files={
+                    "document": (
+                        file_name,
+                        file_bytes,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+                timeout=40,
+            )
+            if res.ok:
+                return True, "Backup berhasil dikirim ke Telegram."
+            last_error = telegram_response_detail(res)
+            if 400 <= res.status_code < 500 and res.status_code != 429:
+                break
+        except requests.exceptions.Timeout:
+            last_error = "Koneksi Telegram timeout saat mengirim backup."
+        except requests.exceptions.RequestException as exc:
+            last_error = f"Gangguan koneksi Telegram: {telegram_safe_exception(exc)}"
+        except Exception as exc:
+            last_error = f"Pengiriman backup gagal: {telegram_safe_exception(exc)}"
+            break
+
+        if attempt < TELEGRAM_RETRY_ATTEMPTS:
+            time.sleep(min(5.0, 1.0 * attempt))
+
+    return False, redact_sensitive(last_error or "Telegram menolak pengiriman backup.")
 
 
 def send_telegram_document(message: str, file_bytes: bytes, file_name: str):
@@ -586,19 +688,21 @@ def normalize_audit_rows(raw_rows):
 
 def normalize_server_data(data):
     if not isinstance(data, dict):
-        return STOK_DEFAULT.copy(), MASTER_DEFAULT.copy(), [], []
+        raise RuntimeError("Format data server tidak valid; objek JSON diharapkan.")
 
     stock, master = normalize_stock_rows(data.get("stok", []))
     history = normalize_history_rows(data.get("riwayat", []))
     audit = normalize_audit_rows(data.get("audit", []))
 
-    if not stock:
+    # Jangan diam-diam mengubah database kosong menjadi stok dummy.
+    # Jika instalasi lama memang membutuhkan perilaku tersebut, aktifkan secret ini secara eksplisit.
+    if not stock and SERVER_EMPTY_USE_DEFAULT_STOCK:
         stock = STOK_DEFAULT.copy()
         master = {k: v.copy() for k, v in MASTER_DEFAULT.items()}
     return stock, master, history, audit
 
 
-@st.cache_data(ttl=90, show_spinner=False)
+@st.cache_data(ttl=DATA_CACHE_TTL_SECONDS, show_spinner=False)
 def load_data_cached(api_url: str):
     del api_url  # key cache tetap berubah bila URL berubah
     return api_get()
@@ -613,14 +717,26 @@ def refresh_data(force=False):
         st.session_state.riwayat = history
         st.session_state.audit = audit
         st.session_state.is_connected = True
+        st.session_state.data_source = "server"
+        st.session_state.last_server_sync = waktu_display()
         return True
     except Exception as exc:
         st.session_state.is_connected = False
         if "stok" not in st.session_state:
-            st.session_state.stok = STOK_DEFAULT.copy()
-            st.session_state.master_info = {k: v.copy() for k, v in MASTER_DEFAULT.items()}
+            if OFFLINE_USE_DEFAULT_STOCK:
+                st.session_state.stok = STOK_DEFAULT.copy()
+                st.session_state.master_info = {k: v.copy() for k, v in MASTER_DEFAULT.items()}
+                st.session_state.data_source = "default_offline"
+            else:
+                # Lebih aman menampilkan kosong daripada stok default yang bisa dianggap stok nyata.
+                st.session_state.stok = {}
+                st.session_state.master_info = {}
+                st.session_state.data_source = "offline_empty"
             st.session_state.riwayat = []
             st.session_state.audit = []
+        else:
+            # Pertahankan snapshot terakhir di session, jangan menimpa dengan angka default.
+            st.session_state.data_source = "last_known_session"
         show_api_error("Gagal mengambil data", exc)
         return False
 
@@ -653,34 +769,88 @@ def normalize_role(role: str) -> str:
     return mapping.get(txt, ROLE_STAFF)
 
 
+def generate_pbkdf2_hash(password: str, iterations: int = PBKDF2_ITERATIONS) -> str:
+    """Format: pbkdf2_sha256$iterations$salt_hex$digest_hex."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest.hex()}"
+
+
 def password_matches(input_password: str, configured: dict) -> bool:
-    if configured.get("password_hash"):
-        supplied_hash = hashlib.sha256(input_password.encode()).hexdigest()
-        return hmac.compare_digest(supplied_hash, str(configured["password_hash"]))
+    """Mendukung PBKDF2 baru + SHA-256/plain lama agar migrasi tidak memutus login."""
+    configured_hash = str(configured.get("password_hash", "") or "").strip()
+    if configured_hash:
+        if configured_hash.startswith("pbkdf2_sha256$"):
+            try:
+                _algo, iterations_txt, salt_hex, expected_hex = configured_hash.split("$", 3)
+                iterations = int(iterations_txt)
+                if iterations < 100_000:
+                    return False
+                salt = bytes.fromhex(salt_hex)
+                digest = hashlib.pbkdf2_hmac(
+                    "sha256", input_password.encode("utf-8"), salt, iterations
+                ).hex()
+                return hmac.compare_digest(digest, expected_hex.lower())
+            except (ValueError, TypeError):
+                return False
+
+        # Kompatibilitas hash SHA-256 lama.
+        supplied_hash = hashlib.sha256(input_password.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(supplied_hash, configured_hash.lower())
+
+    # Kompatibilitas password plain lama. Sebaiknya dimigrasikan ke PBKDF2.
     if configured.get("password") is not None:
         return hmac.compare_digest(str(input_password), str(configured["password"]))
     return False
 
 
+def clear_auth_session():
+    for key in ("auth_user", "auth_role", "auth_login_at", "auth_last_activity"):
+        st.session_state.pop(key, None)
+
+
 def login_gate():
     users = get_users_config()
+    now = time.time()
+
     if not users:
         if ALLOW_NO_LOGIN:
             st.session_state.auth_user = "Local Developer"
             st.session_state.auth_role = ROLE_DEVELOPER
+            st.session_state.auth_login_at = now
+            st.session_state.auth_last_activity = now
             return
         st.error("Konfigurasi USERS belum dibuat di Streamlit Secrets.")
         st.info("Tambahkan akun Developer, Boss, Admin, dan Staff di Streamlit Secrets sebelum aplikasi digunakan.")
         st.stop()
 
     if st.session_state.get("auth_user"):
-        st.session_state.auth_role = normalize_role(st.session_state.get("auth_role"))
-        return
+        last_activity = float(st.session_state.get("auth_last_activity", now))
+        timeout_seconds = SESSION_TIMEOUT_MINUTES * 60
+        if now - last_activity > timeout_seconds:
+            clear_auth_session()
+            st.warning("Sesi login berakhir karena tidak aktif terlalu lama. Silakan masuk kembali.")
+        else:
+            st.session_state.auth_role = normalize_role(st.session_state.get("auth_role"))
+            st.session_state.auth_last_activity = now
+            return
+
+    lock_until = float(st.session_state.get("login_lock_until", 0) or 0)
+    if lock_until and now >= lock_until:
+        st.session_state.login_attempts = 0
+        st.session_state.login_lock_until = 0
+        lock_until = 0
 
     st.title("🔐 Login WMS Microcement")
     st.caption("Masuk menggunakan akun yang diberikan sesuai jabatan.")
+
+    if lock_until > now:
+        remaining = max(1, int(lock_until - now))
+        st.error(f"Terlalu banyak percobaan login gagal. Coba lagi dalam {remaining} detik.")
+        st.stop()
+
     with st.form("login_form"):
-        username = st.text_input("Username")
+        username = st.text_input("Username").strip()
         password = st.text_input("Password", type="password")
         submit = st.form_submit_button("Masuk", use_container_width=True)
 
@@ -689,8 +859,20 @@ def login_gate():
         if cfg and password_matches(password, dict(cfg)):
             st.session_state.auth_user = username
             st.session_state.auth_role = normalize_role(dict(cfg).get("role", ROLE_STAFF))
+            st.session_state.auth_login_at = now
+            st.session_state.auth_last_activity = now
+            st.session_state.login_attempts = 0
+            st.session_state.login_lock_until = 0
             st.rerun()
-        st.error("Username atau password salah.")
+
+        attempts = int(st.session_state.get("login_attempts", 0)) + 1
+        st.session_state.login_attempts = attempts
+        remaining_attempts = LOGIN_MAX_ATTEMPTS - attempts
+        if attempts >= LOGIN_MAX_ATTEMPTS:
+            st.session_state.login_lock_until = now + LOGIN_LOCK_SECONDS
+            st.error(f"Login dikunci sementara selama {LOGIN_LOCK_SECONDS} detik karena terlalu banyak percobaan gagal.")
+        else:
+            st.error(f"Username atau password salah. Sisa percobaan: {remaining_attempts}.")
     st.stop()
 
 
@@ -741,11 +923,33 @@ def full_backup_bytes(stock, master, history, audit):
                 "Batas Minimum": info.get("min_stok", 5),
             }
         )
+
+    evidence_rows = []
+    for tx in history:
+        proof_url = str(tx.get("Bukti URL", "") or "").strip()
+        if proof_url:
+            evidence_rows.append({
+                "ID Transaksi": tx.get("ID Transaksi", ""),
+                "Waktu": tx.get("Waktu", ""),
+                "Barang": tx.get("Barang", ""),
+                "Bukti URL": proof_url,
+            })
+
+    readme_rows = [
+        {"Keterangan": "Backup dibuat", "Nilai": waktu_display()},
+        {"Keterangan": "Versi aplikasi", "Nilai": APP_VERSION},
+        {"Keterangan": "Catatan bukti", "Nilai": "File Excel menyimpan manifest/URL bukti. File gambar asli tetap berada di Google Drive dan harus dibackup terpisah."},
+    ]
+
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         pd.DataFrame(stock_rows).to_excel(writer, index=False, sheet_name="Stok Barang")
         pd.DataFrame(history, columns=RIWAYAT_COLUMNS).to_excel(writer, index=False, sheet_name="Riwayat")
-        pd.DataFrame(audit).to_excel(writer, index=False, sheet_name="Audit")
+        pd.DataFrame(audit, columns=AUDIT_COLUMNS).to_excel(writer, index=False, sheet_name="Audit")
+        pd.DataFrame(evidence_rows, columns=["ID Transaksi", "Waktu", "Barang", "Bukti URL"]).to_excel(
+            writer, index=False, sheet_name="Manifest Bukti"
+        )
+        pd.DataFrame(readme_rows).to_excel(writer, index=False, sheet_name="README")
     return out.getvalue()
 
 
@@ -969,8 +1173,7 @@ with st.sidebar:
                 st.caption(f"❌ {detail}")
 
     if get_users_config() and st.button("🚪 Keluar", use_container_width=True):
-        st.session_state.pop("auth_user", None)
-        st.session_state.pop("auth_role", None)
+        clear_auth_session()
         st.rerun()
 
 
@@ -993,7 +1196,14 @@ with h3:
 st.divider()
 
 if not st.session_state.get("is_connected"):
-    st.error("🚨 Database tidak dapat dihubungi. Mode data terakhir/default sedang digunakan.")
+    source = st.session_state.get("data_source", "offline")
+    if source == "last_known_session":
+        last_sync = st.session_state.get("last_server_sync", "tidak diketahui")
+        st.error(f"🚨 Database tidak dapat dihubungi. Data yang tampil adalah snapshot sesi terakhir (sinkron terakhir: {last_sync}). Jangan anggap sebagai stok real-time.")
+    elif source == "default_offline":
+        st.error("🚨 Database offline. Yang tampil adalah STOK DEFAULT/DUMMY, bukan stok aktual. Jangan gunakan untuk keputusan operasional.")
+    else:
+        st.error("🚨 Database tidak dapat dihubungi. Data stok aktual tidak ditampilkan untuk mencegah penggunaan angka yang menyesatkan.")
 
 # Hitung ulang setelah kemungkinan refresh
 stock = st.session_state.stok
@@ -1444,7 +1654,8 @@ elif active_menu == "Audit Log":
 
 elif active_menu == "Backup Data":
     require_permission("backup")
-    st.write("Backup berisi stok, riwayat transaksi, URL bukti, dan audit log.")
+    st.write("Backup berisi stok, riwayat transaksi, audit log, serta manifest URL bukti transaksi.")
+    st.caption("Catatan: gambar/nota asli tetap berada di Google Drive; workbook menyimpan daftar URL-nya.")
     backup = full_backup_bytes(stock, master, history, st.session_state.get("audit", []))
     filename = f"BACKUP_WMS_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx"
     b1, b2 = st.columns(2)
@@ -1463,6 +1674,30 @@ elif active_menu == "Backup Data":
 
 elif active_menu == "Pengaturan & Reset":
     require_permission("reset")
+
+    with st.expander("🔐 Generator Password Hash PBKDF2", expanded=False):
+        st.caption("Gunakan hasil ini sebagai password_hash di secrets.toml. Password tidak disimpan oleh aplikasi.")
+        new_password = st.text_input("Password baru", type="password", key="pbkdf2_password")
+        confirm_password = st.text_input("Ulangi password", type="password", key="pbkdf2_password_confirm")
+        if st.button("Buat Password Hash", use_container_width=True):
+            if len(new_password) < 8:
+                st.warning("Gunakan password minimal 8 karakter.")
+            elif new_password != confirm_password:
+                st.error("Konfirmasi password tidak sama.")
+            else:
+                generated_hash = generate_pbkdf2_hash(new_password)
+                st.code(generated_hash, language=None)
+                st.success("Hash berhasil dibuat. Salin ke password_hash pada akun yang sesuai di Streamlit Secrets.")
+
+    with st.expander("🛡️ Status Hardening", expanded=False):
+        st.write(f"Cache data: **{DATA_CACHE_TTL_SECONDS} detik**")
+        st.write(f"Session timeout: **{SESSION_TIMEOUT_MINUTES} menit**")
+        st.write(f"Login lock: **{LOGIN_MAX_ATTEMPTS} percobaan / {LOGIN_LOCK_SECONDS} detik**")
+        if AUTH_SIGNING_KEY:
+            st.success("AUTH_SIGNING_KEY aktif — request mutasi membawa HMAC signature.")
+        else:
+            st.warning("AUTH_SIGNING_KEY belum diisi. App tetap kompatibel, tetapi Code.gs belum bisa memverifikasi signature actor/role.")
+
     st.warning("Reset menghapus data operasional dan mengembalikan master awal. Backup dahulu.")
     backup = full_backup_bytes(stock, master, history, st.session_state.get("audit", []))
     st.download_button("💾 Download Backup Sebelum Reset", backup, f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx")
@@ -1486,4 +1721,4 @@ elif active_menu == "Tentang Aplikasi":
     )
     st.info(f"Versi {APP_VERSION} · Internal WMS")
     st.caption("Role: Developer, Boss, Admin, Staff. Boss dapat mengelola dan menyesuaikan stok, sedangkan reset database hanya Developer.")
-    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item diproses server-side dengan LockService agar lebih aman untuk multi-user.")
+    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item tetap diproses server-side. Versi ini menambah anti-bruteforce login, session timeout, PBKDF2, sanitasi secret, retry Telegram, cache lebih singkat, dan dukungan HMAC signature untuk Code.gs.")
