@@ -1180,7 +1180,7 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
             keterangan = st.text_input(label_ket, "" if tipe == "KELUAR" else "-")
             bukti = st.file_uploader(
                 "Upload Bukti / Nota (Opsional)" if tipe == "MASUK" else "Upload Surat Jalan (Opsional)",
-                type=["jpg", "jpeg", "png"],
+                type=["jpg", "jpeg", "png", "jfif", "webp"],
             )
             submit = st.form_submit_button(
                 "📥 Simpan Barang Masuk" if tipe == "MASUK" else "📤 Simpan Pengiriman",
