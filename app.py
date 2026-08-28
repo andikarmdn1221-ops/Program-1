@@ -5,7 +5,6 @@ import io
 import json
 import re
 import secrets
-import threading
 import time
 import uuid
 from datetime import date, datetime
@@ -39,11 +38,26 @@ def inject_responsive_css():
         r"""
         <style>
         /* =====================================================
-           v7.2 PERFORMANCE + MOBILE
+           v8.0 PRODUCTION + MOBILE
            Desktop tetap lebar; iPhone/Android dibuat touch-safe.
            ===================================================== */
         html, body, [class*="css"] {
             -webkit-text-size-adjust: 100%;
+        }
+
+        /* Tampilan lebih bersih tanpa mengubah komponen bawaan Streamlit. */
+        .block-container {
+            padding-top: 2rem;
+            max-width: 1440px;
+        }
+        [data-testid="stMetric"] {
+            border: 1px solid rgba(128, 128, 128, 0.18);
+            border-radius: 0.85rem;
+            padding: 0.75rem 0.9rem;
+            background: rgba(128, 128, 128, 0.035);
+        }
+        [data-testid="stAlert"] {
+            border-radius: 0.8rem;
         }
 
         /* Tombol/link tidak memotong label panjang. */
@@ -177,7 +191,7 @@ def inject_responsive_css():
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "7.2-performance-mobile"
+APP_VERSION = "8.0-pro-mobile"
 EXPECTED_BACKEND_VERSION = "7.1-production"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
@@ -206,6 +220,9 @@ REQUIRE_SERVER_BACKUP_BEFORE_RESET = bool(st.secrets.get("REQUIRE_SERVER_BACKUP_
 HEALTH_CACHE_SECONDS = max(5, int(st.secrets.get("HEALTH_CACHE_SECONDS", 20)))
 SECONDARY_SYNC_SECONDS = max(AUTO_SYNC_SECONDS, int(st.secrets.get("SECONDARY_SYNC_SECONDS", 60)))
 BACKUP_STATUS_TTL_SECONDS = max(20, int(st.secrets.get("BACKUP_STATUS_TTL_SECONDS", 60)))
+MAX_UPLOAD_MB = max(1, min(15, int(st.secrets.get("MAX_UPLOAD_MB", 6))))
+RESTOCK_TARGET_MULTIPLIER = max(1, min(5, int(st.secrets.get("RESTOCK_TARGET_MULTIPLIER", 2))))
+NOTIFICATION_LOG_LIMIT = max(10, min(100, int(st.secrets.get("NOTIFICATION_LOG_LIMIT", 30))))
 
 STOK_DEFAULT = {
     "Microcement base": 16,
@@ -280,6 +297,11 @@ def sekarang_wib() -> datetime:
     return datetime.now(WIB)
 
 
+def hari_ini_wib() -> date:
+    """Tanggal operasional harus mengikuti WIB, bukan zona waktu server cloud."""
+    return sekarang_wib().date()
+
+
 def waktu_display() -> str:
     return sekarang_wib().strftime("%d %b %Y, %H:%M WIB")
 
@@ -292,6 +314,27 @@ def safe_int(value, default=0) -> int:
         return int(float(txt)) if txt else default
     except (TypeError, ValueError):
         return default
+
+
+def clean_item_name(value: str) -> str:
+    """Rapikan nama item dan tolak input yang berisiko merusak tampilan/sheet."""
+    name = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not name:
+        raise ValueError("Nama barang wajib diisi")
+    if len(name) > 80:
+        raise ValueError("Nama barang maksimal 80 karakter")
+    if any(ord(ch) < 32 for ch in name):
+        raise ValueError("Nama barang mengandung karakter yang tidak valid")
+    return name
+
+
+def clean_note(value: str, *, required=False, max_length=240) -> str:
+    note = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(value or "")).strip()
+    if required and not note:
+        raise ValueError("Keterangan wajib diisi")
+    if len(note) > max_length:
+        raise ValueError(f"Keterangan maksimal {max_length} karakter")
+    return note or "-"
 
 
 def redact_sensitive(value) -> str:
@@ -401,36 +444,42 @@ def sanitize_pdf_text(value) -> str:
     return str(value).strip().encode("latin-1", "replace").decode("latin-1")
 
 
-def compress_image(uploaded_file, max_size=(1000, 1000), quality=78):
+def compress_image(uploaded_file, max_size=(1200, 1200), quality=80):
     if uploaded_file is None:
         return None
     try:
+        file_size = getattr(uploaded_file, "size", None)
+        if file_size is None and hasattr(uploaded_file, "getbuffer"):
+            file_size = len(uploaded_file.getbuffer())
+        if file_size and file_size > MAX_UPLOAD_MB * 1024 * 1024:
+            raise ValueError(f"Ukuran gambar maksimal {MAX_UPLOAD_MB} MB")
+
         uploaded_file.seek(0)
         img = Image.open(uploaded_file)
-        if img.mode in ("RGBA", "P"):
+        img.verify()
+        uploaded_file.seek(0)
+        img = Image.open(uploaded_file)
+        if img.mode != "RGB":
             img = img.convert("RGB")
         img.thumbnail(max_size, Image.Resampling.LANCZOS)
         output = io.BytesIO()
         img.save(output, format="JPEG", quality=quality, optimize=True)
         return output.getvalue()
     except Exception as exc:
-        st.warning(f"Foto tidak dapat dikompres: {exc}")
-        try:
-            uploaded_file.seek(0)
-            return uploaded_file.getvalue()
-        except Exception:
-            return None
+        raise ValueError(f"Bukti gambar tidak valid: {redact_sensitive(exc)}") from exc
 
 
-def to_image_payload(uploaded_file):
+def to_image_payload(uploaded_file, image_bytes=None):
     if uploaded_file is None:
         return {}
-    raw = compress_image(uploaded_file)
+    raw = image_bytes if image_bytes is not None else compress_image(uploaded_file)
     if not raw:
         return {}
+    original_name = re.sub(r"[^A-Za-z0-9._-]+", "_", str(getattr(uploaded_file, "name", "bukti")))
+    original_stem = original_name.rsplit(".", 1)[0] or "bukti"
     return {
         "image_base64": base64.b64encode(raw).decode("utf-8"),
-        "image_name": f"{sekarang_wib().strftime('%Y%m%d_%H%M%S')}_{getattr(uploaded_file, 'name', 'bukti.jpg')}",
+        "image_name": f"{sekarang_wib().strftime('%Y%m%d_%H%M%S')}_{original_stem}.jpg",
         "image_mime": "image/jpeg",
     }
 
@@ -568,10 +617,12 @@ def test_telegram_connection():
         return False, f"Tes Telegram gagal: {telegram_safe_exception(exc)}"
 
 
-def send_telegram(message: str, image_bytes=None):
-    """Kirim Telegram dengan retry dan fallback jika Markdown gagal diparse."""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
+def send_telegram_detailed(message: str, image_bytes=None):
+    """Kirim Telegram secara terukur; caller menerima status dan penyebab kegagalan."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "TELEGRAM_BOT_TOKEN belum diisi."
+    if not TELEGRAM_CHAT_ID:
+        return False, "TELEGRAM_CHAT_ID belum diisi."
 
     last_error = ""
     for attempt in range(1, TELEGRAM_RETRY_ATTEMPTS + 1):
@@ -603,7 +654,7 @@ def send_telegram(message: str, image_bytes=None):
                         )
 
             if res.ok:
-                return True
+                return True, "Notifikasi berhasil dikirim ke Telegram."
 
             last_error = telegram_response_detail(res)
             # 4xx selain rate-limit biasanya tidak akan sembuh dengan retry.
@@ -620,8 +671,33 @@ def send_telegram(message: str, image_bytes=None):
         if attempt < TELEGRAM_RETRY_ATTEMPTS:
             time.sleep(min(4.0, 0.8 * attempt))
 
-    print(f"[Telegram error] {redact_sensitive(last_error)}")
-    return False
+    safe_error = redact_sensitive(last_error or "Telegram menolak notifikasi.")
+    print(f"[Telegram error] {safe_error}")
+    return False, safe_error
+
+
+def send_telegram(message: str, image_bytes=None):
+    ok, _detail = send_telegram_detailed(message, image_bytes)
+    return ok
+
+
+def record_notification(context: str, ok: bool, detail: str):
+    """Simpan hasil pengiriman pada sesi agar kegagalan tidak lagi tersembunyi."""
+    rows = list(st.session_state.get("notification_log", []))
+    rows.insert(0, {
+        "Waktu": waktu_display(),
+        "Konteks": context,
+        "Status": "TERKIRIM" if ok else "GAGAL",
+        "Detail": redact_sensitive(detail),
+    })
+    st.session_state.notification_log = rows[:NOTIFICATION_LOG_LIMIT]
+
+
+def deliver_notification(message: str, context: str, image_bytes=None):
+    """Notifikasi operasional dijalankan sinkron agar statusnya dapat dilaporkan."""
+    ok, detail = send_telegram_detailed(message, image_bytes)
+    record_notification(context, ok, detail)
+    return ok, detail
 
 
 def send_telegram_document_detailed(message: str, file_bytes: bytes, file_name: str):
@@ -671,10 +747,6 @@ def send_telegram_document(message: str, file_bytes: bytes, file_name: str):
     return ok
 
 
-def telegram_async(message: str, image_bytes=None):
-    threading.Thread(target=send_telegram, args=(message, image_bytes), daemon=True).start()
-
-
 # ============================================================
 # DATA NORMALIZATION
 # ============================================================
@@ -691,6 +763,9 @@ def normalize_stock_rows(raw_rows):
         nama = str(row[0]).strip()
         if not nama:
             continue
+        raw_stock = str(row[1]).strip()
+        if not raw_stock or not re.fullmatch(r"-?\d+(?:\.0+)?", raw_stock):
+            raise RuntimeError(f"Jumlah stok untuk '{nama}' bukan angka yang valid")
         stock[nama] = safe_int(row[1])
         master[nama] = {
             "status": str(row[2]).strip() if len(row) > 2 and str(row[2]).strip() else "Aktif",
@@ -848,7 +923,8 @@ def refresh_data(force=False, quiet=False):
 
 
 def clear_and_refresh():
-    st.cache_data.clear()
+    # Bersihkan hanya cache pembacaan database; cache ekspor pengguna lain tidak ikut terhapus.
+    load_data_cached.clear()
     refresh_data(force=True)
 
 
@@ -1097,6 +1173,38 @@ def actor_label() -> str:
     return f"{st.session_state.get('auth_user', 'Unknown')} ({current_role()})"
 
 
+def set_flash(level: str, message: str):
+    """Pesan tetap muncul setelah st.rerun, penting untuk hasil transaksi/notifikasi."""
+    st.session_state.operation_flash = (level, message)
+
+
+def render_flash():
+    flash = st.session_state.pop("operation_flash", None)
+    if not flash:
+        return
+    level, message = flash
+    renderer = {
+        "success": st.success,
+        "warning": st.warning,
+        "error": st.error,
+        "info": st.info,
+    }.get(level, st.info)
+    renderer(message)
+
+
+def notification_flash(success_message: str, notification_results):
+    """Pisahkan sukses database dari status Telegram agar operator tidak terkecoh."""
+    failed = [detail for ok, detail in notification_results if not ok]
+    if failed:
+        set_flash(
+            "warning",
+            success_message + " Namun notifikasi Telegram gagal: " + "; ".join(failed),
+        )
+    else:
+        suffix = " Notifikasi Telegram berhasil dikirim." if notification_results else ""
+        set_flash("success", success_message + suffix)
+
+
 def require_permission(permission: str):
     if not has_permission(permission):
         st.error("⛔ Anda tidak memiliki izin untuk membuka fitur ini.")
@@ -1184,7 +1292,16 @@ def pdf_table(title, headers, rows, col_widths, subtitle=""):
 # ============================================================
 # SERVER OPERATIONS
 # ============================================================
-def do_transaction(tipe, barang, jumlah, tgl_transaksi, keterangan, file_uploaded=None):
+def do_transaction(
+    tipe,
+    barang,
+    jumlah,
+    tgl_transaksi,
+    keterangan,
+    file_uploaded=None,
+    image_bytes=None,
+    expected_stock_before=None,
+):
     payload = {
         "action": "transaction",
         "tx_id": make_tx_id(),
@@ -1193,10 +1310,14 @@ def do_transaction(tipe, barang, jumlah, tgl_transaksi, keterangan, file_uploade
         "tipe": tipe,
         "barang": barang,
         "jumlah": int(jumlah),
-        "keterangan": keterangan.strip() or "-",
-        **to_image_payload(file_uploaded),
+        "keterangan": clean_note(keterangan, required=(tipe == "KELUAR")),
+        **to_image_payload(file_uploaded, image_bytes),
         **actor_payload(),
     }
+    if expected_stock_before is not None:
+        # Backend baru dapat memakai nilai ini sebagai stale-stock guard;
+        # backend 7.1 yang belum mendukung akan mengabaikan field tambahan ini.
+        payload["expected_stock_before"] = int(expected_stock_before)
     result = api_post(payload)
     clear_and_refresh()
     return result
@@ -1211,7 +1332,7 @@ def add_master(nama, stok_awal, min_stok):
             "min_stok": int(min_stok),
             "status": "Aktif",
             "tx_id": make_tx_id("NEW"),
-            "waktu": combine_manual_date(date.today()),
+            "waktu": combine_manual_date(hari_ini_wib()),
             **actor_payload(),
         }
     )
@@ -1251,7 +1372,7 @@ def correct_transaction(old_tx, new_tx):
             "new_tipe": new_tx["Tipe"],
             "new_barang": new_tx["Barang"],
             "new_jumlah": int(new_tx["Jumlah"]),
-            "new_keterangan": new_tx["Pembeli / Keterangan"],
+            "new_keterangan": clean_note(new_tx["Pembeli / Keterangan"]),
             **actor_payload(),
         }
     )
@@ -1273,7 +1394,7 @@ def adjust_stock(barang, stok_baru, alasan, tgl_transaksi, expected_stock_before
             "barang": barang,
             "stok_baru": int(stok_baru),
             "expected_stock_before": int(expected_stock_before),
-            "alasan": alasan.strip() or "Penyesuaian stok",
+            "alasan": clean_note(alasan, required=True),
             "tanggal": tgl_transaksi.strftime("%d-%m-%Y"),
             "waktu": combine_manual_date(tgl_transaksi),
             **actor_payload(),
@@ -1377,7 +1498,15 @@ def render_dashboard_live():
             {"Status": ["Aman", "Kritis", "Habis"], "Jumlah": [safe_count, len(critical_now), len(out_now)]}
         )
         if int(df_chart["Jumlah"].sum()) > 0:
-            fig = px.pie(df_chart, names="Status", values="Jumlah", hole=0.52)
+            fig = px.pie(
+                df_chart,
+                names="Status",
+                values="Jumlah",
+                hole=0.52,
+                color="Status",
+                color_discrete_map={"Aman": "#22c55e", "Kritis": "#f59e0b", "Habis": "#ef4444"},
+            )
+            fig.update_layout(legend_orientation="h", margin=dict(l=10, r=10, t=20, b=10))
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Belum ada data stok aktif untuk ditampilkan.")
@@ -1392,6 +1521,7 @@ def render_dashboard_live():
                 "Nama Barang": nama,
                 "Stok": qty,
                 "Minimum": minimum,
+                "Saran Restok": max((minimum * RESTOCK_TARGET_MULTIPLIER) - qty, 0),
                 "Status": status_stok(qty, minimum),
             })
         if rows:
@@ -1540,8 +1670,9 @@ def render_reports_live():
         st.warning("⚠️ Database offline. Laporan menggunakan snapshot sesi terakhir.")
 
     d1, d2 = st.columns(2)
-    start = d1.date_input("Tanggal Mulai", value=date.today().replace(day=1), key="report_start_live")
-    end = d2.date_input("Tanggal Selesai", value=date.today(), key="report_end_live")
+    today = hari_ini_wib()
+    start = d1.date_input("Tanggal Mulai", value=today.replace(day=1), key="report_start_live")
+    end = d2.date_input("Tanggal Selesai", value=today, key="report_end_live")
     if start > end:
         st.error("Tanggal mulai tidak boleh melebihi tanggal selesai.")
         return
@@ -1564,6 +1695,37 @@ def render_reports_live():
     m1.metric("Total Masuk", f"{masuk} pcs")
     m2.metric("Total Keluar", f"{keluar} pcs")
     m3.metric("Total Transaksi", len(df))
+
+    movement = (
+        df[df["Tipe"].isin(["MASUK", "KELUAR"])]
+        .groupby(["Tanggal", "Tipe"], as_index=False)["Jumlah"]
+        .sum()
+    )
+    if not movement.empty:
+        movement["Tanggal Urut"] = pd.to_datetime(movement["Tanggal"], format="%d-%m-%Y", errors="coerce")
+        movement = movement.sort_values("Tanggal Urut")
+        fig = px.bar(
+            movement,
+            x="Tanggal",
+            y="Jumlah",
+            color="Tipe",
+            barmode="group",
+            color_discrete_map={"MASUK": "#22c55e", "KELUAR": "#ef4444"},
+            title="Pergerakan Barang",
+        )
+        fig.update_layout(margin=dict(l=10, r=10, t=45, b=10), legend_orientation="h")
+        st.plotly_chart(fig, use_container_width=True)
+
+    top_out = (
+        df[df["Tipe"] == "KELUAR"]
+        .groupby("Barang", as_index=False)["Jumlah"]
+        .sum()
+        .sort_values("Jumlah", ascending=False)
+        .head(10)
+    )
+    if not top_out.empty:
+        st.subheader("📦 Barang Keluar Terbanyak")
+        st.dataframe(top_out, use_container_width=True, hide_index=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
     st.download_button(
         "📥 Ekspor Laporan Excel",
@@ -1667,6 +1829,8 @@ with st.sidebar:
     if has_permission("backup"):
         menu_options.append("💾 Backup Data")
 
+    menu_options.append("🔔 Status Notifikasi")
+
     if has_permission("reset"):
         menu_options.append("⚙️ Pengaturan & Reset")
 
@@ -1697,7 +1861,7 @@ with st.sidebar:
     else:
         st.info("🟡 Telegram dikonfigurasi · belum diuji")
 
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID and role_now in {ROLE_DEVELOPER, ROLE_BOSS}:
         if st.button("🧪 Tes Telegram", use_container_width=True):
             with st.spinner("Menguji Telegram..."):
                 ok, detail = test_telegram_connection()
@@ -1729,6 +1893,7 @@ with h2:
         st.rerun()
 
 st.divider()
+render_flash()
 
 if not st.session_state.get("is_connected"):
     source = st.session_state.get("data_source", "offline")
@@ -1760,7 +1925,10 @@ elif active_menu == "Lihat Semua Stok":
 
 elif active_menu == "Kelola Master Item":
     require_permission("manage_master")
+    sync_if_changed(force_health=True)
     require_online_operation()
+    stock = st.session_state.get("stok", {})
+    master = st.session_state.get("master_info", {})
     tab_add, tab_edit = st.tabs(["➕ Tambah Barang", "⚙️ Edit / Nonaktifkan"])
 
     with tab_add:
@@ -1771,19 +1939,20 @@ elif active_menu == "Kelola Master Item":
             minimum = b.number_input("Batas Stok Minimum", min_value=1, value=5, step=1)
             submit = st.form_submit_button("➕ Tambah Barang", use_container_width=True)
         if submit:
-            nama = nama.strip()
-            if not nama:
-                st.warning("Nama barang wajib diisi.")
-            elif nama in stock:
-                st.error("Nama barang sudah ada.")
-            else:
-                try:
+            try:
+                nama = clean_item_name(nama)
+                if nama.casefold() in {item.casefold() for item in stock}:
+                    st.error("Nama barang sudah ada, termasuk perbedaan huruf besar/kecil.")
+                else:
                     add_master(nama, stok_awal, minimum)
-                    telegram_async(f"✨ *ITEM BARU*\n📦 {nama}\nStok awal: {stok_awal} pcs\nMinimum: {minimum} pcs\n👤 {actor_label()}")
-                    st.success("Barang berhasil ditambahkan.")
+                    notification = deliver_notification(
+                        f"✨ *ITEM BARU*\n📦 {nama}\nStok awal: {stok_awal} pcs\nMinimum: {minimum} pcs\n👤 {actor_label()}",
+                        "Barang baru",
+                    )
+                    notification_flash("Barang berhasil ditambahkan.", [notification])
                     st.rerun()
-                except Exception as exc:
-                    show_api_error("Gagal menambah barang", exc)
+            except Exception as exc:
+                show_api_error("Gagal menambah barang", exc)
 
     with tab_edit:
         names = sorted(stock, key=natural_key)
@@ -1804,8 +1973,12 @@ elif active_menu == "Kelola Master Item":
                 save = st.form_submit_button("💾 Simpan Perubahan", use_container_width=True)
             if save:
                 try:
-                    update_master(selected, new_name.strip(), new_status, new_min)
-                    st.success("Master barang diperbarui.")
+                    cleaned_name = clean_item_name(new_name)
+                    duplicates = {item.casefold() for item in stock if item != selected}
+                    if cleaned_name.casefold() in duplicates:
+                        raise ValueError("Nama barang sudah digunakan item lain")
+                    update_master(selected, cleaned_name, new_status, new_min)
+                    set_flash("success", "Master barang berhasil diperbarui.")
                     st.rerun()
                 except Exception as exc:
                     show_api_error("Gagal memperbarui master", exc)
@@ -1816,7 +1989,11 @@ elif active_menu == "Kelola Master Item":
                 if st.button("Hapus Permanen", disabled=not confirm):
                     try:
                         delete_master(selected)
-                        st.success("Barang berhasil dihapus.")
+                        notification = deliver_notification(
+                            f"🗑️ *ITEM DIHAPUS*\n📦 {selected}\n👤 {actor_label()}",
+                            "Hapus item",
+                        )
+                        notification_flash("Barang berhasil dihapus.", [notification])
                         st.rerun()
                     except Exception as exc:
                         show_api_error("Barang tidak dapat dihapus", exc)
@@ -1824,7 +2001,10 @@ elif active_menu == "Kelola Master Item":
 
 elif active_menu in ("Barang Masuk", "Barang Keluar"):
     require_permission("transaction")
+    sync_if_changed(force_health=True)
     require_online_operation()
+    stock = st.session_state.get("stok", {})
+    master = st.session_state.get("master_info", {})
     tipe = "MASUK" if active_menu == "Barang Masuk" else "KELUAR"
     names = sorted(
         [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
@@ -1839,13 +2019,14 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
 
         with st.form(f"tx_{tipe.lower()}", clear_on_submit=True):
             jumlah = st.number_input("Jumlah (pcs)", min_value=1, value=1, step=1)
-            tgl = st.date_input("Tanggal Transaksi", value=date.today())
+            tgl = st.date_input("Tanggal Transaksi", value=hari_ini_wib())
             label_ket = "Supplier / Keterangan" if tipe == "MASUK" else "Nama Pembeli / Proyek"
             keterangan = st.text_input(label_ket, "" if tipe == "KELUAR" else "-")
             bukti = st.file_uploader(
                 "Upload Bukti / Nota (Opsional)" if tipe == "MASUK" else "Upload Surat Jalan (Opsional)",
                 type=["jpg", "jpeg", "png", "jfif", "webp"],
             )
+            st.caption(f"JPG/PNG/WEBP · maksimal {MAX_UPLOAD_MB} MB · otomatis dikompres")
             submit = st.form_submit_button(
                 "📥 Simpan Barang Masuk" if tipe == "MASUK" else "📤 Simpan Pengiriman",
                 use_container_width=True,
@@ -1857,7 +2038,16 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
             else:
                 try:
                     image_bytes = compress_image(bukti) if bukti else None
-                    result = do_transaction(tipe, barang, jumlah, tgl, keterangan, bukti)
+                    result = do_transaction(
+                        tipe,
+                        barang,
+                        jumlah,
+                        tgl,
+                        keterangan,
+                        bukti,
+                        image_bytes=image_bytes,
+                        expected_stock_before=stock.get(barang, 0),
+                    )
                     proof_url = result.get("file_url", "")
                     remaining = result.get("stok_akhir", st.session_state.stok.get(barang, 0))
                     symbol = "➕" if tipe == "MASUK" else "➖"
@@ -1869,11 +2059,18 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
                     )
                     if proof_url:
                         msg += f"\n📁 {proof_url}"
-                    telegram_async(msg, image_bytes)
-                    st.success(f"Transaksi berhasil. Stok akhir: {remaining} pcs.")
+                    notification_results = [
+                        deliver_notification(msg, f"Transaksi {tipe}", image_bytes)
+                    ]
                     alert = result.get("alert")
                     if alert:
-                        telegram_async(alert)
+                        notification_results.append(
+                            deliver_notification(alert, "Peringatan stok")
+                        )
+                    notification_flash(
+                        f"Transaksi berhasil. Stok akhir: {remaining} pcs.",
+                        notification_results,
+                    )
                     st.rerun()
                 except Exception as exc:
                     show_api_error("Transaksi gagal", exc)
@@ -1881,7 +2078,10 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
 
 elif active_menu == "Penyesuaian Stok":
     require_permission("stock_adjust")
+    sync_if_changed(force_health=True)
     require_online_operation()
+    stock = st.session_state.get("stok", {})
+    master = st.session_state.get("master_info", {})
     st.info("Gunakan fitur ini saat stok fisik berbeda dari stok sistem. Semua perubahan dicatat di riwayat dan audit log.")
     names = sorted(
         [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
@@ -1897,7 +2097,7 @@ elif active_menu == "Penyesuaian Stok":
 
         with st.form("stock_adjustment", clear_on_submit=False):
             stok_baru = st.number_input("Stok Fisik / Stok Baru", min_value=0, value=int(stok_lama), step=1)
-            tgl = st.date_input("Tanggal Penyesuaian", value=date.today())
+            tgl = st.date_input("Tanggal Penyesuaian", value=hari_ini_wib())
             alasan = st.text_area("Alasan Penyesuaian", placeholder="Contoh: hasil stock opname / selisih pencatatan")
             submit_adjust = st.form_submit_button("🧮 Simpan Penyesuaian Stok", use_container_width=True)
 
@@ -1910,15 +2110,19 @@ elif active_menu == "Penyesuaian Stok":
                 try:
                     result = adjust_stock(barang, stok_baru, alasan, tgl, stok_lama)
                     delta = result.get("selisih", int(stok_baru) - int(stok_lama))
-                    telegram_async(
+                    notification_results = [deliver_notification(
                         f"🧮 *PENYESUAIAN STOK*\n📦 {barang}\n"
                         f"Stok lama: {stok_lama} pcs\nStok baru: {stok_baru} pcs\n"
-                        f"Selisih: {delta:+d} pcs\n📝 {alasan.strip()}\n👤 {actor_label()}"
-                    )
+                        f"Selisih: {delta:+d} pcs\n📝 {alasan.strip()}\n👤 {actor_label()}",
+                        "Penyesuaian stok",
+                    )]
                     alert = result.get("alert")
                     if alert:
-                        telegram_async(alert)
-                    st.success("Penyesuaian stok berhasil dan tercatat di audit log.")
+                        notification_results.append(deliver_notification(alert, "Peringatan stok"))
+                    notification_flash(
+                        "Penyesuaian stok berhasil dan tercatat di audit log.",
+                        notification_results,
+                    )
                     st.rerun()
                 except Exception as exc:
                     show_api_error("Penyesuaian stok gagal", exc)
@@ -1926,8 +2130,16 @@ elif active_menu == "Penyesuaian Stok":
 
 elif active_menu == "Koreksi Transaksi":
     require_permission("correct_transaction")
+    sync_if_changed(force_health=True)
     require_online_operation()
+    stock = st.session_state.get("stok", {})
+    master = st.session_state.get("master_info", {})
+    history = st.session_state.get("riwayat", [])
     editable = [tx for tx in history if tx.get("Status", "AKTIF") == "AKTIF" and tx.get("Tipe") in ("MASUK", "KELUAR")]
+    editable.sort(
+        key=lambda tx: parse_tx_datetime(tx.get("Waktu", "")) or datetime.min,
+        reverse=True,
+    )
     if not editable:
         st.info("Tidak ada transaksi aktif yang dapat dikoreksi.")
     else:
@@ -1944,10 +2156,12 @@ elif active_menu == "Koreksi Transaksi":
                 default_date = datetime.strptime(old.get("Tanggal", ""), "%d-%m-%Y").date()
             except ValueError:
                 parsed = parse_tx_datetime(old.get("Waktu", ""))
-                default_date = parsed.date() if parsed else date.today()
+                default_date = parsed.date() if parsed else hari_ini_wib()
             tgl = st.date_input("Tanggal", value=default_date)
             tipe = st.selectbox("Tipe", ["MASUK", "KELUAR"], index=0 if old["Tipe"] == "MASUK" else 1)
             names = sorted([k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"], key=natural_key)
+            if old["Barang"] not in names:
+                names.insert(0, old["Barang"])
             idx = names.index(old["Barang"]) if old["Barang"] in names else 0
             barang = st.selectbox("Barang", names, index=idx)
             jumlah = st.number_input("Jumlah", min_value=1, value=max(1, safe_int(old["Jumlah"])), step=1)
@@ -1965,12 +2179,16 @@ elif active_menu == "Koreksi Transaksi":
             }
             try:
                 result = correct_transaction(old, new_tx)
-                telegram_async(
+                notification = deliver_notification(
                     f"✏️ *KOREKSI TRANSAKSI*\nID: {old['ID Transaksi']}\n"
                     f"Lama: {old['Tipe']} {old['Barang']} {old['Jumlah']} pcs\n"
-                    f"Baru: {tipe} {barang} {jumlah} pcs\n👤 {actor_label()}"
+                    f"Baru: {tipe} {barang} {jumlah} pcs\n👤 {actor_label()}",
+                    "Koreksi transaksi",
                 )
-                st.success(f"Koreksi tersimpan sebagai transaksi baru {result.get('new_tx_id', '')}.")
+                notification_flash(
+                    f"Koreksi tersimpan sebagai transaksi baru {result.get('new_tx_id', '')}.",
+                    [notification],
+                )
                 st.rerun()
             except Exception as exc:
                 show_api_error("Koreksi gagal", exc)
@@ -1981,8 +2199,14 @@ elif active_menu == "Koreksi Transaksi":
         if st.button("🚫 Void Transaksi", disabled=not confirm_void):
             try:
                 void_transaction(old["ID Transaksi"])
-                telegram_async(f"🚫 *VOID TRANSAKSI*\nID: {old['ID Transaksi']}\n{old['Tipe']} {old['Barang']} {old['Jumlah']} pcs\n👤 {actor_label()}")
-                st.success("Transaksi dibatalkan dan stok dikembalikan secara aman.")
+                notification = deliver_notification(
+                    f"🚫 *VOID TRANSAKSI*\nID: {old['ID Transaksi']}\n{old['Tipe']} {old['Barang']} {old['Jumlah']} pcs\n👤 {actor_label()}",
+                    "Void transaksi",
+                )
+                notification_flash(
+                    "Transaksi dibatalkan dan stok dikembalikan secara aman.",
+                    [notification],
+                )
                 st.rerun()
             except Exception as exc:
                 show_api_error("Void gagal", exc)
@@ -2028,6 +2252,7 @@ elif active_menu == "Backup Data":
             backup,
             filename,
         )
+        record_notification("Backup manual", ok, detail)
         if ok:
             st.success(detail)
         else:
@@ -2129,8 +2354,38 @@ elif active_menu == "Backup Data":
                 show_api_error("Gagal menonaktifkan backup harian", exc)
 
 
+elif active_menu == "Status Notifikasi":
+    st.write("Hasil pengiriman Telegram selama sesi login ini. Transaksi database tetap dicatat meskipun Telegram gagal.")
+    n1, n2, n3 = st.columns(3)
+    notification_rows = list(st.session_state.get("notification_log", []))
+    sent_count = sum(1 for row in notification_rows if row.get("Status") == "TERKIRIM")
+    failed_count = sum(1 for row in notification_rows if row.get("Status") == "GAGAL")
+    n1.metric("Dicatat", len(notification_rows))
+    n2.metric("Terkirim", sent_count)
+    n3.metric("Gagal", failed_count)
+
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        st.warning("Telegram belum dikonfigurasi di Streamlit Secrets.")
+    elif notification_rows:
+        st.dataframe(pd.DataFrame(notification_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Belum ada pengiriman notifikasi pada sesi ini.")
+
+    if current_role() in {ROLE_DEVELOPER, ROLE_BOSS} and TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        if st.button("🧪 Kirim Pesan Tes Sekarang", use_container_width=True):
+            ok, detail = deliver_notification(
+                f"✅ Tes notifikasi WMS Microcement\n{waktu_display()}\n👤 {actor_label()}",
+                "Tes manual",
+            )
+            if ok:
+                st.success(detail)
+            else:
+                st.error(f"Tes Telegram gagal: {detail}")
+
+
 elif active_menu == "Pengaturan & Reset":
     require_permission("reset")
+    sync_if_changed(force_health=True)
     require_online_operation()
 
     with st.expander("🔐 Generator Password Hash PBKDF2", expanded=False):
@@ -2154,6 +2409,7 @@ elif active_menu == "Pengaturan & Reset":
         st.write(f"Auto-sync Dashboard/Stok: **{'Aktif' if AUTO_SYNC_ENABLED else 'Nonaktif'} / {AUTO_SYNC_SECONDS} detik**")
         st.write(f"Auto-sync Riwayat/Laporan/Audit: **{SECONDARY_SYNC_SECONDS} detik**")
         st.write(f"Health cache: **{HEALTH_CACHE_SECONDS} detik**")
+        st.write(f"Batas upload bukti: **{MAX_UPLOAD_MB} MB**")
         st.write(f"Revision backend: **{st.session_state.get('server_revision', '-')}**")
         st.write(f"Backend: **{st.session_state.get('backend_version', 'belum diketahui')}**")
         st.write(f"Mode HMAC wajib: **{'Ya' if REQUIRE_HMAC else 'Tidak'}**")
@@ -2187,9 +2443,17 @@ elif active_menu == "Pengaturan & Reset":
             if REQUIRE_SERVER_BACKUP_BEFORE_RESET:
                 result_backup = server_backup_now()
                 st.info(f"Backup server sebelum reset berhasil: {result_backup.get('backup_name', 'WMS backup')}")
-            send_telegram_document("🚨 AUTO BACKUP SEBELUM RESET", backup, f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx")
+            telegram_ok, telegram_detail = send_telegram_document_detailed(
+                "🚨 AUTO BACKUP SEBELUM RESET",
+                backup,
+                f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            )
+            record_notification("Backup sebelum reset", telegram_ok, telegram_detail)
             reset_database()
-            st.success("Database berhasil di-reset setelah prosedur pengamanan.")
+            notification_flash(
+                "Database berhasil di-reset setelah prosedur pengamanan.",
+                [(telegram_ok, telegram_detail)],
+            )
             st.rerun()
         except Exception as exc:
             show_api_error("Reset gagal", exc)
@@ -2203,4 +2467,9 @@ elif active_menu == "Tentang Aplikasi":
     )
     st.info(f"Versi {APP_VERSION} · Internal WMS")
     st.caption("Role: Developer, Boss, Admin, Staff. Boss dapat mengelola dan menyesuaikan stok, sedangkan reset database hanya Developer.")
-    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item tetap diproses server-side. Versi production ini menambah live-sync Dashboard/Stok/Riwayat/Laporan/Audit, secure POST read fail-closed, PBKDF2-only secara default, stale-stock guard untuk penyesuaian, backup server wajib sebelum reset, backup harian, sanitasi secret, retry Telegram, dan HMAC signature end-to-end.")
+    st.caption(
+        "Transaksi, penyesuaian, koreksi, void, dan master item diproses server-side. "
+        "Versi Pro menambahkan UI responsif seluruh ukuran HP, sinkronisasi sebelum operasi, "
+        "status pengiriman Telegram, validasi bukti, saran restok, analisis pergerakan, "
+        "tanggal operasional WIB, PBKDF2, HMAC end-to-end, audit, serta backup berlapis."
+    )
