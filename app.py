@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import html
 import io
 import json
 import re
@@ -56,6 +57,105 @@ def inject_responsive_css():
             padding: 0.75rem 0.9rem;
             background: rgba(128, 128, 128, 0.035);
         }
+
+        /* Kartu KPI khusus dashboard: stabil di desktop dan ringkas di HP. */
+        .wms-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.8rem;
+            margin: 0.75rem 0 1.15rem 0;
+        }
+        .wms-kpi-card {
+            position: relative;
+            overflow: hidden;
+            min-width: 0;
+            min-height: 7rem;
+            padding: 1rem 1.05rem;
+            border: 1px solid rgba(15, 23, 42, 0.10);
+            border-radius: 1rem;
+            background: #ffffff;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.055);
+        }
+        .wms-kpi-card::after {
+            content: "";
+            position: absolute;
+            right: -1.5rem;
+            bottom: -2.2rem;
+            width: 6rem;
+            height: 6rem;
+            border-radius: 999px;
+            background: var(--kpi-soft);
+        }
+        .wms-kpi-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.55rem;
+        }
+        .wms-kpi-label {
+            min-width: 0;
+            color: #64748b;
+            font-size: 0.82rem;
+            font-weight: 650;
+            line-height: 1.25;
+        }
+        .wms-kpi-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 2rem;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.65rem;
+            background: var(--kpi-soft);
+            color: var(--kpi-color);
+            font-size: 1rem;
+        }
+        .wms-kpi-value {
+            position: relative;
+            z-index: 1;
+            color: #0f172a;
+            font-size: 1.9rem;
+            font-weight: 750;
+            line-height: 1.08;
+            letter-spacing: -0.035em;
+            white-space: nowrap;
+        }
+        .wms-kpi-blue { --kpi-color: #2563eb; --kpi-soft: #dbeafe; border-top: 3px solid #3b82f6; }
+        .wms-kpi-indigo { --kpi-color: #4f46e5; --kpi-soft: #e0e7ff; border-top: 3px solid #6366f1; }
+        .wms-kpi-amber { --kpi-color: #b45309; --kpi-soft: #fef3c7; border-top: 3px solid #f59e0b; }
+        .wms-kpi-red { --kpi-color: #dc2626; --kpi-soft: #fee2e2; border-top: 3px solid #ef4444; }
+
+        .wms-sync-pill {
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            margin: 0.1rem 0 0.65rem 0;
+            padding: 0.36rem 0.65rem;
+            border: 1px solid #dbeafe;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #475569;
+            font-size: 0.78rem;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+        }
+        .wms-alert-strip {
+            display: flex;
+            align-items: center;
+            gap: 0.7rem;
+            margin: 0.15rem 0 0.75rem 0;
+            padding: 0.78rem 0.9rem;
+            border: 1px solid #fde68a;
+            border-left: 4px solid #f59e0b;
+            border-radius: 0.85rem;
+            background: #fffbeb;
+            color: #92400e;
+            font-weight: 650;
+            line-height: 1.3;
+        }
+        .wms-refresh-anchor { display: none; }
         [data-testid="stAlert"] {
             border-radius: 0.8rem;
         }
@@ -70,9 +170,16 @@ def inject_responsive_css():
         }
 
         @media (max-width: 768px) {
+            /* Rapikan chrome Streamlit tanpa menghilangkan tombol sidebar. */
+            [data-testid="stToolbar"],
+            [data-testid="stDecoration"],
+            #MainMenu {
+                display: none !important;
+            }
+
             /* Safe-area penting untuk iPhone dengan notch / Dynamic Island. */
             .block-container {
-                padding-top: max(4.15rem, calc(3.75rem + env(safe-area-inset-top))) !important;
+                padding-top: max(2.9rem, calc(2.45rem + env(safe-area-inset-top))) !important;
                 padding-left: max(0.72rem, env(safe-area-inset-left)) !important;
                 padding-right: max(0.72rem, env(safe-area-inset-right)) !important;
                 padding-bottom: max(1.4rem, env(safe-area-inset-bottom)) !important;
@@ -99,6 +206,46 @@ def inject_responsive_css():
                 min-width: 0 !important;
             }
 
+            /* Header tetap satu baris: judul di kiri, refresh ringkas di kanan. */
+            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+                align-items: center !important;
+                gap: 0.45rem !important;
+                margin-bottom: -0.25rem !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) > [data-testid="column"]:first-child {
+                flex: 1 1 auto !important;
+                width: calc(100% - 3.45rem) !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) > [data-testid="column"]:last-child {
+                flex: 0 0 3rem !important;
+                width: 3rem !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) [data-testid="stMarkdownContainer"]:has(.wms-refresh-anchor) {
+                display: none !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) .stButton > button {
+                width: 3rem !important;
+                min-height: 2.8rem !important;
+                height: 2.8rem !important;
+                padding: 0 !important;
+                border-radius: 0.8rem !important;
+                font-size: 1.05rem !important;
+            }
+
+            /* Metric bawaan pada halaman lain menjadi grid 2 kolom. */
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) {
+                display: grid !important;
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 0.55rem !important;
+            }
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="column"] {
+                width: auto !important;
+                min-width: 0 !important;
+                flex: none !important;
+            }
+
             h1 {
                 font-size: 1.52rem !important;
                 line-height: 1.18 !important;
@@ -107,6 +254,10 @@ def inject_responsive_css():
             }
             h2 { font-size: 1.28rem !important; line-height: 1.2 !important; }
             h3 { font-size: 1.08rem !important; }
+            hr {
+                margin-top: 0.6rem !important;
+                margin-bottom: 0.65rem !important;
+            }
 
             /* 16px mencegah Safari iOS melakukan zoom otomatis saat input fokus. */
             input, textarea, select,
@@ -126,10 +277,50 @@ def inject_responsive_css():
             }
 
             [data-testid="stMetric"] {
-                padding: 0.25rem 0 !important;
+                min-height: 5.6rem !important;
+                padding: 0.7rem 0.75rem !important;
+                border-radius: 0.85rem !important;
             }
             [data-testid="stMetricValue"] {
-                font-size: 1.48rem !important;
+                font-size: 1.4rem !important;
+                line-height: 1.12 !important;
+            }
+
+            .wms-kpi-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.55rem;
+                margin: 0.55rem 0 0.8rem 0;
+            }
+            .wms-kpi-card {
+                min-height: 6.05rem;
+                padding: 0.72rem 0.75rem;
+                border-radius: 0.85rem;
+                box-shadow: 0 3px 11px rgba(15, 23, 42, 0.045);
+            }
+            .wms-kpi-top { margin-bottom: 0.4rem; }
+            .wms-kpi-label { font-size: 0.74rem; }
+            .wms-kpi-icon {
+                flex-basis: 1.75rem;
+                width: 1.75rem;
+                height: 1.75rem;
+                border-radius: 0.55rem;
+                font-size: 0.88rem;
+            }
+            .wms-kpi-value { font-size: 1.52rem; }
+            .wms-sync-pill {
+                display: flex;
+                width: fit-content;
+                margin-bottom: 0.55rem;
+                padding: 0.32rem 0.55rem;
+                border-radius: 0.65rem;
+                font-size: 0.72rem;
+            }
+            .wms-alert-strip {
+                gap: 0.55rem;
+                margin-bottom: 0.65rem;
+                padding: 0.66rem 0.72rem;
+                border-radius: 0.72rem;
+                font-size: 0.86rem;
             }
 
             /* Tabs dapat digeser horizontal, tidak memaksa layar melebar. */
@@ -176,12 +367,15 @@ def inject_responsive_css():
 
         @media (max-width: 430px) {
             .block-container {
-                padding-top: max(4.35rem, calc(3.95rem + env(safe-area-inset-top))) !important;
+                padding-top: max(2.7rem, calc(2.25rem + env(safe-area-inset-top))) !important;
                 padding-left: max(0.52rem, env(safe-area-inset-left)) !important;
                 padding-right: max(0.52rem, env(safe-area-inset-right)) !important;
             }
             h1 { font-size: 1.36rem !important; }
             [data-testid="stMetricValue"] { font-size: 1.30rem !important; }
+            .wms-kpi-card { min-height: 5.8rem; padding: 0.66rem 0.68rem; }
+            .wms-kpi-label { font-size: 0.7rem; }
+            .wms-kpi-value { font-size: 1.4rem; }
         }
         </style>
         """,
@@ -1467,6 +1661,29 @@ def _current_stock_view():
     return stock_now, master_now, active_now, critical_now, out_now
 
 
+def render_dashboard_kpis(active_count: int, total_stock: int, critical_count: int, out_count: int):
+    """KPI berbasis HTML agar susunan 2x2 di HP tidak bergantung pada st.columns."""
+    cards = [
+        ("wms-kpi-blue", "📦", "Barang Aktif", str(active_count)),
+        ("wms-kpi-indigo", "▦", "Total Stok", f"{total_stock} pcs"),
+        ("wms-kpi-amber", "⚠", "Stok Kritis", str(critical_count)),
+        ("wms-kpi-red", "!", "Stok Habis", str(out_count)),
+    ]
+    card_html = "".join(
+        (
+            f'<div class="wms-kpi-card {tone}">'
+            f'<div class="wms-kpi-top">'
+            f'<span class="wms-kpi-label">{html.escape(label)}</span>'
+            f'<span class="wms-kpi-icon">{html.escape(icon)}</span>'
+            f'</div>'
+            f'<div class="wms-kpi-value">{html.escape(value)}</div>'
+            f'</div>'
+        )
+        for tone, icon, label, value in cards
+    )
+    st.markdown(f'<div class="wms-kpi-grid">{card_html}</div>', unsafe_allow_html=True)
+
+
 @_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
 def render_dashboard_live():
     sync_if_changed()
@@ -1475,19 +1692,31 @@ def render_dashboard_live():
     sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
     revision = st.session_state.get("server_revision", "-")
     if AUTO_SYNC_ENABLED:
-        st.caption(f"🔄 Auto-sync aktif setiap {AUTO_SYNC_SECONDS} detik · sinkron terakhir {sync_text} · rev {revision}")
+        sync_label = (
+            f"● Sinkron otomatis {AUTO_SYNC_SECONDS} dtk · "
+            f"terakhir {sync_text} · rev {revision}"
+        )
+        st.markdown(
+            f'<div class="wms-sync-pill">{html.escape(sync_label)}</div>',
+            unsafe_allow_html=True,
+        )
 
     if not st.session_state.get("is_connected"):
         st.error("Database sedang offline. Dashboard menampilkan snapshot terakhir dan tidak boleh dianggap real-time.")
 
     if critical_now or out_now:
-        st.warning(f"⚠️ {len(out_now)} item habis dan {len(critical_now)} item kritis.")
+        alert_label = f"{len(out_now)} item habis · {len(critical_now)} item kritis"
+        st.markdown(
+            f'<div class="wms-alert-strip"><span>⚠️</span><span>{html.escape(alert_label)}</span></div>',
+            unsafe_allow_html=True,
+        )
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Jenis Barang Aktif", len(active_now))
-    c2.metric("Total Stok", f"{sum(active_now.values())} pcs")
-    c3.metric("Stok Kritis", len(critical_now))
-    c4.metric("Stok Habis", len(out_now))
+    render_dashboard_kpis(
+        active_count=len(active_now),
+        total_stock=sum(active_now.values()),
+        critical_count=len(critical_now),
+        out_count=len(out_now),
+    )
 
     st.divider()
     left, right = st.columns(2)
@@ -1888,7 +2117,8 @@ with h1:
     st.title(f"📦 {active_menu}")
     st.caption(f"{waktu_display()} · v{APP_VERSION}")
 with h2:
-    if st.button("🔄 Segarkan", use_container_width=True):
+    st.markdown('<span class="wms-refresh-anchor"></span>', unsafe_allow_html=True)
+    if st.button("🔄", help="Segarkan data", use_container_width=True, key="main_refresh"):
         clear_and_refresh()
         st.rerun()
 
