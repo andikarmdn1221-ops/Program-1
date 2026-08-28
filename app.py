@@ -1171,9 +1171,11 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
     if not names:
         st.warning("Tidak ada barang aktif.")
     else:
+        # MENGELUARKAN SELECTBOX DARI FORM AGAR STOK SELALU UPDATE
+        barang = st.selectbox("Pilih Barang", names)
+        st.info(f"Stok saat ini: **{stock.get(barang, 0)} pcs**")
+
         with st.form(f"tx_{tipe.lower()}", clear_on_submit=True):
-            barang = st.selectbox("Pilih Barang", names)
-            st.info(f"Stok saat ini: **{stock.get(barang, 0)} pcs**")
             jumlah = st.number_input("Jumlah (pcs)", min_value=1, value=1, step=1)
             tgl = st.date_input("Tanggal Transaksi", value=date.today())
             label_ket = "Supplier / Keterangan" if tipe == "MASUK" else "Nama Pembeli / Proyek"
@@ -1225,10 +1227,12 @@ elif active_menu == "Penyesuaian Stok":
     if not names:
         st.warning("Tidak ada barang aktif.")
     else:
+        # MENGELUARKAN SELECTBOX DARI FORM AGAR STOK SELALU UPDATE
+        barang = st.selectbox("Pilih Barang", names)
+        stok_lama = stock.get(barang, 0)
+        st.metric("Stok Sistem Saat Ini", f"{stok_lama} pcs")
+
         with st.form("stock_adjustment", clear_on_submit=False):
-            barang = st.selectbox("Pilih Barang", names)
-            stok_lama = stock.get(barang, 0)
-            st.metric("Stok Sistem Saat Ini", f"{stok_lama} pcs")
             stok_baru = st.number_input("Stok Fisik / Stok Baru", min_value=0, value=int(stok_lama), step=1)
             tgl = st.date_input("Tanggal Penyesuaian", value=date.today())
             alasan = st.text_area("Alasan Penyesuaian", placeholder="Contoh: hasil stock opname / selisih pencatatan")
