@@ -345,6 +345,67 @@ def show_api_error(prefix: str, exc: Exception):
 # ============================================================
 # TELEGRAM
 # ============================================================
+def telegram_response_detail(response) -> str:
+    """Ambil pesan error Telegram tanpa menampilkan BOT TOKEN."""
+    try:
+        data = response.json()
+        description = str(data.get("description", "")).strip() if isinstance(data, dict) else ""
+    except Exception:
+        description = ""
+
+    if description:
+        return f"HTTP {response.status_code}: {description}"
+    return f"HTTP {response.status_code}: Telegram menolak permintaan."
+
+
+def telegram_safe_exception(exc: Exception) -> str:
+    """Jangan sampai token Telegram ikut muncul di pesan/log error."""
+    text = str(exc)
+    if TELEGRAM_BOT_TOKEN:
+        text = text.replace(str(TELEGRAM_BOT_TOKEN), "***TOKEN***")
+    return text
+
+
+def test_telegram_connection():
+    """Tes BOT TOKEN, CHAT ID, dan kemampuan bot mengirim pesan."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "TELEGRAM_BOT_TOKEN belum diisi di Streamlit Secrets."
+    if not TELEGRAM_CHAT_ID:
+        return False, "TELEGRAM_CHAT_ID belum diisi di Streamlit Secrets."
+
+    try:
+        # 1) Pastikan token valid dan ambil identitas bot.
+        get_me_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getMe"
+        res = requests.get(get_me_url, timeout=15)
+        if not res.ok:
+            return False, telegram_response_detail(res)
+
+        data = res.json()
+        bot_info = data.get("result", {}) if isinstance(data, dict) else {}
+        bot_name = bot_info.get("first_name") or bot_info.get("username") or "Telegram Bot"
+        bot_username = bot_info.get("username", "")
+
+        # 2) Pastikan CHAT ID bisa menerima pesan dari bot tersebut.
+        send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        test_message = f"✅ Tes koneksi WMS Microcement berhasil\n{waktu_display()}"
+        sent = requests.post(
+            send_url,
+            json={"chat_id": str(TELEGRAM_CHAT_ID), "text": test_message},
+            timeout=20,
+        )
+        if not sent.ok:
+            return False, telegram_response_detail(sent)
+
+        identity = f"{bot_name} (@{bot_username})" if bot_username else str(bot_name)
+        return True, f"Terhubung ke {identity}. Pesan tes berhasil dikirim ke Chat ID {TELEGRAM_CHAT_ID}."
+    except requests.exceptions.Timeout:
+        return False, "Koneksi ke Telegram timeout. Coba lagi beberapa saat."
+    except requests.exceptions.RequestException as exc:
+        return False, f"Gangguan koneksi ke Telegram: {telegram_safe_exception(exc)}"
+    except Exception as exc:
+        return False, f"Tes Telegram gagal: {telegram_safe_exception(exc)}"
+
+
 def send_telegram(message: str, image_bytes=None):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         return False
@@ -364,17 +425,22 @@ def send_telegram(message: str, image_bytes=None):
                 json={"chat_id": str(TELEGRAM_CHAT_ID), "text": message, "parse_mode": "Markdown"},
                 timeout=20,
             )
-        res.raise_for_status()
+        if not res.ok:
+            print(f"[Telegram error] {telegram_response_detail(res)}")
+            return False
         return True
     except Exception as exc:
         # Jangan mematikan transaksi hanya karena Telegram gagal.
-        print(f"[Telegram error] {exc}")
+        print(f"[Telegram error] {telegram_safe_exception(exc)}")
         return False
 
 
-def send_telegram_document(message: str, file_bytes: bytes, file_name: str):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
+def send_telegram_document_detailed(message: str, file_bytes: bytes, file_name: str):
+    """Versi detail untuk tombol backup agar penyebab gagal terlihat."""
+    if not TELEGRAM_BOT_TOKEN:
+        return False, "TELEGRAM_BOT_TOKEN belum diisi."
+    if not TELEGRAM_CHAT_ID:
+        return False, "TELEGRAM_CHAT_ID belum diisi."
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
         res = requests.post(
@@ -389,11 +455,20 @@ def send_telegram_document(message: str, file_bytes: bytes, file_name: str):
             },
             timeout=40,
         )
-        res.raise_for_status()
-        return True
+        if not res.ok:
+            return False, telegram_response_detail(res)
+        return True, "Backup berhasil dikirim ke Telegram."
+    except requests.exceptions.Timeout:
+        return False, "Koneksi Telegram timeout saat mengirim backup."
+    except requests.exceptions.RequestException as exc:
+        return False, f"Gangguan koneksi Telegram: {telegram_safe_exception(exc)}"
     except Exception as exc:
-        print(f"[Telegram document error] {exc}")
-        return False
+        return False, f"Pengiriman backup gagal: {telegram_safe_exception(exc)}"
+
+
+def send_telegram_document(message: str, file_bytes: bytes, file_name: str):
+    ok, _detail = send_telegram_document_detailed(message, file_bytes, file_name)
+    return ok
 
 
 def telegram_async(message: str, image_bytes=None):
@@ -862,7 +937,30 @@ with st.sidebar:
         st.success("🟢 Database terhubung")
     else:
         st.error("🔴 Database offline")
-    st.info("🟢 Telegram aktif" if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID else "⚪ Telegram belum dikonfigurasi")
+
+    telegram_status = st.session_state.get("telegram_test_status")
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        st.warning("⚪ Telegram belum dikonfigurasi")
+    elif telegram_status is True:
+        st.success("🟢 Telegram terhubung")
+    elif telegram_status is False:
+        st.error("🔴 Telegram gagal terhubung")
+    else:
+        st.info("🟡 Telegram dikonfigurasi · belum diuji")
+
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        if st.button("🧪 Tes Telegram", use_container_width=True):
+            with st.spinner("Menguji Telegram..."):
+                ok, detail = test_telegram_connection()
+            st.session_state.telegram_test_status = ok
+            st.session_state.telegram_test_detail = detail
+
+        detail = st.session_state.get("telegram_test_detail")
+        if detail:
+            if st.session_state.get("telegram_test_status"):
+                st.caption(f"✅ {detail}")
+            else:
+                st.caption(f"❌ {detail}")
 
     if get_users_config() and st.button("🚪 Keluar", use_container_width=True):
         st.session_state.pop("auth_user", None)
@@ -1342,10 +1440,15 @@ elif active_menu == "Backup Data":
     b1, b2 = st.columns(2)
     b1.download_button("💾 Download Backup", backup, filename, use_container_width=True)
     if b2.button("📤 Kirim Backup ke Telegram", use_container_width=True):
-        if send_telegram_document(f"💾 BACKUP WMS\n{waktu_display()}", backup, filename):
-            st.success("Backup berhasil dikirim ke Telegram.")
+        ok, detail = send_telegram_document_detailed(
+            f"💾 BACKUP WMS\n{waktu_display()}",
+            backup,
+            filename,
+        )
+        if ok:
+            st.success(detail)
         else:
-            st.error("Backup gagal dikirim ke Telegram.")
+            st.error(f"Backup gagal dikirim ke Telegram — {detail}")
 
 
 elif active_menu == "Pengaturan & Reset":
