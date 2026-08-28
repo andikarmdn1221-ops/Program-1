@@ -155,7 +155,26 @@ def inject_responsive_css():
             font-weight: 650;
             line-height: 1.3;
         }
-        .wms-refresh-anchor { display: none; }
+        .st-key-main_refresh {
+            width: 2.75rem;
+            max-width: 2.75rem;
+        }
+        .st-key-main_refresh .stButton > button {
+            width: 2.75rem !important;
+            min-height: 2.55rem !important;
+            height: 2.55rem !important;
+            padding: 0 !important;
+            border: 1px solid #bfdbfe !important;
+            border-radius: 0.75rem !important;
+            background: #eff6ff !important;
+            color: #1d4ed8 !important;
+            font-size: 1rem !important;
+            font-weight: 650 !important;
+        }
+        .st-key-main_refresh .stButton > button:hover {
+            border-color: #60a5fa !important;
+            background: #dbeafe !important;
+        }
         [data-testid="stAlert"] {
             border-radius: 0.8rem;
         }
@@ -170,20 +189,26 @@ def inject_responsive_css():
         }
 
         @media (max-width: 768px) {
-            /* Rapikan chrome Streamlit tanpa menghilangkan tombol sidebar. */
-            [data-testid="stToolbar"],
-            [data-testid="stDecoration"],
-            #MainMenu {
-                display: none !important;
+            /* Tombol pembuka menu wajib tetap terlihat di layar kecil. */
+            [data-testid="stSidebarCollapsedControl"] {
+                display: flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                z-index: 1000000 !important;
             }
 
             /* Safe-area penting untuk iPhone dengan notch / Dynamic Island. */
             .block-container {
-                padding-top: max(2.9rem, calc(2.45rem + env(safe-area-inset-top))) !important;
+                padding-top: max(4rem, calc(3.55rem + env(safe-area-inset-top))) !important;
                 padding-left: max(0.72rem, env(safe-area-inset-left)) !important;
                 padding-right: max(0.72rem, env(safe-area-inset-right)) !important;
                 padding-bottom: max(1.4rem, env(safe-area-inset-bottom)) !important;
                 max-width: 100% !important;
+                overflow-x: clip !important;
+            }
+            [data-testid="stAppViewContainer"] > .main {
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
             }
 
             /* Sidebar menjadi panel yang muat di iPhone/Android kecil. */
@@ -204,34 +229,6 @@ def inject_responsive_css():
                 flex: 1 1 100% !important;
                 width: 100% !important;
                 min-width: 0 !important;
-            }
-
-            /* Header tetap satu baris: judul di kiri, refresh ringkas di kanan. */
-            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) {
-                display: flex !important;
-                flex-wrap: nowrap !important;
-                align-items: center !important;
-                gap: 0.45rem !important;
-                margin-bottom: -0.25rem !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) > [data-testid="column"]:first-child {
-                flex: 1 1 auto !important;
-                width: calc(100% - 3.45rem) !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) > [data-testid="column"]:last-child {
-                flex: 0 0 3rem !important;
-                width: 3rem !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) [data-testid="stMarkdownContainer"]:has(.wms-refresh-anchor) {
-                display: none !important;
-            }
-            [data-testid="stHorizontalBlock"]:has(.wms-refresh-anchor) .stButton > button {
-                width: 3rem !important;
-                min-height: 2.8rem !important;
-                height: 2.8rem !important;
-                padding: 0 !important;
-                border-radius: 0.8rem !important;
-                font-size: 1.05rem !important;
             }
 
             /* Metric bawaan pada halaman lain menjadi grid 2 kolom. */
@@ -322,6 +319,18 @@ def inject_responsive_css():
                 border-radius: 0.72rem;
                 font-size: 0.86rem;
             }
+            .st-key-main_refresh {
+                width: 2.75rem !important;
+                max-width: 2.75rem !important;
+                margin: 0.15rem 0 0.15rem auto !important;
+            }
+            .st-key-main_refresh .stButton > button {
+                width: 2.75rem !important;
+                min-height: 2.55rem !important;
+                height: 2.55rem !important;
+                padding: 0 !important;
+                font-size: 1rem !important;
+            }
 
             /* Tabs dapat digeser horizontal, tidak memaksa layar melebar. */
             [data-baseweb="tab-list"] {
@@ -367,7 +376,7 @@ def inject_responsive_css():
 
         @media (max-width: 430px) {
             .block-container {
-                padding-top: max(2.7rem, calc(2.25rem + env(safe-area-inset-top))) !important;
+                padding-top: max(3.85rem, calc(3.4rem + env(safe-area-inset-top))) !important;
                 padding-left: max(0.52rem, env(safe-area-inset-left)) !important;
                 padding-right: max(0.52rem, env(safe-area-inset-right)) !important;
             }
@@ -2112,15 +2121,11 @@ with st.sidebar:
 # ============================================================
 # HEADER
 # ============================================================
-h1, h2 = st.columns([4, 1])
-with h1:
-    st.title(f"📦 {active_menu}")
-    st.caption(f"{waktu_display()} · v{APP_VERSION}")
-with h2:
-    st.markdown('<span class="wms-refresh-anchor"></span>', unsafe_allow_html=True)
-    if st.button("🔄", help="Segarkan data", use_container_width=True, key="main_refresh"):
-        clear_and_refresh()
-        st.rerun()
+st.title(f"📦 {active_menu}")
+st.caption(f"{waktu_display()} · v{APP_VERSION}")
+if st.button("🔄", help="Segarkan data", key="main_refresh"):
+    clear_and_refresh()
+    st.rerun()
 
 st.divider()
 render_flash()
