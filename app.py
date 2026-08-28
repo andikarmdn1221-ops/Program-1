@@ -1163,6 +1163,15 @@ elif active_menu == "Kelola Master Item":
 
 elif active_menu in ("Barang Masuk", "Barang Keluar"):
     require_permission("transaction")
+
+    # Sinkronkan stok terbaru dari server pada setiap rerun halaman transaksi.
+    # Ini hanya memperbarui tampilan stok lokal; perhitungan transaksi tetap
+    # dilakukan dan divalidasi oleh backend seperti sebelumnya.
+    refresh_data(force=True)
+    stock = st.session_state.stok
+    master = st.session_state.master_info
+    history = st.session_state.riwayat
+
     tipe = "MASUK" if active_menu == "Barang Masuk" else "KELUAR"
     names = sorted(
         [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
