@@ -38,7 +38,8 @@ def inject_responsive_css():
         /* Desktop/laptop tidak diubah. Aturan berikut hanya aktif <= 768px. */
         @media (max-width: 768px) {
             .block-container {
-                padding-top: 0.75rem !important;
+                /* Tambah ruang atas agar konten tidak tertutup toolbar Streamlit di HP. */
+                padding-top: 4.25rem !important;
                 padding-left: 0.8rem !important;
                 padding-right: 0.8rem !important;
                 padding-bottom: 1.5rem !important;
@@ -57,8 +58,11 @@ def inject_responsive_css():
             }
 
             h1 {
-                font-size: 1.65rem !important;
-                line-height: 1.2 !important;
+                font-size: 1.55rem !important;
+                line-height: 1.25 !important;
+                word-break: normal !important;
+                overflow-wrap: anywhere !important;
+                margin-top: 0 !important;
             }
 
             h2 {
@@ -112,12 +116,14 @@ def inject_responsive_css():
 
         @media (max-width: 420px) {
             .block-container {
+                padding-top: 4.5rem !important;
                 padding-left: 0.55rem !important;
                 padding-right: 0.55rem !important;
             }
 
             h1 {
-                font-size: 1.45rem !important;
+                font-size: 1.4rem !important;
+                line-height: 1.25 !important;
             }
 
             [data-testid="stMetricValue"] {
@@ -679,24 +685,11 @@ def login_gate():
         submit = st.form_submit_button("Masuk", use_container_width=True)
 
     if submit:
-        # Username dibuat lebih ramah untuk HP/autofill:
-        # abaikan spasi depan/belakang dan huruf besar/kecil.
-        username_clean = str(username).strip().lower()
-        matched_username = None
-        cfg = None
-
-        for saved_username, saved_cfg in users.items():
-            if str(saved_username).strip().lower() == username_clean:
-                matched_username = str(saved_username)
-                cfg = dict(saved_cfg)
-                break
-
-        if cfg and password_matches(password, cfg):
-            # Simpan nama akun sesuai yang ada di Streamlit Secrets.
-            st.session_state.auth_user = matched_username
-            st.session_state.auth_role = normalize_role(cfg.get("role", ROLE_STAFF))
+        cfg = users.get(username)
+        if cfg and password_matches(password, dict(cfg)):
+            st.session_state.auth_user = username
+            st.session_state.auth_role = normalize_role(dict(cfg).get("role", ROLE_STAFF))
             st.rerun()
-
         st.error("Username atau password salah.")
     st.stop()
 
