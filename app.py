@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import io
+import json
 import re
 import secrets
 import threading
@@ -141,7 +142,7 @@ def inject_responsive_css():
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "6.1-security"
+APP_VERSION = "6.2-security"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
@@ -277,24 +278,40 @@ def api_error_detail(exc: Exception) -> str:
 
 def make_request_signature(payload: dict) -> dict:
     """
-    Tambahkan tanda tangan HMAC opsional untuk diverifikasi Code.gs.
-    Bila AUTH_SIGNING_KEY belum diisi, payload tetap persis kompatibel dengan backend lama.
+    Tanda tangani SELURUH isi mutation payload (bukan hanya actor/role).
+    Ini mencegah perubahan barang/jumlah/keterangan setelah request ditandatangani.
+    AUTH_SIGNING_KEY wajib diisi bila backend Code.gs final-security digunakan.
     """
     if not AUTH_SIGNING_KEY:
         return payload
+
     ts = str(int(time.time()))
     nonce = uuid.uuid4().hex
-    action = str(payload.get("action", ""))
-    actor = str(payload.get("actor", ""))
-    role = str(payload.get("role", ""))
-    tx_id = str(payload.get("tx_id", ""))
-    message = "|".join([action, actor, role, tx_id, ts, nonce])
+
+    # Payload pada tahap ini belum berisi api_key / field auth.
+    # Sort key + compact JSON dibuat sama dengan stableStringify_ di Code.gs.
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    body_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    message = f"{body_hash}|{ts}|{nonce}"
     signature = hmac.new(
         str(AUTH_SIGNING_KEY).encode("utf-8"),
         message.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-    return {**payload, "auth_ts": ts, "auth_nonce": nonce, "auth_sig": signature}
+
+    return {
+        **payload,
+        "auth_ts": ts,
+        "auth_nonce": nonce,
+        "auth_body_sha256": body_hash,
+        "auth_sig": signature,
+    }
 
 
 def natural_key(text: str):
