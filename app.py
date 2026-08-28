@@ -142,7 +142,7 @@ def inject_responsive_css():
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "6.2-security"
+APP_VERSION = "7.0-stable"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
@@ -159,6 +159,10 @@ TELEGRAM_RETRY_ATTEMPTS = max(1, min(5, int(st.secrets.get("TELEGRAM_RETRY_ATTEM
 OFFLINE_USE_DEFAULT_STOCK = bool(st.secrets.get("OFFLINE_USE_DEFAULT_STOCK", False))
 SERVER_EMPTY_USE_DEFAULT_STOCK = bool(st.secrets.get("SERVER_EMPTY_USE_DEFAULT_STOCK", False))
 PBKDF2_ITERATIONS = max(200_000, int(st.secrets.get("PBKDF2_ITERATIONS", 310_000)))
+AUTO_SYNC_ENABLED = bool(st.secrets.get("AUTO_SYNC_ENABLED", True))
+AUTO_SYNC_SECONDS = max(10, int(st.secrets.get("AUTO_SYNC_SECONDS", 15)))
+HEALTH_TIMEOUT_SECONDS = max(3, min(20, int(st.secrets.get("HEALTH_TIMEOUT_SECONDS", 8))))
+WRITE_BLOCK_WHEN_OFFLINE = bool(st.secrets.get("WRITE_BLOCK_WHEN_OFFLINE", True))
 
 STOK_DEFAULT = {
     "Microcement base": 16,
@@ -391,28 +395,13 @@ def to_image_payload(uploaded_file):
 # ============================================================
 # API CLIENT
 # ============================================================
-def api_get(timeout=20):
+def _post_json(payload: dict, timeout=60):
+    """POST JSON bertanda tangan. API key berada di body, bukan query URL."""
     if not URL_GSHEET_API:
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
     if not API_SHARED_KEY:
         raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
-    # Backend lama Code.gs memakai query key. Secret tidak pernah ditampilkan kembali ke UI.
-    response = requests.get(URL_GSHEET_API, params={"key": API_SHARED_KEY}, timeout=timeout)
-    response.raise_for_status()
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise RuntimeError("Respons server bukan JSON yang valid.") from exc
-    if isinstance(data, dict) and data.get("ok") is False:
-        raise RuntimeError(redact_sensitive(data.get("message", "Server menolak permintaan.")))
-    return data
 
-
-def api_post(payload: dict, timeout=60):
-    if not URL_GSHEET_API:
-        raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
-    if not API_SHARED_KEY:
-        raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
     signed_payload = make_request_signature(payload)
     signed_payload = {**signed_payload, "api_key": API_SHARED_KEY}
     response = requests.post(URL_GSHEET_API, json=signed_payload, timeout=timeout)
@@ -426,6 +415,42 @@ def api_post(payload: dict, timeout=60):
     if data.get("ok") is False:
         raise RuntimeError(redact_sensitive(data.get("message", "Operasi ditolak server.")))
     return data
+
+
+def api_get(timeout=20):
+    """Baca database. Jika HMAC aktif gunakan POST aman; GET lama hanya fallback kompatibilitas."""
+    if AUTH_SIGNING_KEY:
+        return _post_json({"action": "read", **actor_payload()}, timeout=timeout)
+
+    if not URL_GSHEET_API:
+        raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
+    if not API_SHARED_KEY:
+        raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
+    response = requests.get(URL_GSHEET_API, params={"key": API_SHARED_KEY}, timeout=timeout)
+    response.raise_for_status()
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Respons server bukan JSON yang valid.") from exc
+    if isinstance(data, dict) and data.get("ok") is False:
+        raise RuntimeError(redact_sensitive(data.get("message", "Server menolak permintaan.")))
+    return data
+
+
+def api_health(timeout=HEALTH_TIMEOUT_SECONDS):
+    """Health check ringan untuk auto-sync berdasarkan revision backend."""
+    if AUTH_SIGNING_KEY:
+        return _post_json({"action": "health", **actor_payload()}, timeout=timeout)
+    data = api_get(timeout=timeout)
+    return {
+        "ok": True,
+        "data_revision": data.get("data_revision", ""),
+        "server_time": data.get("server_time", ""),
+    }
+
+
+def api_post(payload: dict, timeout=60):
+    return _post_json(payload, timeout=timeout)
 
 
 def show_api_error(prefix: str, exc: Exception):
@@ -721,11 +746,11 @@ def normalize_server_data(data):
 
 @st.cache_data(ttl=DATA_CACHE_TTL_SECONDS, show_spinner=False)
 def load_data_cached(api_url: str):
-    del api_url  # key cache tetap berubah bila URL berubah
+    del api_url  # cache key berubah bila URL deployment berubah
     return api_get()
 
 
-def refresh_data(force=False):
+def refresh_data(force=False, quiet=False):
     try:
         raw = api_get() if force else load_data_cached(URL_GSHEET_API)
         stock, master, history, audit = normalize_server_data(raw)
@@ -736,6 +761,10 @@ def refresh_data(force=False):
         st.session_state.is_connected = True
         st.session_state.data_source = "server"
         st.session_state.last_server_sync = waktu_display()
+        st.session_state.last_server_sync_epoch = time.time()
+        revision = str(raw.get("data_revision", "") or "") if isinstance(raw, dict) else ""
+        if revision:
+            st.session_state.server_revision = revision
         return True
     except Exception as exc:
         st.session_state.is_connected = False
@@ -745,22 +774,49 @@ def refresh_data(force=False):
                 st.session_state.master_info = {k: v.copy() for k, v in MASTER_DEFAULT.items()}
                 st.session_state.data_source = "default_offline"
             else:
-                # Lebih aman menampilkan kosong daripada stok default yang bisa dianggap stok nyata.
                 st.session_state.stok = {}
                 st.session_state.master_info = {}
                 st.session_state.data_source = "offline_empty"
             st.session_state.riwayat = []
             st.session_state.audit = []
         else:
-            # Pertahankan snapshot terakhir di session, jangan menimpa dengan angka default.
             st.session_state.data_source = "last_known_session"
-        show_api_error("Gagal mengambil data", exc)
+        if not quiet:
+            show_api_error("Gagal mengambil data", exc)
         return False
 
 
 def clear_and_refresh():
     st.cache_data.clear()
     refresh_data(force=True)
+
+
+def sync_if_changed():
+    """Polling ringan. Data penuh hanya diambil jika revision backend berubah."""
+    if not AUTO_SYNC_ENABLED:
+        return False
+    try:
+        health = api_health()
+        revision = str(health.get("data_revision", "") or "")
+        st.session_state.last_health_check = waktu_display()
+        st.session_state.is_connected = True
+
+        current_revision = str(st.session_state.get("server_revision", "") or "")
+        if not revision or revision != current_revision:
+            return refresh_data(force=True, quiet=True)
+        return False
+    except Exception:
+        st.session_state.is_connected = False
+        if "stok" in st.session_state:
+            st.session_state.data_source = "last_known_session"
+        return False
+
+
+def require_online_operation():
+    """Jangan izinkan form mutasi bekerja dari snapshot/offline data."""
+    if WRITE_BLOCK_WHEN_OFFLINE and not st.session_state.get("is_connected"):
+        st.error("⛔ Operasi perubahan stok dinonaktifkan karena database sedang offline. Segarkan koneksi terlebih dahulu.")
+        st.stop()
 
 
 # ============================================================
@@ -1100,6 +1156,163 @@ def reset_database():
     return result
 
 
+
+# ============================================================
+# BACKUP SERVER / AUTO-SYNC UI
+# ============================================================
+def server_backup_now():
+    return api_post({"action": "server_backup", **actor_payload()}, timeout=90)
+
+
+def install_backup_trigger():
+    return api_post({"action": "install_backup_trigger", **actor_payload()}, timeout=60)
+
+
+def remove_backup_trigger():
+    return api_post({"action": "remove_backup_trigger", **actor_payload()}, timeout=60)
+
+
+def backup_server_status():
+    return _post_json({"action": "backup_status", **actor_payload()}, timeout=20)
+
+
+def _live_fragment(run_every_seconds):
+    if hasattr(st, "fragment"):
+        return st.fragment(run_every=run_every_seconds)
+
+    def decorator(func):
+        return func
+    return decorator
+
+
+def _current_stock_view():
+    stock_now = st.session_state.get("stok", {})
+    master_now = st.session_state.get("master_info", {})
+    active_now = {
+        k: v for k, v in stock_now.items()
+        if master_now.get(k, {}).get("status", "Aktif") == "Aktif"
+    }
+    critical_now = [
+        k for k, v in active_now.items()
+        if 0 < v <= master_now.get(k, {}).get("min_stok", 5)
+    ]
+    out_now = [k for k, v in active_now.items() if v <= 0]
+    return stock_now, master_now, active_now, critical_now, out_now
+
+
+@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+def render_dashboard_live():
+    sync_if_changed()
+    stock_now, master_now, active_now, critical_now, out_now = _current_stock_view()
+
+    sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
+    revision = st.session_state.get("server_revision", "-")
+    if AUTO_SYNC_ENABLED:
+        st.caption(f"🔄 Auto-sync aktif setiap {AUTO_SYNC_SECONDS} detik · sinkron terakhir {sync_text} · rev {revision}")
+
+    if not st.session_state.get("is_connected"):
+        st.error("Database sedang offline. Dashboard menampilkan snapshot terakhir dan tidak boleh dianggap real-time.")
+
+    if critical_now or out_now:
+        st.warning(f"⚠️ {len(out_now)} item habis dan {len(critical_now)} item kritis.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Jenis Barang Aktif", len(active_now))
+    c2.metric("Total Stok", f"{sum(active_now.values())} pcs")
+    c3.metric("Stok Kritis", len(critical_now))
+    c4.metric("Stok Habis", len(out_now))
+
+    st.divider()
+    left, right = st.columns(2)
+    with left:
+        st.subheader("📊 Status Stok")
+        safe_count = len(active_now) - len(critical_now) - len(out_now)
+        df_chart = pd.DataFrame(
+            {"Status": ["Aman", "Kritis", "Habis"], "Jumlah": [safe_count, len(critical_now), len(out_now)]}
+        )
+        if int(df_chart["Jumlah"].sum()) > 0:
+            fig = px.pie(df_chart, names="Status", values="Jumlah", hole=0.52)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Belum ada data stok aktif untuk ditampilkan.")
+
+    with right:
+        st.subheader("🚨 Perlu Perhatian")
+        rows = []
+        for nama in sorted(set(critical_now + out_now), key=natural_key):
+            qty = active_now[nama]
+            minimum = master_now.get(nama, {}).get("min_stok", 5)
+            rows.append({
+                "Nama Barang": nama,
+                "Stok": qty,
+                "Minimum": minimum,
+                "Status": status_stok(qty, minimum),
+            })
+        if rows:
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        else:
+            st.success("Semua stok aman.")
+
+    st.divider()
+    st.subheader("📋 Ringkasan Stok")
+    keyword = st.text_input("🔍 Cari barang", placeholder="Contoh: top coat", key="dashboard_search_live")
+    rows = []
+    for nama in sorted(stock_now, key=natural_key):
+        if keyword and keyword.lower() not in nama.lower():
+            continue
+        info = master_now.get(nama, {})
+        rows.append({
+            "Nama Barang": nama,
+            "Stok": stock_now[nama],
+            "Batas Min": info.get("min_stok", 5),
+            "Status Item": info.get("status", "Aktif"),
+            "Status Stok": status_stok(stock_now[nama], info.get("min_stok", 5), info.get("status", "Aktif")),
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
+@_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
+def render_stock_live():
+    sync_if_changed()
+    stock_now = st.session_state.get("stok", {})
+    master_now = st.session_state.get("master_info", {})
+
+    sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
+    if AUTO_SYNC_ENABLED:
+        st.caption(f"🔄 Auto-sync aktif setiap {AUTO_SYNC_SECONDS} detik · sinkron terakhir {sync_text}")
+
+    rows = []
+    for nama in sorted(stock_now, key=natural_key):
+        info = master_now.get(nama, {})
+        rows.append({
+            "Nama Barang": nama,
+            "Jumlah Stok": stock_now[nama],
+            "Batas Minimum": info.get("min_stok", 5),
+            "Status Item": info.get("status", "Aktif"),
+            "Indikator": status_stok(stock_now[nama], info.get("min_stok", 5), info.get("status", "Aktif")),
+        })
+
+    df = pd.DataFrame(rows)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    x1, x2 = st.columns(2)
+    x1.download_button(
+        "📥 Ekspor Excel", excel_bytes(df, "Stok"),
+        f"Stok_{sekarang_wib().strftime('%Y%m%d')}.xlsx", use_container_width=True,
+        key="download_stock_live",
+    )
+    pdf = pdf_table(
+        "LAPORAN STOK GUDANG",
+        ["Nama", "Stok", "Min", "Status Item", "Indikator"],
+        [[r["Nama Barang"], r["Jumlah Stok"], r["Batas Minimum"], r["Status Item"], r["Indikator"]] for r in rows],
+        [85, 25, 20, 30, 30],
+    )
+    x2.download_button(
+        "📄 Cetak PDF", pdf,
+        f"Stok_{sekarang_wib().strftime('%Y%m%d')}.pdf", use_container_width=True,
+        key="download_stock_pdf_live",
+    )
+
+
 # ============================================================
 # STARTUP
 # ============================================================
@@ -1162,6 +1375,8 @@ with st.sidebar:
     st.markdown("---")
     if st.session_state.get("is_connected"):
         st.success("🟢 Database terhubung")
+        if st.session_state.get("last_server_sync"):
+            st.caption(f"Sinkron: {st.session_state.get('last_server_sync')}")
     else:
         st.error("🔴 Database offline")
 
@@ -1235,104 +1450,14 @@ out_of_stock = [k for k, v in active_stock.items() if v <= 0]
 # PAGES
 # ============================================================
 if active_menu == "Dashboard":
-    if critical or out_of_stock:
-        st.warning(f"⚠️ {len(out_of_stock)} item habis dan {len(critical)} item kritis.")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Jenis Barang Aktif", len(active_stock))
-    c2.metric("Total Stok", f"{sum(active_stock.values())} pcs")
-    c3.metric("Stok Kritis", len(critical))
-    c4.metric("Stok Habis", len(out_of_stock))
-
-    st.divider()
-    left, right = st.columns(2)
-    with left:
-        st.subheader("📊 Status Stok")
-        safe_count = len(active_stock) - len(critical) - len(out_of_stock)
-        df_chart = pd.DataFrame(
-            {"Status": ["Aman", "Kritis", "Habis"], "Jumlah": [safe_count, len(critical), len(out_of_stock)]}
-        )
-        fig = px.pie(df_chart, names="Status", values="Jumlah", hole=0.52)
-        st.plotly_chart(fig, use_container_width=True)
-
-    with right:
-        st.subheader("🚨 Perlu Perhatian")
-        rows = []
-        for nama in sorted(set(critical + out_of_stock), key=natural_key):
-            qty = active_stock[nama]
-            minimum = master.get(nama, {}).get("min_stok", 5)
-            rows.append(
-                {
-                    "Nama Barang": nama,
-                    "Stok": qty,
-                    "Minimum": minimum,
-                    "Status": status_stok(qty, minimum),
-                }
-            )
-        if rows:
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-        else:
-            st.success("Semua stok aman.")
-
-    st.divider()
-    st.subheader("📋 Ringkasan Stok")
-    keyword = st.text_input("🔍 Cari barang", placeholder="Contoh: top coat")
-    rows = []
-    for nama in sorted(stock, key=natural_key):
-        if keyword and keyword.lower() not in nama.lower():
-            continue
-        info = master.get(nama, {})
-        rows.append(
-            {
-                "Nama Barang": nama,
-                "Stok": stock[nama],
-                "Batas Min": info.get("min_stok", 5),
-                "Status Item": info.get("status", "Aktif"),
-                "Status Stok": status_stok(stock[nama], info.get("min_stok", 5), info.get("status", "Aktif")),
-            }
-        )
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
+    render_dashboard_live()
 
 elif active_menu == "Lihat Semua Stok":
-    rows = []
-    for nama in sorted(stock, key=natural_key):
-        info = master.get(nama, {})
-        rows.append(
-            {
-                "Nama Barang": nama,
-                "Jumlah Stok": stock[nama],
-                "Batas Minimum": info.get("min_stok", 5),
-                "Status Item": info.get("status", "Aktif"),
-                "Indikator": status_stok(stock[nama], info.get("min_stok", 5), info.get("status", "Aktif")),
-            }
-        )
-    df = pd.DataFrame(rows)
-    st.dataframe(df, use_container_width=True, hide_index=True)
-
-    x1, x2 = st.columns(2)
-    x1.download_button(
-        "📥 Ekspor Excel",
-        excel_bytes(df, "Stok"),
-        f"Stok_{sekarang_wib().strftime('%Y%m%d')}.xlsx",
-        use_container_width=True,
-    )
-    pdf = pdf_table(
-        "LAPORAN STOK GUDANG",
-        ["Nama", "Stok", "Min", "Status Item", "Indikator"],
-        [[r["Nama Barang"], r["Jumlah Stok"], r["Batas Minimum"], r["Status Item"], r["Indikator"]] for r in rows],
-        [85, 25, 20, 30, 30],
-    )
-    x2.download_button(
-        "📄 Cetak PDF",
-        pdf,
-        f"Stok_{sekarang_wib().strftime('%Y%m%d')}.pdf",
-        use_container_width=True,
-    )
-
+    render_stock_live()
 
 elif active_menu == "Kelola Master Item":
     require_permission("manage_master")
+    require_online_operation()
     tab_add, tab_edit = st.tabs(["➕ Tambah Barang", "⚙️ Edit / Nonaktifkan"])
 
     with tab_add:
@@ -1396,6 +1521,7 @@ elif active_menu == "Kelola Master Item":
 
 elif active_menu in ("Barang Masuk", "Barang Keluar"):
     require_permission("transaction")
+    require_online_operation()
     tipe = "MASUK" if active_menu == "Barang Masuk" else "KELUAR"
     names = sorted(
         [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
@@ -1452,6 +1578,7 @@ elif active_menu in ("Barang Masuk", "Barang Keluar"):
 
 elif active_menu == "Penyesuaian Stok":
     require_permission("stock_adjust")
+    require_online_operation()
     st.info("Gunakan fitur ini saat stok fisik berbeda dari stok sistem. Semua perubahan dicatat di riwayat dan audit log.")
     names = sorted(
         [k for k in stock if master.get(k, {}).get("status", "Aktif") == "Aktif"],
@@ -1496,6 +1623,7 @@ elif active_menu == "Penyesuaian Stok":
 
 elif active_menu == "Koreksi Transaksi":
     require_permission("correct_transaction")
+    require_online_operation()
     editable = [tx for tx in history if tx.get("Status", "AKTIF") == "AKTIF" and tx.get("Tipe") in ("MASUK", "KELUAR")]
     if not editable:
         st.info("Tidak ada transaksi aktif yang dapat dikoreksi.")
@@ -1688,6 +1816,47 @@ elif active_menu == "Backup Data":
         else:
             st.error(f"Backup gagal dikirim ke Telegram — {detail}")
 
+    st.divider()
+    st.subheader("☁️ Backup Database Otomatis")
+    st.caption("Backup server membuat salinan Google Spreadsheet langsung ke folder WMS_Backups di Google Drive.")
+
+    try:
+        backup_status = backup_server_status() if st.session_state.get("is_connected") else {}
+    except Exception:
+        backup_status = {}
+
+    last_backup = backup_status.get("last_backup_time") or "Belum ada"
+    trigger_active = bool(backup_status.get("trigger_installed", False))
+    bs1, bs2 = st.columns(2)
+    bs1.metric("Backup terakhir", last_backup)
+    bs2.metric("Backup harian", "Aktif" if trigger_active else "Belum aktif")
+
+    if st.button("☁️ Buat Backup Server Sekarang", use_container_width=True, disabled=not st.session_state.get("is_connected")):
+        try:
+            result = server_backup_now()
+            st.success(f"Backup server berhasil: {result.get('backup_name', 'WMS backup')}")
+            if result.get("backup_url"):
+                st.link_button("Buka Backup di Google Drive", result["backup_url"], use_container_width=True)
+        except Exception as exc:
+            show_api_error("Backup server gagal", exc)
+
+    if current_role() == ROLE_DEVELOPER:
+        bt1, bt2 = st.columns(2)
+        if bt1.button("🕑 Aktifkan Backup Harian", use_container_width=True, disabled=trigger_active or not st.session_state.get("is_connected")):
+            try:
+                install_backup_trigger()
+                st.success("Backup otomatis harian berhasil diaktifkan. Jalankan sekitar pukul 02.00 waktu project Apps Script.")
+                st.rerun()
+            except Exception as exc:
+                show_api_error("Gagal mengaktifkan backup harian", exc)
+        if bt2.button("⏹️ Nonaktifkan Backup Harian", use_container_width=True, disabled=(not trigger_active) or not st.session_state.get("is_connected")):
+            try:
+                remove_backup_trigger()
+                st.success("Backup otomatis harian dinonaktifkan.")
+                st.rerun()
+            except Exception as exc:
+                show_api_error("Gagal menonaktifkan backup harian", exc)
+
 
 elif active_menu == "Pengaturan & Reset":
     require_permission("reset")
@@ -1710,6 +1879,8 @@ elif active_menu == "Pengaturan & Reset":
         st.write(f"Cache data: **{DATA_CACHE_TTL_SECONDS} detik**")
         st.write(f"Session timeout: **{SESSION_TIMEOUT_MINUTES} menit**")
         st.write(f"Login lock: **{LOGIN_MAX_ATTEMPTS} percobaan / {LOGIN_LOCK_SECONDS} detik**")
+        st.write(f"Auto-sync: **{'Aktif' if AUTO_SYNC_ENABLED else 'Nonaktif'} / {AUTO_SYNC_SECONDS} detik**")
+        st.write(f"Revision backend: **{st.session_state.get('server_revision', '-')}**")
         if AUTH_SIGNING_KEY:
             st.success("AUTH_SIGNING_KEY aktif — request mutasi membawa HMAC signature.")
         else:
@@ -1738,4 +1909,4 @@ elif active_menu == "Tentang Aplikasi":
     )
     st.info(f"Versi {APP_VERSION} · Internal WMS")
     st.caption("Role: Developer, Boss, Admin, Staff. Boss dapat mengelola dan menyesuaikan stok, sedangkan reset database hanya Developer.")
-    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item tetap diproses server-side. Versi ini menambah anti-bruteforce login, session timeout, PBKDF2, sanitasi secret, retry Telegram, cache lebih singkat, dan dukungan HMAC signature untuk Code.gs.")
+    st.caption("Transaksi, penyesuaian stok, koreksi, void, dan master item tetap diproses server-side. Versi ini menambah auto-sync berbasis revision, secure POST read, anti-bruteforce login, session timeout, PBKDF2, sanitasi secret, retry Telegram, backup server harian, dan HMAC signature end-to-end.")
