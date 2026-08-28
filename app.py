@@ -142,7 +142,7 @@ def inject_responsive_css():
 inject_responsive_css()
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "7.0-stable"
+APP_VERSION = "7.0.1-stable"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
@@ -1820,23 +1820,75 @@ elif active_menu == "Backup Data":
     st.subheader("☁️ Backup Database Otomatis")
     st.caption("Backup server membuat salinan Google Spreadsheet langsung ke folder WMS_Backups di Google Drive.")
 
-    try:
-        backup_status = backup_server_status() if st.session_state.get("is_connected") else {}
-    except Exception:
-        backup_status = {}
+    # Flash message dipertahankan setelah st.rerun() agar user tetap melihat hasil operasi.
+    backup_flash = st.session_state.pop("backup_flash", None)
+    if backup_flash:
+        level, message = backup_flash
+        if level == "success":
+            st.success(message)
+        elif level == "warning":
+            st.warning(message)
+        else:
+            st.info(message)
 
-    last_backup = backup_status.get("last_backup_time") or "Belum ada"
-    trigger_active = bool(backup_status.get("trigger_installed", False))
+    # Ambil status aktual dari backend. Jangan diam-diam mengubah error menjadi "Belum ada".
+    backup_status = {}
+    backup_status_error = None
+    if st.session_state.get("is_connected"):
+        try:
+            backup_status = backup_server_status()
+            # Cache status valid ke session sebagai fallback bila request status berikutnya sesaat gagal.
+            st.session_state.backup_last_time = backup_status.get("last_backup_time") or st.session_state.get("backup_last_time", "")
+            st.session_state.backup_last_url = backup_status.get("last_backup_url") or st.session_state.get("backup_last_url", "")
+            st.session_state.backup_last_name = backup_status.get("last_backup_name") or st.session_state.get("backup_last_name", "")
+            st.session_state.backup_trigger_active = bool(backup_status.get("trigger_installed", False))
+        except Exception as exc:
+            backup_status_error = api_error_detail(exc)
+    else:
+        backup_status_error = "database sedang offline"
+
+    last_backup = (
+        backup_status.get("last_backup_time")
+        or st.session_state.get("backup_last_time")
+        or "Belum ada"
+    )
+    last_backup_name = (
+        backup_status.get("last_backup_name")
+        or st.session_state.get("backup_last_name")
+        or ""
+    )
+    last_backup_url = (
+        backup_status.get("last_backup_url")
+        or st.session_state.get("backup_last_url")
+        or ""
+    )
+    trigger_active = bool(
+        backup_status.get("trigger_installed", st.session_state.get("backup_trigger_active", False))
+    )
+
+    if backup_status_error:
+        st.warning(f"Status backup server belum dapat diperbarui: {backup_status_error}. Status terakhir yang tersimpan di sesi tetap ditampilkan.")
+
     bs1, bs2 = st.columns(2)
     bs1.metric("Backup terakhir", last_backup)
     bs2.metric("Backup harian", "Aktif" if trigger_active else "Belum aktif")
+    if last_backup_name:
+        st.caption(f"Backup terakhir: {last_backup_name}")
+    if last_backup_url:
+        st.link_button("📂 Buka Backup Terakhir di Google Drive", last_backup_url, use_container_width=True)
 
     if st.button("☁️ Buat Backup Server Sekarang", use_container_width=True, disabled=not st.session_state.get("is_connected")):
         try:
             result = server_backup_now()
-            st.success(f"Backup server berhasil: {result.get('backup_name', 'WMS backup')}")
-            if result.get("backup_url"):
-                st.link_button("Buka Backup di Google Drive", result["backup_url"], use_container_width=True)
+            # Simpan hasil langsung sehingga UI tidak bergantung pada request status kedua.
+            backup_time = result.get("backup_time") or waktu_display()
+            backup_name = result.get("backup_name") or "WMS backup"
+            backup_url = result.get("backup_url") or ""
+            st.session_state.backup_last_time = backup_time
+            st.session_state.backup_last_name = backup_name
+            st.session_state.backup_last_url = backup_url
+            st.session_state.backup_flash = ("success", f"Backup server berhasil: {backup_name}")
+            st.rerun()
         except Exception as exc:
             show_api_error("Backup server gagal", exc)
 
@@ -1844,15 +1896,21 @@ elif active_menu == "Backup Data":
         bt1, bt2 = st.columns(2)
         if bt1.button("🕑 Aktifkan Backup Harian", use_container_width=True, disabled=trigger_active or not st.session_state.get("is_connected")):
             try:
-                install_backup_trigger()
-                st.success("Backup otomatis harian berhasil diaktifkan. Jalankan sekitar pukul 02.00 waktu project Apps Script.")
+                result = install_backup_trigger()
+                st.session_state.backup_trigger_active = bool(result.get("trigger_installed", True)) if isinstance(result, dict) else True
+                if isinstance(result, dict):
+                    st.session_state.backup_last_time = result.get("last_backup_time") or st.session_state.get("backup_last_time", "")
+                    st.session_state.backup_last_url = result.get("last_backup_url") or st.session_state.get("backup_last_url", "")
+                    st.session_state.backup_last_name = result.get("last_backup_name") or st.session_state.get("backup_last_name", "")
+                st.session_state.backup_flash = ("success", "Backup otomatis harian berhasil diaktifkan. Akan dijalankan sekitar pukul 02.00 waktu project Apps Script.")
                 st.rerun()
             except Exception as exc:
                 show_api_error("Gagal mengaktifkan backup harian", exc)
         if bt2.button("⏹️ Nonaktifkan Backup Harian", use_container_width=True, disabled=(not trigger_active) or not st.session_state.get("is_connected")):
             try:
-                remove_backup_trigger()
-                st.success("Backup otomatis harian dinonaktifkan.")
+                result = remove_backup_trigger()
+                st.session_state.backup_trigger_active = bool(result.get("trigger_installed", False)) if isinstance(result, dict) else False
+                st.session_state.backup_flash = ("success", "Backup otomatis harian dinonaktifkan.")
                 st.rerun()
             except Exception as exc:
                 show_api_error("Gagal menonaktifkan backup harian", exc)
