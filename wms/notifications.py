@@ -6,6 +6,8 @@ import requests
 import streamlit as st
 
 from .config import (
+    ACCOUNT_TELEGRAM_BOT_TOKEN,
+    ACCOUNT_TELEGRAM_CHAT_ID,
     NOTIFICATION_LOG_LIMIT,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
@@ -71,28 +73,37 @@ def test_telegram_connection():
         return False, f"Tes Telegram gagal: {telegram_safe_exception(exc)}"
 
 
-def send_telegram_detailed(message: str, image_bytes=None, reply_markup=None):
+def send_telegram_detailed(
+    message: str,
+    image_bytes=None,
+    reply_markup=None,
+    *,
+    bot_token=None,
+    chat_id=None,
+):
     """Kirim Telegram secara terukur; caller menerima status dan penyebab kegagalan."""
-    if not TELEGRAM_BOT_TOKEN:
+    active_token = TELEGRAM_BOT_TOKEN if bot_token is None else str(bot_token)
+    active_chat_id = TELEGRAM_CHAT_ID if chat_id is None else str(chat_id)
+    if not active_token:
         return False, "TELEGRAM_BOT_TOKEN belum diisi."
-    if not TELEGRAM_CHAT_ID:
+    if not active_chat_id:
         return False, "TELEGRAM_CHAT_ID belum diisi."
 
     last_error = ""
     for attempt in range(1, TELEGRAM_RETRY_ATTEMPTS + 1):
         try:
             if image_bytes:
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+                url = f"https://api.telegram.org/bot{active_token}/sendPhoto"
                 res = requests.post(
                     url,
-                    data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": message},
+                    data={"chat_id": active_chat_id, "caption": message},
                     files={"photo": ("bukti.jpg", image_bytes, "image/jpeg")},
                     timeout=20,
                 )
             else:
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                url = f"https://api.telegram.org/bot{active_token}/sendMessage"
                 payload = {
-                    "chat_id": str(TELEGRAM_CHAT_ID),
+                    "chat_id": active_chat_id,
                     "text": message,
                     "parse_mode": "Markdown",
                 }
@@ -108,7 +119,7 @@ def send_telegram_detailed(message: str, image_bytes=None, reply_markup=None):
                 if res.status_code == 400:
                     detail_lower = telegram_response_detail(res).lower()
                     if "parse" in detail_lower or "entity" in detail_lower:
-                        plain_payload = {"chat_id": str(TELEGRAM_CHAT_ID), "text": message}
+                        plain_payload = {"chat_id": active_chat_id, "text": message}
                         if reply_markup:
                             plain_payload["reply_markup"] = reply_markup
                         res = requests.post(url, json=plain_payload, timeout=20)
@@ -145,6 +156,10 @@ def send_account_request_notification(
     *, full_name: str, username: str, position: str, requested_role: str, request_id: str
 ):
     """Beri tahu pemilik tanpa pernah mengirim password atau verifier."""
+    if not ACCOUNT_TELEGRAM_BOT_TOKEN:
+        return False, "ACCOUNT_TELEGRAM_BOT_TOKEN belum diisi di Streamlit Secrets."
+    if not ACCOUNT_TELEGRAM_CHAT_ID:
+        return False, "ACCOUNT_TELEGRAM_CHAT_ID belum diisi di Streamlit Secrets."
     message = (
         "🔐 PERMINTAAN AKUN BARU\n\n"
         f"Nama: {full_name}\n"
@@ -152,7 +167,7 @@ def send_account_request_notification(
         f"Jabatan: {position}\n"
         f"Role diminta: {requested_role}\n"
         f"ID permintaan: {request_id}\n\n"
-        "Buka WMS sebagai Developer → Kelola Akun untuk menentukan role final, menyetujui, atau menolak."
+        "Pilih role final atau tolak menggunakan tombol di bawah."
     )
     keyboard = {
         "inline_keyboard": [
@@ -167,7 +182,12 @@ def send_account_request_notification(
             [{"text": "❌ Tolak", "callback_data": f"acc|{request_id}|REJECT"}],
         ]
     }
-    ok, detail = send_telegram_detailed(message, reply_markup=keyboard)
+    ok, detail = send_telegram_detailed(
+        message,
+        reply_markup=keyboard,
+        bot_token=ACCOUNT_TELEGRAM_BOT_TOKEN,
+        chat_id=ACCOUNT_TELEGRAM_CHAT_ID,
+    )
     record_notification(f"Permintaan akun {username}", ok, detail)
     return ok, detail
 

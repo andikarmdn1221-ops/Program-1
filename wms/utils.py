@@ -15,6 +15,7 @@ import requests
 from PIL import Image
 
 from .config import (
+    ACCOUNT_TELEGRAM_BOT_TOKEN,
     API_SHARED_KEY,
     AUTH_SIGNING_KEY,
     MAX_UPLOAD_MB,
@@ -73,6 +74,7 @@ def redact_sensitive(value) -> str:
         (API_SHARED_KEY, "***API_KEY***"),
         (AUTH_SIGNING_KEY, "***SIGNING_KEY***"),
         (TELEGRAM_BOT_TOKEN, "***TELEGRAM_TOKEN***"),
+        (ACCOUNT_TELEGRAM_BOT_TOKEN, "***ACCOUNT_TELEGRAM_TOKEN***"),
     ):
         if secret_value:
             text = text.replace(str(secret_value), label)

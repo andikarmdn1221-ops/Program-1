@@ -12,6 +12,8 @@ API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
 TELEGRAM_BOT_TOKEN = st.secrets.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = st.secrets.get("TELEGRAM_CHAT_ID", "")
+ACCOUNT_TELEGRAM_BOT_TOKEN = st.secrets.get("ACCOUNT_TELEGRAM_BOT_TOKEN", "")
+ACCOUNT_TELEGRAM_CHAT_ID = st.secrets.get("ACCOUNT_TELEGRAM_CHAT_ID", "")
 ALLOW_NO_LOGIN = bool(st.secrets.get("ALLOW_NO_LOGIN", False))
 
 # Pengaturan keamanan / reliabilitas. Semua punya default aman dan tetap kompatibel.
