@@ -168,12 +168,20 @@ def inject_responsive_css():
             border-radius: 0.75rem !important;
             background: #eff6ff !important;
             color: #1d4ed8 !important;
-            font-size: 1rem !important;
+            font-family: Arial, "Segoe UI Symbol", sans-serif !important;
+            font-size: 1.4rem !important;
             font-weight: 650 !important;
+            line-height: 1 !important;
+            overflow: visible !important;
         }
         .st-key-main_refresh .stButton > button:hover {
             border-color: #60a5fa !important;
             background: #dbeafe !important;
+        }
+        .st-key-main_refresh .stButton > button p {
+            margin: 0 !important;
+            font: inherit !important;
+            line-height: 1 !important;
         }
         [data-testid="stAlert"] {
             border-radius: 0.8rem;
@@ -329,7 +337,8 @@ def inject_responsive_css():
                 min-height: 2.55rem !important;
                 height: 2.55rem !important;
                 padding: 0 !important;
-                font-size: 1rem !important;
+                font-size: 1.4rem !important;
+                line-height: 1 !important;
             }
 
             /* Tabs dapat digeser horizontal, tidak memaksa layar melebar. */
@@ -2123,7 +2132,7 @@ with st.sidebar:
 # ============================================================
 st.title(f"📦 {active_menu}")
 st.caption(f"{waktu_display()} · v{APP_VERSION}")
-if st.button("🔄", help="Segarkan data", key="main_refresh"):
+if st.button("↻", help="Segarkan data", key="main_refresh"):
     clear_and_refresh()
     st.rerun()
 
