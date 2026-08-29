@@ -97,8 +97,32 @@ def password_matches(input_password: str, configured: dict) -> bool:
 
 
 def clear_auth_session():
-    for key in ("auth_user", "auth_role", "auth_login_at", "auth_last_activity"):
+    for key in ("auth_user", "auth_display_name", "auth_role", "auth_login_at", "auth_last_activity"):
         st.session_state.pop(key, None)
+
+
+def _complete_login(username: str, role: str, now: float, display_name=""):
+    st.session_state.auth_user = username
+    st.session_state.auth_display_name = display_name or username
+    st.session_state.auth_role = normalize_role(role)
+    st.session_state.auth_login_at = now
+    st.session_state.auth_last_activity = now
+    st.session_state.login_attempts = 0
+    st.session_state.login_lock_until = 0
+    st.rerun()
+
+
+def _record_failed_login(now: float):
+    attempts = int(st.session_state.get("login_attempts", 0)) + 1
+    st.session_state.login_attempts = attempts
+    remaining_attempts = LOGIN_MAX_ATTEMPTS - attempts
+    if attempts >= LOGIN_MAX_ATTEMPTS:
+        st.session_state.login_lock_until = now + LOGIN_LOCK_SECONDS
+        st.error(
+            f"Login dikunci sementara selama {LOGIN_LOCK_SECONDS} detik karena terlalu banyak percobaan gagal."
+        )
+    else:
+        st.error(f"Username atau password salah. Sisa percobaan: {remaining_attempts}.")
 
 
 def login_gate():
@@ -133,38 +157,117 @@ def login_gate():
         st.session_state.login_lock_until = 0
         lock_until = 0
 
-    st.title("🔐 Login WMS Microcement")
-    st.caption("Masuk menggunakan akun yang diberikan sesuai jabatan.")
+    st.title("🔐 WMS Microcement")
+    st.caption("Masuk atau ajukan akun baru sesuai jabatan.")
 
     if lock_until > now:
         remaining = max(1, int(lock_until - now))
         st.error(f"Terlalu banyak percobaan login gagal. Coba lagi dalam {remaining} detik.")
         st.stop()
 
-    with st.form("login_form"):
-        username = st.text_input("Username").strip()
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Masuk", use_container_width=True)
+    login_tab, register_tab = st.tabs(["Masuk", "Daftar Akun Baru"])
 
-    if submit:
-        cfg = users.get(username)
-        if cfg and password_matches(password, dict(cfg)):
-            st.session_state.auth_user = username
-            st.session_state.auth_role = normalize_role(dict(cfg).get("role", ROLE_STAFF))
-            st.session_state.auth_login_at = now
-            st.session_state.auth_last_activity = now
-            st.session_state.login_attempts = 0
-            st.session_state.login_lock_until = 0
-            st.rerun()
+    with login_tab:
+        with st.form("login_form"):
+            username = st.text_input("Username").strip()
+            password = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Masuk", use_container_width=True)
 
-        attempts = int(st.session_state.get("login_attempts", 0)) + 1
-        st.session_state.login_attempts = attempts
-        remaining_attempts = LOGIN_MAX_ATTEMPTS - attempts
-        if attempts >= LOGIN_MAX_ATTEMPTS:
-            st.session_state.login_lock_until = now + LOGIN_LOCK_SECONDS
-            st.error(f"Login dikunci sementara selama {LOGIN_LOCK_SECONDS} detik karena terlalu banyak percobaan gagal.")
-        else:
-            st.error(f"Username atau password salah. Sisa percobaan: {remaining_attempts}.")
+        if submit:
+            cfg = users.get(username)
+            if cfg and password_matches(password, dict(cfg)):
+                _complete_login(username, dict(cfg).get("role", ROLE_STAFF), now)
+
+            try:
+                from .accounts import authenticate_account
+
+                dynamic = authenticate_account(username, password)
+            except Exception:
+                dynamic = {"authenticated": False, "status": "ERROR"}
+
+            if dynamic.get("authenticated"):
+                _complete_login(
+                    str(dynamic.get("username") or username),
+                    str(dynamic.get("role") or ROLE_STAFF),
+                    now,
+                    str(dynamic.get("full_name") or username),
+                )
+
+            status = str(dynamic.get("status") or "").upper()
+            if status == "PENDING":
+                st.warning("Akun masih menunggu persetujuan Developer.")
+            elif status == "SUSPENDED":
+                st.error("Akun sedang dinonaktifkan. Hubungi Developer.")
+            elif status == "REJECTED":
+                st.error("Permintaan akun ditolak. Hubungi Developer jika diperlukan.")
+            elif status == "ERROR":
+                st.error("Layanan akun sedang tidak dapat dihubungi. Coba lagi nanti.")
+            else:
+                _record_failed_login(now)
+
+    with register_tab:
+        st.info("Akun baru belum bisa login sebelum disetujui oleh Developer.")
+        role_choices = [ROLE_STAFF, ROLE_ADMIN, ROLE_BOSS, ROLE_DEVELOPER]
+        with st.form("registration_form", clear_on_submit=False):
+            full_name = st.text_input("Nama lengkap", key="register_full_name")
+            new_username = st.text_input(
+                "Username baru",
+                help="Gunakan huruf kecil, angka, titik, garis bawah, atau tanda minus.",
+                key="register_username",
+            )
+            position = st.text_input("Jabatan", key="register_position")
+            requested_role = st.selectbox(
+                "Role yang diminta",
+                role_choices,
+                help="Developer akan menentukan role final saat menyetujui.",
+            )
+            new_password = st.text_input("Password", type="password", key="register_password")
+            confirm_password = st.text_input(
+                "Ulangi password", type="password", key="register_password_confirm"
+            )
+            register_submit = st.form_submit_button(
+                "Kirim Permintaan Akun", use_container_width=True
+            )
+
+        if register_submit:
+            try:
+                from .accounts import normalize_username, register_account
+                from .notifications import send_account_request_notification
+
+                clean_username = normalize_username(new_username)
+                if clean_username in {str(name).lower() for name in users}:
+                    raise ValueError("Username sudah digunakan.")
+                if not position.strip():
+                    raise ValueError("Jabatan wajib diisi.")
+                if new_password != confirm_password:
+                    raise ValueError("Konfirmasi password tidak sama.")
+
+                result = register_account(
+                    full_name,
+                    clean_username,
+                    new_password,
+                    requested_role,
+                    position,
+                )
+                request_id = str(result.get("request_id") or "-")
+                telegram_ok, telegram_detail = send_account_request_notification(
+                    full_name=full_name,
+                    username=clean_username,
+                    position=position,
+                    requested_role=requested_role,
+                    request_id=request_id,
+                )
+                if telegram_ok:
+                    st.success(
+                        "Permintaan berhasil dikirim. Tunggu Developer menyetujui akun melalui menu Kelola Akun."
+                    )
+                else:
+                    st.warning(
+                        "Permintaan tersimpan dan tetap menunggu persetujuan, tetapi notifikasi Telegram gagal: "
+                        + telegram_detail
+                    )
+            except Exception as exc:
+                st.error(str(exc))
     st.stop()
 
 

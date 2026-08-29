@@ -71,7 +71,7 @@ def test_telegram_connection():
         return False, f"Tes Telegram gagal: {telegram_safe_exception(exc)}"
 
 
-def send_telegram_detailed(message: str, image_bytes=None):
+def send_telegram_detailed(message: str, image_bytes=None, reply_markup=None):
     """Kirim Telegram secara terukur; caller menerima status dan penyebab kegagalan."""
     if not TELEGRAM_BOT_TOKEN:
         return False, "TELEGRAM_BOT_TOKEN belum diisi."
@@ -91,9 +91,16 @@ def send_telegram_detailed(message: str, image_bytes=None):
                 )
             else:
                 url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+                payload = {
+                    "chat_id": str(TELEGRAM_CHAT_ID),
+                    "text": message,
+                    "parse_mode": "Markdown",
+                }
+                if reply_markup:
+                    payload["reply_markup"] = reply_markup
                 res = requests.post(
                     url,
-                    json={"chat_id": str(TELEGRAM_CHAT_ID), "text": message, "parse_mode": "Markdown"},
+                    json=payload,
                     timeout=20,
                 )
                 # Keterangan/nama barang dapat mengandung karakter Markdown.
@@ -101,11 +108,10 @@ def send_telegram_detailed(message: str, image_bytes=None):
                 if res.status_code == 400:
                     detail_lower = telegram_response_detail(res).lower()
                     if "parse" in detail_lower or "entity" in detail_lower:
-                        res = requests.post(
-                            url,
-                            json={"chat_id": str(TELEGRAM_CHAT_ID), "text": message},
-                            timeout=20,
-                        )
+                        plain_payload = {"chat_id": str(TELEGRAM_CHAT_ID), "text": message}
+                        if reply_markup:
+                            plain_payload["reply_markup"] = reply_markup
+                        res = requests.post(url, json=plain_payload, timeout=20)
 
             if res.ok:
                 return True, "Notifikasi berhasil dikirim ke Telegram."
@@ -133,6 +139,37 @@ def send_telegram_detailed(message: str, image_bytes=None):
 def send_telegram(message: str, image_bytes=None):
     ok, _detail = send_telegram_detailed(message, image_bytes)
     return ok
+
+
+def send_account_request_notification(
+    *, full_name: str, username: str, position: str, requested_role: str, request_id: str
+):
+    """Beri tahu pemilik tanpa pernah mengirim password atau verifier."""
+    message = (
+        "🔐 PERMINTAAN AKUN BARU\n\n"
+        f"Nama: {full_name}\n"
+        f"Username: {username}\n"
+        f"Jabatan: {position}\n"
+        f"Role diminta: {requested_role}\n"
+        f"ID permintaan: {request_id}\n\n"
+        "Buka WMS sebagai Developer → Kelola Akun untuk menentukan role final, menyetujui, atau menolak."
+    )
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Staff", "callback_data": f"acc|{request_id}|Staff"},
+                {"text": "✅ Admin", "callback_data": f"acc|{request_id}|Admin"},
+            ],
+            [
+                {"text": "✅ Boss", "callback_data": f"acc|{request_id}|Boss"},
+                {"text": "⚠️ Developer", "callback_data": f"acc|{request_id}|Developer"},
+            ],
+            [{"text": "❌ Tolak", "callback_data": f"acc|{request_id}|REJECT"}],
+        ]
+    }
+    ok, detail = send_telegram_detailed(message, reply_markup=keyboard)
+    record_notification(f"Permintaan akun {username}", ok, detail)
+    return ok, detail
 
 
 def record_notification(context: str, ok: bool, detail: str):

@@ -28,6 +28,7 @@ from wms.config import (
 from wms.data import clear_and_refresh, refresh_data, validate_runtime_security
 from wms.notifications import test_telegram_connection
 from wms.pages.about import render_about_page
+from wms.pages.accounts import render_accounts_page
 from wms.pages.backup import render_backup_page
 from wms.pages.master import render_master_page
 from wms.pages.notification_status import render_notification_status_page
@@ -51,7 +52,8 @@ if "stok" not in st.session_state:
 with st.sidebar:
     st.markdown("### 📦 WMS Microcement")
     role_now = current_role()
-    st.caption(f"👤 {st.session_state.get('auth_user')}")
+    display_name = st.session_state.get("auth_display_name") or st.session_state.get("auth_user")
+    st.caption(f"👤 {display_name}")
     st.caption(ROLE_LABEL.get(role_now, role_now))
     st.markdown("---")
 
@@ -62,6 +64,9 @@ with st.sidebar:
 
     if has_permission("manage_master"):
         menu_options.append("➕ Kelola Master Item")
+
+    if has_permission("manage_accounts"):
+        menu_options.append("👥 Kelola Akun")
 
     if has_permission("transaction"):
         menu_options.extend(["📥 Barang Masuk", "📤 Barang Keluar"])
@@ -162,6 +167,8 @@ elif active_menu == "Lihat Semua Stok":
     render_stock_live()
 elif active_menu == "Kelola Master Item":
     render_master_page()
+elif active_menu == "Kelola Akun":
+    render_accounts_page()
 elif active_menu in ("Barang Masuk", "Barang Keluar"):
     render_transaction_page(active_menu)
 elif active_menu == "Penyesuaian Stok":

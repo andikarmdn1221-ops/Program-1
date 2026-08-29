@@ -5,8 +5,8 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "8.0-pro-mobile"
-EXPECTED_BACKEND_VERSION = "7.1-production"
+APP_VERSION = "8.1-account-approval"
+EXPECTED_BACKEND_VERSION = "7.2-accounts"
 URL_GSHEET_API = st.secrets.get("URL_GSHEET_API", "")
 API_SHARED_KEY = st.secrets.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = st.secrets.get("AUTH_SIGNING_KEY", "")
@@ -101,4 +101,5 @@ PERMISSIONS = {
     "view_audit": {ROLE_DEVELOPER, ROLE_BOSS},
     "backup": {ROLE_DEVELOPER, ROLE_BOSS, ROLE_ADMIN},
     "reset": {ROLE_DEVELOPER},
+    "manage_accounts": {ROLE_DEVELOPER},
 }
