@@ -77,14 +77,7 @@ def inject_responsive_css():
             box-shadow: 0 4px 16px rgba(15, 23, 42, 0.055);
         }
         .wms-kpi-card::after {
-            content: "";
-            position: absolute;
-            right: -1.5rem;
-            bottom: -2.2rem;
-            width: 6rem;
-            height: 6rem;
-            border-radius: 999px;
-            background: var(--kpi-soft);
+            display: none;
         }
         .wms-kpi-top {
             display: flex;
@@ -111,6 +104,18 @@ def inject_responsive_css():
             background: var(--kpi-soft);
             color: var(--kpi-color);
             font-size: 1rem;
+            overflow: visible;
+        }
+        .wms-kpi-icon svg {
+            display: block;
+            width: 1.12rem;
+            height: 1.12rem;
+            overflow: visible;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
         }
         .wms-kpi-value {
             position: relative;
@@ -168,20 +173,12 @@ def inject_responsive_css():
             border-radius: 0.75rem !important;
             background: #eff6ff !important;
             color: #1d4ed8 !important;
-            font-family: Arial, "Segoe UI Symbol", sans-serif !important;
-            font-size: 1.4rem !important;
+            font-size: 1rem !important;
             font-weight: 650 !important;
-            line-height: 1 !important;
-            overflow: visible !important;
         }
         .st-key-main_refresh .stButton > button:hover {
             border-color: #60a5fa !important;
             background: #dbeafe !important;
-        }
-        .st-key-main_refresh .stButton > button p {
-            margin: 0 !important;
-            font: inherit !important;
-            line-height: 1 !important;
         }
         [data-testid="stAlert"] {
             border-radius: 0.8rem;
@@ -337,8 +334,7 @@ def inject_responsive_css():
                 min-height: 2.55rem !important;
                 height: 2.55rem !important;
                 padding: 0 !important;
-                font-size: 1.4rem !important;
-                line-height: 1 !important;
+                font-size: 1rem !important;
             }
 
             /* Tabs dapat digeser horizontal, tidak memaksa layar melebar. */
@@ -1681,18 +1677,41 @@ def _current_stock_view():
 
 def render_dashboard_kpis(active_count: int, total_stock: int, critical_count: int, out_count: int):
     """KPI berbasis HTML agar susunan 2x2 di HP tidak bergantung pada st.columns."""
+    icons = {
+        "package": (
+            '<svg viewBox="0 0 24 24" aria-hidden="true">'
+            '<path d="M21 8 12 3 3 8l9 5 9-5Z"/>'
+            '<path d="m3 8 9 5 9-5v8l-9 5-9-5V8Z"/>'
+            '<path d="M12 13v8"/></svg>'
+        ),
+        "stock": (
+            '<svg viewBox="0 0 24 24" aria-hidden="true">'
+            '<rect x="3" y="4" width="18" height="16" rx="2"/>'
+            '<path d="M3 9h18M8 9v11M16 9v11"/></svg>'
+        ),
+        "critical": (
+            '<svg viewBox="0 0 24 24" aria-hidden="true">'
+            '<path d="M10.3 4.2 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z"/>'
+            '<path d="M12 9v4M12 17h.01"/></svg>'
+        ),
+        "empty": (
+            '<svg viewBox="0 0 24 24" aria-hidden="true">'
+            '<circle cx="12" cy="12" r="9"/>'
+            '<path d="M12 7v6M12 17h.01"/></svg>'
+        ),
+    }
     cards = [
-        ("wms-kpi-blue", "📦", "Barang Aktif", str(active_count)),
-        ("wms-kpi-indigo", "▦", "Total Stok", f"{total_stock} pcs"),
-        ("wms-kpi-amber", "⚠", "Stok Kritis", str(critical_count)),
-        ("wms-kpi-red", "!", "Stok Habis", str(out_count)),
+        ("wms-kpi-blue", icons["package"], "Barang Aktif", str(active_count)),
+        ("wms-kpi-indigo", icons["stock"], "Total Stok", f"{total_stock} pcs"),
+        ("wms-kpi-amber", icons["critical"], "Stok Kritis", str(critical_count)),
+        ("wms-kpi-red", icons["empty"], "Stok Habis", str(out_count)),
     ]
     card_html = "".join(
         (
             f'<div class="wms-kpi-card {tone}">'
             f'<div class="wms-kpi-top">'
             f'<span class="wms-kpi-label">{html.escape(label)}</span>'
-            f'<span class="wms-kpi-icon">{html.escape(icon)}</span>'
+            f'<span class="wms-kpi-icon">{icon}</span>'
             f'</div>'
             f'<div class="wms-kpi-value">{html.escape(value)}</div>'
             f'</div>'
@@ -2132,7 +2151,7 @@ with st.sidebar:
 # ============================================================
 st.title(f"📦 {active_menu}")
 st.caption(f"{waktu_display()} · v{APP_VERSION}")
-if st.button("↻", help="Segarkan data", key="main_refresh"):
+if st.button("🔄", help="Segarkan data", key="main_refresh"):
     clear_and_refresh()
     st.rerun()
 
