@@ -27,8 +27,8 @@ penghapusan akun permanen, notifikasi Telegram, dan pemeriksaan keamanan otomati
 2. Pengguna mengisi nama, username, jabatan, role Staff/Admin yang diminta, dan password.
 3. Akun disimpan dengan status `PENDING`; password asli tidak disimpan.
 4. Developer menerima notifikasi Telegram tanpa informasi password.
-5. Developer dapat menekan tombol `Staff`, `Admin`, `Boss`, `Developer`, atau `Tolak` langsung dari Telegram.
-6. Menu `Kelola Akun` tetap tersedia untuk mengubah role atau menonaktifkan akun setelahnya.
+5. Developer dapat menekan tombol `Staff`, `Admin`, atau `Tolak` langsung dari Telegram.
+6. Role `Boss` dan `Developer` hanya dapat diberikan melalui menu `Kelola Akun`; menu ini juga tersedia untuk mengubah role atau menonaktifkan akun.
 
 ## Deploy ke Streamlit
 
@@ -72,7 +72,7 @@ setiap push dan pull request.
 - Akun dinamis yang dinonaktifkan atau dihapus kehilangan sesi maksimal dalam 60 detik.
 - Akun dapat dihapus permanen dengan konfirmasi username; audit transaksi tetap dipertahankan.
 - Backend menolak penghapusan Developer aktif terakhir.
-- Pemberian role Developer melalui tombol Telegram dinonaktifkan; gunakan halaman Kelola Akun.
+- Pemberian role Boss dan Developer melalui tombol Telegram dinonaktifkan; gunakan halaman Kelola Akun.
 - CI menolak `secrets.toml`, token Telegram, private key, dan pola credential lain.
 - Password akun dinamis dibatasi 8–128 karakter dan input jabatan divalidasi.
 
