@@ -175,7 +175,6 @@ def send_account_request_notification(
                 {"text": "✅ Staff", "callback_data": f"acc|{request_id}|Staff"},
                 {"text": "✅ Admin", "callback_data": f"acc|{request_id}|Admin"},
             ],
-            [{"text": "✅ Boss", "callback_data": f"acc|{request_id}|Boss"}],
             [{"text": "❌ Tolak", "callback_data": f"acc|{request_id}|REJECT"}],
         ]
     }
