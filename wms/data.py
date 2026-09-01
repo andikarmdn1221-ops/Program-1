@@ -24,28 +24,73 @@ from .config import (
     URL_GSHEET_API,
     WRITE_BLOCK_WHEN_OFFLINE,
 )
-from .utils import parse_tx_datetime, safe_int, waktu_display
+from .utils import clean_item_name, parse_tx_datetime, safe_int, waktu_display
+
+
+def _has_header(row, required_labels) -> bool:
+    labels = {str(value or "").strip().casefold() for value in (row or [])}
+    return all(str(label).casefold() in labels for label in required_labels)
+
+
+def normalize_item_status(value) -> str:
+    normalized = str(value or "Aktif").strip().casefold()
+    if normalized == "aktif":
+        return "Aktif"
+    if normalized in {"nonaktif", "non-aktif", "inactive"}:
+        return "Nonaktif"
+    raise RuntimeError(f"Status master barang tidak valid: {value!s}")
+
+
+def _cache_scope() -> tuple[str, str]:
+    """Pisahkan cache per identitas agar hasil Developer tidak dipakai sesi lain."""
+    return (
+        str(st.session_state.get("auth_user", "Unknown")).strip().casefold(),
+        str(st.session_state.get("auth_role", "Staff")).strip().casefold(),
+    )
+
 
 def normalize_stock_rows(raw_rows):
     stock = {}
     master = {}
     rows = raw_rows or []
-    if rows and isinstance(rows[0], list):
+    if (
+        rows
+        and isinstance(rows[0], list)
+        and _has_header(rows[0], {"Nama Barang", "Jumlah Stok"})
+    ):
         rows = rows[1:]
 
+    seen_names = set()
     for row in rows:
         if not isinstance(row, list) or len(row) < 2:
             continue
-        nama = str(row[0]).strip()
+        nama = clean_item_name(row[0])
         if not nama:
             continue
+        normalized_name = nama.casefold()
+        if normalized_name in seen_names:
+            raise RuntimeError(f"Nama barang duplikat terdeteksi: '{nama}'")
+        seen_names.add(normalized_name)
         raw_stock = str(row[1]).strip()
         if not raw_stock or not re.fullmatch(r"-?\d+(?:\.0+)?", raw_stock):
             raise RuntimeError(f"Jumlah stok untuk '{nama}' bukan angka yang valid")
-        stock[nama] = safe_int(row[1])
+        quantity = safe_int(row[1])
+        if quantity < 0:
+            raise RuntimeError(f"Jumlah stok untuk '{nama}' tidak boleh negatif")
+
+        raw_minimum = str(row[3]).strip() if len(row) > 3 else "5"
+        if not raw_minimum:
+            raw_minimum = "5"
+        if not re.fullmatch(r"\d+(?:\.0+)?", raw_minimum):
+            raise RuntimeError(f"Batas minimum untuk '{nama}' bukan angka yang valid")
+        minimum = safe_int(raw_minimum, 5)
+        if minimum < 1:
+            raise RuntimeError(f"Batas minimum untuk '{nama}' minimal 1")
+
+        stock[nama] = quantity
         master[nama] = {
-            "status": str(row[2]).strip() if len(row) > 2 and str(row[2]).strip() else "Aktif",
-            "min_stok": safe_int(row[3], 5) if len(row) > 3 else 5,
+            "status": normalize_item_status(row[2] if len(row) > 2 else "Aktif"),
+            "min_stok": minimum,
         }
 
     return stock, master
@@ -54,7 +99,11 @@ def normalize_stock_rows(raw_rows):
 def normalize_history_rows(raw_rows):
     result = []
     rows = raw_rows or []
-    if rows and isinstance(rows[0], list):
+    if (
+        rows
+        and isinstance(rows[0], list)
+        and _has_header(rows[0], {"ID Transaksi", "Waktu"})
+    ):
         header = [str(x).strip() for x in rows[0]]
         data_rows = rows[1:]
     else:
@@ -78,7 +127,10 @@ def normalize_history_rows(raw_rows):
         dt = parse_tx_datetime(waktu)
         result.append(
             {
-                "ID Transaksi": "LEGACY-" + hashlib.sha1("|".join(map(str, row[:5])).encode()).hexdigest()[:10].upper(),
+                "ID Transaksi": "LEGACY-"
+                + hashlib.sha1("|".join(map(str, row[:5])).encode())
+                .hexdigest()[:10]
+                .upper(),
                 "Waktu": waktu,
                 "Tanggal": dt.strftime("%d-%m-%Y") if dt else "",
                 "Tipe": str(row[1]),
@@ -98,7 +150,7 @@ def normalize_audit_rows(raw_rows):
     if not rows:
         return []
 
-    if isinstance(rows[0], list):
+    if isinstance(rows[0], list) and _has_header(rows[0], {"Waktu", "Aksi"}):
         header = [str(x).strip() for x in rows[0]]
         data_rows = rows[1:]
     else:
@@ -118,14 +170,16 @@ def normalize_audit_rows(raw_rows):
     for row in data_rows:
         if not isinstance(row, list) or len(row) < 1:
             continue
-        result.append({
-            "Waktu": row[0] if len(row) > 0 else "",
-            "User": "",
-            "Role": "",
-            "Aksi": row[1] if len(row) > 1 else "",
-            "ID Transaksi": row[2] if len(row) > 2 else "",
-            "Detail": row[3] if len(row) > 3 else "",
-        })
+        result.append(
+            {
+                "Waktu": row[0] if len(row) > 0 else "",
+                "User": "",
+                "Role": "",
+                "Aksi": row[1] if len(row) > 1 else "",
+                "ID Transaksi": row[2] if len(row) > 2 else "",
+                "Detail": row[3] if len(row) > 3 else "",
+            }
+        )
     return result
 
 
@@ -146,14 +200,14 @@ def normalize_server_data(data):
 
 
 @st.cache_data(ttl=DATA_CACHE_TTL_SECONDS, show_spinner=False)
-def load_data_cached(api_url: str):
-    del api_url  # cache key berubah bila URL deployment berubah
+def load_data_cached(api_url: str, actor: str, role: str):
+    del api_url, actor, role  # seluruh nilai tetap menjadi bagian dari cache key
     return api_get()
 
 
 def refresh_data(force=False, quiet=False):
     try:
-        raw = api_get() if force else load_data_cached(URL_GSHEET_API)
+        raw = api_get() if force else load_data_cached(URL_GSHEET_API, *_cache_scope())
         stock, master, history, audit = normalize_server_data(raw)
         st.session_state.stok = stock
         st.session_state.master_info = master
@@ -163,13 +217,19 @@ def refresh_data(force=False, quiet=False):
         st.session_state.data_source = "server"
         st.session_state.last_server_sync = waktu_display()
         st.session_state.last_server_sync_epoch = time.time()
-        revision = str(raw.get("data_revision", "") or "") if isinstance(raw, dict) else ""
-        backend_version = str(raw.get("backend_version", "") or "") if isinstance(raw, dict) else ""
+        revision = (
+            str(raw.get("data_revision", "") or "") if isinstance(raw, dict) else ""
+        )
+        backend_version = (
+            str(raw.get("backend_version", "") or "") if isinstance(raw, dict) else ""
+        )
         if revision:
             st.session_state.server_revision = revision
         if backend_version:
             st.session_state.backend_version = backend_version
-            st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
+            st.session_state.backend_version_mismatch = (
+                backend_version != EXPECTED_BACKEND_VERSION
+            )
         st.session_state.health_cache = {
             "ok": True,
             "backend_version": backend_version,
@@ -183,7 +243,9 @@ def refresh_data(force=False, quiet=False):
         if "stok" not in st.session_state:
             if OFFLINE_USE_DEFAULT_STOCK:
                 st.session_state.stok = STOK_DEFAULT.copy()
-                st.session_state.master_info = {k: v.copy() for k, v in MASTER_DEFAULT.items()}
+                st.session_state.master_info = {
+                    k: v.copy() for k, v in MASTER_DEFAULT.items()
+                }
                 st.session_state.data_source = "default_offline"
             else:
                 st.session_state.stok = {}
@@ -199,8 +261,8 @@ def refresh_data(force=False, quiet=False):
 
 
 def clear_and_refresh():
-    # Bersihkan hanya cache pembacaan database; cache ekspor pengguna lain tidak ikut terhapus.
-    load_data_cached.clear()
+    # Bersihkan entri identitas aktif saja; sesi pengguna lain tidak ikut kehilangan cache.
+    load_data_cached.clear(URL_GSHEET_API, *_cache_scope())
     refresh_data(force=True)
 
 
@@ -215,7 +277,9 @@ def _apply_health_to_session(health: dict):
     st.session_state.is_connected = True
     if backend_version:
         st.session_state.backend_version = backend_version
-        st.session_state.backend_version_mismatch = backend_version != EXPECTED_BACKEND_VERSION
+        st.session_state.backend_version_mismatch = (
+            backend_version != EXPECTED_BACKEND_VERSION
+        )
     return revision
 
 
@@ -261,7 +325,9 @@ def require_online_operation():
             st.session_state.data_source = "last_known_session"
 
     if not st.session_state.get("is_connected"):
-        st.error("⛔ Operasi perubahan stok dinonaktifkan karena database sedang offline. Segarkan koneksi terlebih dahulu.")
+        st.error(
+            "⛔ Operasi perubahan stok dinonaktifkan karena database sedang offline. Segarkan koneksi terlebih dahulu."
+        )
         st.stop()
 
 

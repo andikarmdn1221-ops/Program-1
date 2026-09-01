@@ -7,13 +7,18 @@ import streamlit as st
 from fpdf import FPDF
 
 from .config import APP_VERSION, AUDIT_COLUMNS, RIWAYAT_COLUMNS
-from .utils import natural_key, sanitize_pdf_text, waktu_display
+from .utils import natural_key, sanitize_pdf_text, spreadsheet_safe_value, waktu_display
+
+
+def _excel_safe_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    return df.map(spreadsheet_safe_value)
+
 
 @st.cache_data(ttl=180, show_spinner=False)
 def excel_bytes(df, sheet_name="Data"):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name=sheet_name)
+        _excel_safe_dataframe(df).to_excel(writer, index=False, sheet_name=sheet_name)
     return output.getvalue()
 
 
@@ -35,28 +40,43 @@ def full_backup_bytes(stock, master, history, audit):
     for tx in history:
         proof_url = str(tx.get("Bukti URL", "") or "").strip()
         if proof_url:
-            evidence_rows.append({
-                "ID Transaksi": tx.get("ID Transaksi", ""),
-                "Waktu": tx.get("Waktu", ""),
-                "Barang": tx.get("Barang", ""),
-                "Bukti URL": proof_url,
-            })
+            evidence_rows.append(
+                {
+                    "ID Transaksi": tx.get("ID Transaksi", ""),
+                    "Waktu": tx.get("Waktu", ""),
+                    "Barang": tx.get("Barang", ""),
+                    "Bukti URL": proof_url,
+                }
+            )
 
     readme_rows = [
         {"Keterangan": "Backup dibuat", "Nilai": waktu_display()},
         {"Keterangan": "Versi aplikasi", "Nilai": APP_VERSION},
-        {"Keterangan": "Catatan bukti", "Nilai": "File Excel menyimpan manifest/URL bukti. File gambar asli tetap berada di Google Drive dan harus dibackup terpisah."},
+        {
+            "Keterangan": "Catatan bukti",
+            "Nilai": "File Excel menyimpan manifest/URL bukti. File gambar asli tetap berada di Google Drive dan harus dibackup terpisah.",
+        },
     ]
 
     out = io.BytesIO()
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
-        pd.DataFrame(stock_rows).to_excel(writer, index=False, sheet_name="Stok Barang")
-        pd.DataFrame(history, columns=RIWAYAT_COLUMNS).to_excel(writer, index=False, sheet_name="Riwayat")
-        pd.DataFrame(audit, columns=AUDIT_COLUMNS).to_excel(writer, index=False, sheet_name="Audit")
-        pd.DataFrame(evidence_rows, columns=["ID Transaksi", "Waktu", "Barang", "Bukti URL"]).to_excel(
-            writer, index=False, sheet_name="Manifest Bukti"
+        _excel_safe_dataframe(pd.DataFrame(stock_rows)).to_excel(
+            writer, index=False, sheet_name="Stok Barang"
         )
-        pd.DataFrame(readme_rows).to_excel(writer, index=False, sheet_name="README")
+        _excel_safe_dataframe(pd.DataFrame(history, columns=RIWAYAT_COLUMNS)).to_excel(
+            writer, index=False, sheet_name="Riwayat"
+        )
+        _excel_safe_dataframe(pd.DataFrame(audit, columns=AUDIT_COLUMNS)).to_excel(
+            writer, index=False, sheet_name="Audit"
+        )
+        _excel_safe_dataframe(
+            pd.DataFrame(
+                evidence_rows, columns=["ID Transaksi", "Waktu", "Barang", "Bukti URL"]
+            )
+        ).to_excel(writer, index=False, sheet_name="Manifest Bukti")
+        _excel_safe_dataframe(pd.DataFrame(readme_rows)).to_excel(
+            writer, index=False, sheet_name="README"
+        )
     return out.getvalue()
 
 

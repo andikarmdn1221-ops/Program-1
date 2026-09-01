@@ -1,0 +1,9 @@
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Streamlit meminta set_page_config dipanggil sebelum modul aplikasi memakai API UI.
+"app.py" = ["E402"]

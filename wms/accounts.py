@@ -8,6 +8,10 @@ from .api import api_post
 from .config import AUTH_SIGNING_KEY, PUBLIC_REGISTRATION_ROLES, VALID_ROLES
 
 
+MIN_PASSWORD_LENGTH = 8
+MAX_PASSWORD_LENGTH = 128
+
+
 def normalize_username(value: str) -> str:
     username = str(value or "").strip().lower()
     if not re.fullmatch(r"[a-z0-9._-]{4,32}", username):
@@ -28,22 +32,45 @@ def normalize_full_name(value: str) -> str:
     return name
 
 
+def normalize_position(value: str) -> str:
+    position = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(position) < 2:
+        raise ValueError("Jabatan minimal 2 karakter.")
+    if len(position) > 80:
+        raise ValueError("Jabatan maksimal 80 karakter.")
+    if any(ord(char) < 32 for char in position):
+        raise ValueError("Jabatan mengandung karakter yang tidak valid.")
+    return position
+
+
+def validate_password(password: str) -> str:
+    value = str(password or "")
+    if len(value) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password minimal {MIN_PASSWORD_LENGTH} karakter.")
+    if len(value) > MAX_PASSWORD_LENGTH:
+        raise ValueError(f"Password maksimal {MAX_PASSWORD_LENGTH} karakter.")
+    return value
+
+
 def password_verifier(password: str, username: str) -> str:
     """Buat verifier unik per username; password asli tidak dikirim atau disimpan."""
     if not AUTH_SIGNING_KEY:
         raise RuntimeError("AUTH_SIGNING_KEY diperlukan untuk fitur akun dinamis.")
+    clean_password = str(password or "")
     return hmac.new(
         str(AUTH_SIGNING_KEY).encode("utf-8"),
-        f"{normalize_username(username)}\0{password}".encode("utf-8"),
+        f"{normalize_username(username)}\0{clean_password}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
 
 
-def register_account(full_name: str, username: str, password: str, requested_role: str, position: str):
-    if len(password) < 8:
-        raise ValueError("Password minimal 8 karakter.")
+def register_account(
+    full_name: str, username: str, password: str, requested_role: str, position: str
+):
     if requested_role not in PUBLIC_REGISTRATION_ROLES:
-        raise ValueError("Pendaftaran publik hanya dapat meminta role Staff atau Admin.")
+        raise ValueError(
+            "Pendaftaran publik hanya dapat meminta role Staff atau Admin."
+        )
     clean_username = normalize_username(username)
     return api_post(
         {
@@ -52,9 +79,11 @@ def register_account(full_name: str, username: str, password: str, requested_rol
             "role": "Staff",
             "full_name": normalize_full_name(full_name),
             "username": clean_username,
-            "password_verifier": password_verifier(password, clean_username),
+            "password_verifier": password_verifier(
+                validate_password(password), clean_username
+            ),
             "requested_role": requested_role,
-            "position": re.sub(r"\s+", " ", str(position or "")).strip()[:80],
+            "position": normalize_position(position),
         },
         timeout=30,
     )
@@ -63,6 +92,7 @@ def register_account(full_name: str, username: str, password: str, requested_rol
 def authenticate_account(username: str, password: str):
     try:
         clean_username = normalize_username(username)
+        validate_password(password)
     except ValueError:
         return {"authenticated": False, "status": "INVALID"}
     return api_post(
@@ -80,7 +110,9 @@ def authenticate_account(username: str, password: str):
 def list_accounts():
     from .auth import actor_payload
 
-    return api_post({"action": "account_list", **actor_payload()}, timeout=30).get("accounts", [])
+    return api_post({"action": "account_list", **actor_payload()}, timeout=30).get(
+        "accounts", []
+    )
 
 
 def approve_account(username: str, role: str):
@@ -103,7 +135,11 @@ def reject_account(username: str):
     from .auth import actor_payload
 
     return api_post(
-        {"action": "account_reject", "username": normalize_username(username), **actor_payload()},
+        {
+            "action": "account_reject",
+            "username": normalize_username(username),
+            **actor_payload(),
+        },
         timeout=30,
     )
 

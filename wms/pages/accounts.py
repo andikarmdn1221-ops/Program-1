@@ -17,11 +17,16 @@ def _role_index(role: str) -> int:
     return ROLES.index(role) if role in ROLES else 0
 
 
+def _same_username(left, right) -> bool:
+    return str(left or "").strip().casefold() == str(right or "").strip().casefold()
+
+
 def render_accounts_page():
     require_permission("manage_accounts")
     require_online_operation()
     st.caption(
-        "Hanya Developer yang dapat menyetujui akun, menentukan role final, mengubah role, atau menonaktifkan akun."
+        "Hanya Developer yang dapat menyetujui akun, menentukan role final, mengubah role, atau menonaktifkan akun. "
+        "Status Dinonaktifkan dapat dipulihkan kembali kapan saja."
     )
 
     try:
@@ -30,8 +35,12 @@ def render_accounts_page():
         show_api_error("Daftar akun gagal dimuat", exc)
         return
 
-    pending = [row for row in accounts if str(row.get("status", "")).upper() == "PENDING"]
-    managed = [row for row in accounts if str(row.get("status", "")).upper() != "PENDING"]
+    pending = [
+        row for row in accounts if str(row.get("status", "")).upper() == "PENDING"
+    ]
+    managed = [
+        row for row in accounts if str(row.get("status", "")).upper() != "PENDING"
+    ]
 
     st.subheader(f"⏳ Menunggu Persetujuan ({len(pending)})")
     if not pending:
@@ -42,7 +51,9 @@ def render_accounts_page():
         title = f"{row.get('full_name', username)} · @{username}"
         with st.expander(title, expanded=True):
             st.write(f"Jabatan: **{row.get('position') or '-'}**")
-            st.write(f"Role yang diminta: **{row.get('requested_role') or ROLE_STAFF}**")
+            st.write(
+                f"Role yang diminta: **{row.get('requested_role') or ROLE_STAFF}**"
+            )
             st.caption(f"Diajukan: {row.get('created_at') or '-'}")
             selected_role = st.selectbox(
                 "Role final",
@@ -99,12 +110,24 @@ def render_accounts_page():
 
     for row in managed:
         username = str(row.get("username", ""))
-        with st.expander(f"Atur @{username}", expanded=False):
+        is_current_account = _same_username(username, st.session_state.get("auth_user"))
+        status_label = {
+            "ACTIVE": "Aktif",
+            "SUSPENDED": "Dinonaktifkan",
+            "REJECTED": "Ditolak",
+        }.get(str(row.get("status") or "").upper(), str(row.get("status") or "-"))
+        with st.expander(f"Atur @{username} · {status_label}", expanded=False):
+            if is_current_account:
+                st.info(
+                    "Ini adalah akun yang sedang digunakan. Role dan status akun sendiri dikunci "
+                    "agar Developer tidak kehilangan akses. Gunakan akun Developer lain untuk mengubahnya."
+                )
             new_role = st.selectbox(
                 "Role",
                 ROLES,
                 index=_role_index(str(row.get("role") or ROLE_STAFF)),
                 key=f"edit_role_{username}",
+                disabled=is_current_account,
             )
             current_status = str(row.get("status") or "SUSPENDED").upper()
             status_options = ["ACTIVE", "SUSPENDED"]
@@ -113,6 +136,10 @@ def render_accounts_page():
                 status_options,
                 index=0 if current_status == "ACTIVE" else 1,
                 key=f"edit_status_{username}",
+                format_func=lambda value: (
+                    "Aktif" if value == "ACTIVE" else "Dinonaktifkan"
+                ),
+                disabled=is_current_account,
             )
             developer_confirmed = True
             if new_role == ROLE_DEVELOPER:
@@ -123,7 +150,7 @@ def render_accounts_page():
             if st.button(
                 "💾 Simpan Perubahan",
                 use_container_width=True,
-                disabled=not developer_confirmed,
+                disabled=is_current_account or not developer_confirmed,
                 key=f"save_account_{username}",
             ):
                 try:
