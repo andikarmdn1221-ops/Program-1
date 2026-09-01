@@ -998,9 +998,6 @@ function verifySignedRequest_(payload) {
   }
   const cache = CacheService.getScriptCache();
   const nonceKey = "nonce_" + nonce;
-  if (cache.get(nonceKey)) {
-    throw new Error("Request duplikat ditolak.");
-  }
 
   const unsigned = {};
   Object.keys(payload).forEach(function (key) {
@@ -1036,7 +1033,16 @@ function verifySignedRequest_(payload) {
   ) {
     throw new Error("Signature request tidak valid.");
   }
-  cache.put(nonceKey, "1", 600);
+  const nonceLock = LockService.getScriptLock();
+  nonceLock.waitLock(5000);
+  try {
+    if (cache.get(nonceKey)) {
+      throw new Error("Request duplikat ditolak.");
+    }
+    cache.put(nonceKey, "1", 600);
+  } finally {
+    nonceLock.releaseLock();
+  }
 }
 
 function stableStringify_(value) {
