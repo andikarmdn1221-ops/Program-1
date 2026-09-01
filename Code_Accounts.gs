@@ -1534,10 +1534,10 @@ function handleTelegramWebhook_(e) {
     const decision = parts[2];
     if (
       decision !== "REJECT" &&
-      ["Staff", "Admin", "Boss"].indexOf(decision) < 0
+      ["Staff", "Admin"].indexOf(decision) < 0
     ) {
       throw new Error(
-        "Role Developer hanya dapat diberikan dari halaman Kelola Akun."
+        "Role Boss dan Developer hanya dapat diberikan dari halaman Kelola Akun."
       );
     }
 
