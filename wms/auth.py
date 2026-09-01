@@ -20,6 +20,7 @@ from .config import (
     ROLE_BOSS,
     ROLE_DEVELOPER,
     ROLE_STAFF,
+    SESSION_REVALIDATE_SECONDS,
     SESSION_TIMEOUT_MINUTES,
 )
 from .security import LoginRateLimiter
@@ -131,16 +132,20 @@ def clear_auth_session():
         "auth_role",
         "auth_login_at",
         "auth_last_activity",
+        "auth_source",
+        "auth_last_validation",
     ):
         st.session_state.pop(key, None)
 
 
-def _complete_login(username: str, role: str, now: float, display_name=""):
+def _complete_login(username: str, role: str, now: float, display_name="", source="local"):
     st.session_state.auth_user = username
     st.session_state.auth_display_name = display_name or username
     st.session_state.auth_role = normalize_role(role)
     st.session_state.auth_login_at = now
     st.session_state.auth_last_activity = now
+    st.session_state.auth_source = source
+    st.session_state.auth_last_validation = now
     st.session_state.login_attempts = 0
     st.session_state.login_lock_until = 0
     st.rerun()
@@ -157,6 +162,51 @@ def _record_failed_login(now: float):
         )
     else:
         st.error(f"Username atau password salah. Sisa percobaan: {remaining_attempts}.")
+
+
+def _revalidate_active_session(users: dict, now: float) -> bool:
+    """Cabut sesi akun yang dihapus/dinonaktifkan dan muat role terbaru."""
+    last_validation = float(st.session_state.get("auth_last_validation", 0) or 0)
+    if now - last_validation < SESSION_REVALIDATE_SECONDS:
+        return True
+
+    username = str(st.session_state.get("auth_user") or "")
+    source = str(st.session_state.get("auth_source") or "local")
+    try:
+        if source == "dynamic":
+            from .accounts import validate_account_session
+
+            result = validate_account_session(username)
+            status = str(result.get("status") or "").upper()
+            if not result.get("active") or status != "ACTIVE":
+                clear_auth_session()
+                st.error("Akun telah dinonaktifkan atau dihapus. Silakan hubungi Developer.")
+                return False
+            st.session_state.auth_role = normalize_role(result.get("role"))
+            st.session_state.auth_display_name = (
+                str(result.get("full_name") or username)
+            )
+        else:
+            configured_username, cfg = find_local_user(users, username)
+            if not cfg:
+                clear_auth_session()
+                st.error("Akun lokal tidak lagi tersedia di konfigurasi.")
+                return False
+            st.session_state.auth_user = configured_username or username
+            st.session_state.auth_role = normalize_role(cfg.get("role"))
+            st.session_state.auth_display_name = str(
+                cfg.get("display_name") or configured_username or username
+            )
+    except Exception:
+        clear_auth_session()
+        st.error(
+            "Sesi tidak dapat diverifikasi dengan aman. Silakan masuk kembali "
+            "setelah koneksi database pulih."
+        )
+        return False
+
+    st.session_state.auth_last_validation = now
+    return True
 
 
 def login_gate():
@@ -184,7 +234,7 @@ def login_gate():
             st.warning(
                 "Sesi login berakhir karena tidak aktif terlalu lama. Silakan masuk kembali."
             )
-        else:
+        elif _revalidate_active_session(users, now):
             st.session_state.auth_role = normalize_role(
                 st.session_state.get("auth_role")
             )
@@ -236,6 +286,7 @@ def login_gate():
                     cfg.get("role", ROLE_STAFF),
                     now,
                     str(cfg.get("display_name") or configured_username or username),
+                    source="local",
                 )
 
             try:
@@ -252,6 +303,7 @@ def login_gate():
                     str(dynamic.get("role") or ROLE_STAFF),
                     now,
                     str(dynamic.get("full_name") or username),
+                    source="dynamic",
                 )
 
             status = str(dynamic.get("status") or "").upper()
@@ -347,6 +399,7 @@ def actor_payload() -> dict:
     return {
         "actor": str(st.session_state.get("auth_user", "Unknown")),
         "role": current_role(),
+        "auth_source": str(st.session_state.get("auth_source", "local")),
         "app_version": APP_VERSION,
     }
 
