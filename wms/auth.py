@@ -31,6 +31,22 @@ LOGIN_RATE_LIMITER = LoginRateLimiter(
     lock_seconds=LOGIN_LOCK_SECONDS,
 )
 
+
+def find_local_user(users: dict, username: str):
+    """Cari akun secrets secara case-insensitive dan tolak konfigurasi ambigu."""
+    wanted = str(username or "").strip().casefold()
+    matches = [
+        (str(name), dict(config))
+        for name, config in (users or {}).items()
+        if str(name).strip().casefold() == wanted
+    ]
+    if len(matches) > 1:
+        raise RuntimeError(
+            "Konfigurasi USERS memiliki username duplikat yang hanya berbeda huruf besar/kecil."
+        )
+    return matches[0] if matches else (None, None)
+
+
 def account_security_report():
     """Klasifikasikan penyimpanan password tanpa pernah menampilkan password/hash lengkap."""
     report = []
@@ -47,6 +63,7 @@ def account_security_report():
             status = "TIDAK_VALID"
         report.append((str(username), status))
     return report
+
 
 def get_users_config():
     try:
@@ -81,7 +98,9 @@ def password_matches(input_password: str, configured: dict) -> bool:
     if configured_hash:
         if configured_hash.startswith("pbkdf2_sha256$"):
             try:
-                _algo, iterations_txt, salt_hex, expected_hex = configured_hash.split("$", 3)
+                _algo, iterations_txt, salt_hex, expected_hex = configured_hash.split(
+                    "$", 3
+                )
                 iterations = int(iterations_txt)
                 if iterations < 100_000:
                     return False
@@ -106,7 +125,13 @@ def password_matches(input_password: str, configured: dict) -> bool:
 
 
 def clear_auth_session():
-    for key in ("auth_user", "auth_display_name", "auth_role", "auth_login_at", "auth_last_activity"):
+    for key in (
+        "auth_user",
+        "auth_display_name",
+        "auth_role",
+        "auth_login_at",
+        "auth_last_activity",
+    ):
         st.session_state.pop(key, None)
 
 
@@ -146,7 +171,9 @@ def login_gate():
             st.session_state.auth_last_activity = now
             return
         st.error("Konfigurasi USERS belum dibuat di Streamlit Secrets.")
-        st.info("Tambahkan akun Developer, Boss, Admin, dan Staff di Streamlit Secrets sebelum aplikasi digunakan.")
+        st.info(
+            "Tambahkan akun Developer, Boss, Admin, dan Staff di Streamlit Secrets sebelum aplikasi digunakan."
+        )
         st.stop()
 
     if st.session_state.get("auth_user"):
@@ -154,9 +181,13 @@ def login_gate():
         timeout_seconds = SESSION_TIMEOUT_MINUTES * 60
         if now - last_activity > timeout_seconds:
             clear_auth_session()
-            st.warning("Sesi login berakhir karena tidak aktif terlalu lama. Silakan masuk kembali.")
+            st.warning(
+                "Sesi login berakhir karena tidak aktif terlalu lama. Silakan masuk kembali."
+            )
         else:
-            st.session_state.auth_role = normalize_role(st.session_state.get("auth_role"))
+            st.session_state.auth_role = normalize_role(
+                st.session_state.get("auth_role")
+            )
             st.session_state.auth_last_activity = now
             return
 
@@ -171,7 +202,9 @@ def login_gate():
 
     if lock_until > now:
         remaining = max(1, int(lock_until - now))
-        st.error(f"Terlalu banyak percobaan login gagal. Coba lagi dalam {remaining} detik.")
+        st.error(
+            f"Terlalu banyak percobaan login gagal. Coba lagi dalam {remaining} detik."
+        )
         st.stop()
 
     login_tab, register_tab = st.tabs(["Masuk", "Daftar Akun Baru"])
@@ -191,10 +224,19 @@ def login_gate():
                 )
                 st.stop()
 
-            cfg = users.get(username)
-            if cfg and password_matches(password, dict(cfg)):
+            try:
+                configured_username, cfg = find_local_user(users, username)
+            except RuntimeError as exc:
+                st.error(str(exc))
+                st.stop()
+            if cfg and password_matches(password, cfg):
                 LOGIN_RATE_LIMITER.record_success(username)
-                _complete_login(username, dict(cfg).get("role", ROLE_STAFF), now)
+                _complete_login(
+                    configured_username or username,
+                    cfg.get("role", ROLE_STAFF),
+                    now,
+                    str(cfg.get("display_name") or configured_username or username),
+                )
 
             try:
                 from .accounts import authenticate_account
@@ -241,7 +283,9 @@ def login_gate():
                 role_choices,
                 help="Developer akan menentukan role final saat menyetujui.",
             )
-            new_password = st.text_input("Password", type="password", key="register_password")
+            new_password = st.text_input(
+                "Password", type="password", key="register_password"
+            )
             confirm_password = st.text_input(
                 "Ulangi password", type="password", key="register_password_confirm"
             )
@@ -339,7 +383,9 @@ def notification_flash(success_message: str, notification_results):
             success_message + " Namun notifikasi Telegram gagal: " + "; ".join(failed),
         )
     else:
-        suffix = " Notifikasi Telegram berhasil dikirim." if notification_results else ""
+        suffix = (
+            " Notifikasi Telegram berhasil dikirim." if notification_results else ""
+        )
         set_flash("success", success_message + suffix)
 
 

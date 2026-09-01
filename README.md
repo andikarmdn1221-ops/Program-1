@@ -51,10 +51,30 @@ memberikannya sebagai role final dari menu `Kelola Akun`.
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m compileall -q app.py wms tests
+python -m ruff check app.py wms tests
 python -m pytest
 ```
 
 Workflow `.github/workflows/quality.yml` menjalankan pemeriksaan yang sama pada
 setiap push dan pull request.
+
+## Perlindungan v8.3
+
+- Login akun di Streamlit Secrets tidak lagi gagal hanya karena perbedaan huruf besar/kecil.
+- Cache pembacaan database dipisahkan per username dan role agar data sesi tidak tertukar.
+- Data server dengan stok negatif, minimum tidak valid, status asing, atau nama barang duplikat akan ditolak.
+- Data riwayat/audit format lama tanpa baris header tidak lagi kehilangan catatan pertama.
+- Teks pengguna dinetralkan saat ekspor Excel agar tidak dijalankan sebagai formula.
+- Developer tidak dapat menonaktifkan atau menurunkan role akun yang sedang dipakai sendiri.
+- Password akun dinamis dibatasi 8–128 karakter dan input jabatan divalidasi.
+
+Untuk akun di Streamlit Secrets, `display_name` dapat ditambahkan secara opsional:
+
+```toml
+[USERS.developer]
+display_name = "Andika"
+role = "Developer"
+password_hash = "pbkdf2_sha256$ITERATIONS$SALT_HEX$DIGEST_HEX"
+```
 
 Backend yang diperlukan adalah versi `7.2-accounts`.

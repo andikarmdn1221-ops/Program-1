@@ -23,6 +23,7 @@ from .config import (
     WIB,
 )
 
+
 def sekarang_wib() -> datetime:
     return datetime.now(WIB)
 
@@ -79,7 +80,9 @@ def redact_sensitive(value) -> str:
         if secret_value:
             text = text.replace(str(secret_value), label)
     # Redaksi key pada query URL jika exception requests menyertakan URL lengkap.
-    text = re.sub(r"([?&](?:key|api_key)=)[^&\s]+", r"\1***REDACTED***", text, flags=re.I)
+    text = re.sub(
+        r"([?&](?:key|api_key)=)[^&\s]+", r"\1***REDACTED***", text, flags=re.I
+    )
     return text
 
 
@@ -89,7 +92,11 @@ def api_error_detail(exc: Exception) -> str:
         return "koneksi ke server timeout"
     if isinstance(exc, requests.exceptions.HTTPError):
         status = getattr(getattr(exc, "response", None), "status_code", None)
-        return f"server mengembalikan HTTP {status}" if status else "server mengembalikan HTTP error"
+        return (
+            f"server mengembalikan HTTP {status}"
+            if status
+            else "server mengembalikan HTTP error"
+        )
     if isinstance(exc, requests.exceptions.ConnectionError):
         return "server tidak dapat dijangkau"
     if isinstance(exc, requests.exceptions.RequestException):
@@ -175,6 +182,15 @@ def sanitize_pdf_text(value) -> str:
     return str(value).strip().encode("latin-1", "replace").decode("latin-1")
 
 
+def spreadsheet_safe_value(value):
+    """Cegah teks pengguna dieksekusi sebagai formula saat XLSX dibuka."""
+    if not isinstance(value, str):
+        return value
+    if value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def compress_image(uploaded_file, max_size=(1200, 1200), quality=80):
     if uploaded_file is None:
         return None
@@ -206,7 +222,9 @@ def to_image_payload(uploaded_file, image_bytes=None):
     raw = image_bytes if image_bytes is not None else compress_image(uploaded_file)
     if not raw:
         return {}
-    original_name = re.sub(r"[^A-Za-z0-9._-]+", "_", str(getattr(uploaded_file, "name", "bukti")))
+    original_name = re.sub(
+        r"[^A-Za-z0-9._-]+", "_", str(getattr(uploaded_file, "name", "bukti"))
+    )
     original_stem = original_name.rsplit(".", 1)[0] or "bukti"
     return {
         "image_base64": base64.b64encode(raw).decode("utf-8"),

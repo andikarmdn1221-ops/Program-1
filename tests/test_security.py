@@ -1,3 +1,6 @@
+import pytest
+
+from wms.auth import find_local_user
 from wms.security import LoginRateLimiter
 
 
@@ -22,3 +25,19 @@ def test_old_attempts_leave_sliding_window():
     limiter.record_failure("staff", now=100)
     assert limiter.record_failure("staff", now=111) == 0
 
+
+def test_local_user_lookup_is_case_insensitive():
+    username, config = find_local_user({"Andika": {"role": "Developer"}}, "  ANDIKA  ")
+    assert username == "Andika"
+    assert config["role"] == "Developer"
+
+
+def test_local_user_lookup_rejects_ambiguous_configuration():
+    with pytest.raises(RuntimeError, match="duplikat"):
+        find_local_user(
+            {
+                "Andika": {"role": "Developer"},
+                "andika": {"role": "Staff"},
+            },
+            "andika",
+        )
