@@ -161,3 +161,39 @@ def update_account(username: str, role: str, status: str):
         },
         timeout=30,
     )
+
+
+def validate_account_session(username: str):
+    """Pastikan akun dinamis masih aktif dan ambil role terbaru dari backend."""
+    from .auth import actor_payload
+
+    return api_post(
+        {
+            "action": "account_validate",
+            "username": normalize_username(username),
+            **actor_payload(),
+        },
+        timeout=15,
+    )
+
+
+def delete_account(username: str, confirmation: str):
+    """Hapus record akun dan password verifier secara permanen.
+
+    Audit operasional sengaja tidak dihapus agar jejak perubahan stok tetap utuh.
+    Backend tetap menjadi pengaman terakhir untuk akun sendiri dan Developer terakhir.
+    """
+    from .auth import actor_payload
+
+    clean_username = normalize_username(username)
+    if str(confirmation or "").strip().casefold() != clean_username.casefold():
+        raise ValueError("Konfirmasi username tidak sesuai.")
+    return api_post(
+        {
+            "action": "account_delete",
+            "username": clean_username,
+            "confirm": f"DELETE:{clean_username}",
+            **actor_payload(),
+        },
+        timeout=30,
+    )
