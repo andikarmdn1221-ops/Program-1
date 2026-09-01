@@ -399,6 +399,7 @@ def actor_payload() -> dict:
     return {
         "actor": str(st.session_state.get("auth_user", "Unknown")),
         "role": current_role(),
+        "auth_source": str(st.session_state.get("auth_source", "local")),
         "app_version": APP_VERSION,
     }
 
