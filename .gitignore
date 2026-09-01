@@ -1,7 +1,12 @@
 __pycache__/
 *.py[cod]
 .streamlit/secrets.toml
+.streamlit/*.toml
+!.streamlit/secrets.example.toml
 .env
 .venv/
+.venv*/
 venv/
 *.log
+.pytest_cache/
+.coverage

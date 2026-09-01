@@ -13,6 +13,7 @@ from .config import (
     APP_VERSION,
     LOGIN_LOCK_SECONDS,
     LOGIN_MAX_ATTEMPTS,
+    LOGIN_RATE_WINDOW_SECONDS,
     PBKDF2_ITERATIONS,
     PERMISSIONS,
     ROLE_ADMIN,
@@ -20,6 +21,14 @@ from .config import (
     ROLE_DEVELOPER,
     ROLE_STAFF,
     SESSION_TIMEOUT_MINUTES,
+)
+from .security import LoginRateLimiter
+
+
+LOGIN_RATE_LIMITER = LoginRateLimiter(
+    max_attempts=LOGIN_MAX_ATTEMPTS,
+    window_seconds=LOGIN_RATE_WINDOW_SECONDS,
+    lock_seconds=LOGIN_LOCK_SECONDS,
 )
 
 def account_security_report():
@@ -174,8 +183,17 @@ def login_gate():
             submit = st.form_submit_button("Masuk", use_container_width=True)
 
         if submit:
+            global_retry_after = LOGIN_RATE_LIMITER.retry_after(username, now=now)
+            if global_retry_after:
+                st.error(
+                    "Login untuk username ini dikunci sementara. "
+                    f"Coba lagi dalam {global_retry_after} detik."
+                )
+                st.stop()
+
             cfg = users.get(username)
             if cfg and password_matches(password, dict(cfg)):
+                LOGIN_RATE_LIMITER.record_success(username)
                 _complete_login(username, dict(cfg).get("role", ROLE_STAFF), now)
 
             try:
@@ -186,6 +204,7 @@ def login_gate():
                 dynamic = {"authenticated": False, "status": "ERROR"}
 
             if dynamic.get("authenticated"):
+                LOGIN_RATE_LIMITER.record_success(username)
                 _complete_login(
                     str(dynamic.get("username") or username),
                     str(dynamic.get("role") or ROLE_STAFF),
@@ -203,11 +222,12 @@ def login_gate():
             elif status == "ERROR":
                 st.error("Layanan akun sedang tidak dapat dihubungi. Coba lagi nanti.")
             else:
+                LOGIN_RATE_LIMITER.record_failure(username, now=now)
                 _record_failed_login(now)
 
     with register_tab:
         st.info("Akun baru belum bisa login sebelum disetujui oleh Developer.")
-        role_choices = [ROLE_STAFF, ROLE_ADMIN, ROLE_BOSS, ROLE_DEVELOPER]
+        role_choices = [ROLE_STAFF, ROLE_ADMIN]
         with st.form("registration_form", clear_on_submit=False):
             full_name = st.text_input("Nama lengkap", key="register_full_name")
             new_username = st.text_input(

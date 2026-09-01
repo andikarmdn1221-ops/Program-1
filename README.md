@@ -1,7 +1,8 @@
 # WMS Microcement Pro
 
 Versi multi-file dari aplikasi WMS Microcement dengan pendaftaran akun,
-persetujuan Developer, role sesuai jabatan, dan notifikasi Telegram.
+persetujuan Developer, role sesuai jabatan, pembatasan login lintas sesi,
+notifikasi Telegram, dan pemeriksaan otomatis melalui GitHub Actions.
 
 ## Struktur
 
@@ -22,7 +23,7 @@ persetujuan Developer, role sesuai jabatan, dan notifikasi Telegram.
 ## Alur Akun Baru
 
 1. Pengguna membuka tab `Daftar Akun Baru` pada halaman login.
-2. Pengguna mengisi nama, username, jabatan, role yang diminta, dan password.
+2. Pengguna mengisi nama, username, jabatan, role Staff/Admin yang diminta, dan password.
 3. Akun disimpan dengan status `PENDING`; password asli tidak disimpan.
 4. Developer menerima notifikasi Telegram tanpa informasi password.
 5. Developer dapat menekan tombol `Staff`, `Admin`, `Boss`, `Developer`, atau `Tolak` langsung dari Telegram.
@@ -40,5 +41,20 @@ persetujuan Developer, role sesuai jabatan, dan notifikasi Telegram.
 8. Streamlit Secrets lama tetap digunakan; tidak ada secret Streamlit baru yang wajib ditambahkan.
 9. Jangan mengubah `AUTH_SIGNING_KEY` setelah akun dinamis dibuat, karena nilai ini juga melindungi password verifier.
 10. Jangan mengunggah `.streamlit/secrets.toml` asli ke GitHub.
+
+Gunakan `.streamlit/secrets.example.toml` sebagai contoh konfigurasi. Role Boss
+dan Developer sengaja tidak tersedia pada formulir publik; Developer dapat
+memberikannya sebagai role final dari menu `Kelola Akun`.
+
+## Pemeriksaan sebelum deploy
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m compileall -q app.py wms tests
+python -m pytest
+```
+
+Workflow `.github/workflows/quality.yml` menjalankan pemeriksaan yang sama pada
+setiap push dan pull request.
 
 Backend yang diperlukan adalah versi `7.2-accounts`.

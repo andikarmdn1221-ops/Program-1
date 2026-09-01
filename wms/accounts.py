@@ -5,7 +5,7 @@ import hmac
 import re
 
 from .api import api_post
-from .config import AUTH_SIGNING_KEY, VALID_ROLES
+from .config import AUTH_SIGNING_KEY, PUBLIC_REGISTRATION_ROLES, VALID_ROLES
 
 
 def normalize_username(value: str) -> str:
@@ -42,8 +42,8 @@ def password_verifier(password: str, username: str) -> str:
 def register_account(full_name: str, username: str, password: str, requested_role: str, position: str):
     if len(password) < 8:
         raise ValueError("Password minimal 8 karakter.")
-    if requested_role not in VALID_ROLES:
-        raise ValueError("Role yang diminta tidak valid.")
+    if requested_role not in PUBLIC_REGISTRATION_ROLES:
+        raise ValueError("Pendaftaran publik hanya dapat meminta role Staff atau Admin.")
     clean_username = normalize_username(username)
     return api_post(
         {
