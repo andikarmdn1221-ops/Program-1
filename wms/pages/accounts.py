@@ -3,7 +3,13 @@
 import pandas as pd
 import streamlit as st
 
-from ..accounts import approve_account, list_accounts, reject_account, update_account
+from ..accounts import (
+    approve_account,
+    delete_account,
+    list_accounts,
+    reject_account,
+    update_account,
+)
 from ..api import show_api_error
 from ..auth import require_permission
 from ..config import ROLE_ADMIN, ROLE_BOSS, ROLE_DEVELOPER, ROLE_STAFF
@@ -159,3 +165,48 @@ def render_accounts_page():
                     st.rerun()
                 except Exception as exc:
                     show_api_error("Perubahan akun gagal", exc)
+
+            st.divider()
+            st.markdown("#### 🗑️ Hapus akun permanen")
+            st.caption(
+                "Record akun dan password verifier akan dihapus permanen. "
+                "Riwayat transaksi dan audit tetap dipertahankan."
+            )
+            if is_current_account:
+                st.warning("Akun yang sedang digunakan tidak dapat dihapus.")
+            delete_confirmed = st.checkbox(
+                "Saya memahami penghapusan ini tidak dapat dibatalkan",
+                key=f"delete_account_confirm_{username}",
+                disabled=is_current_account,
+            )
+            developer_delete_confirmed = True
+            if str(row.get("role") or "") == ROLE_DEVELOPER:
+                developer_delete_confirmed = st.checkbox(
+                    "Saya memastikan masih ada Developer aktif lainnya",
+                    key=f"delete_developer_confirm_{username}",
+                    disabled=is_current_account,
+                )
+            typed_username = st.text_input(
+                f"Ketik username {username} untuk mengonfirmasi",
+                key=f"delete_account_username_{username}",
+                disabled=is_current_account,
+            )
+            delete_ready = (
+                not is_current_account
+                and delete_confirmed
+                and developer_delete_confirmed
+                and typed_username.strip().casefold() == username.casefold()
+            )
+            if st.button(
+                "🗑️ Hapus Akun Permanen",
+                use_container_width=True,
+                disabled=not delete_ready,
+                key=f"delete_account_{username}",
+                type="primary",
+            ):
+                try:
+                    delete_account(username, typed_username)
+                    st.success(f"Akun {username} telah dihapus permanen.")
+                    st.rerun()
+                except Exception as exc:
+                    show_api_error("Penghapusan akun gagal", exc)
