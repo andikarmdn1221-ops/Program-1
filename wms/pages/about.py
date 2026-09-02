@@ -5,7 +5,7 @@ import streamlit as st
 from ..config import APP_VERSION
 
 def render_about_page():
-    st.subheader("WMS Microcement")
+    st.subheader("Mirai")
     st.write(
         "Aplikasi manajemen gudang berbasis Streamlit dengan Google Sheets sebagai penyimpanan data, "
         "Google Drive untuk bukti transaksi, dan Telegram untuk notifikasi operasional."
