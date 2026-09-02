@@ -13,6 +13,7 @@ operasional.
 - Role Developer, Boss, Admin, dan Staff.
 - Pendaftaran, persetujuan, penonaktifan, dan penghapusan akun.
 - Riwayat, laporan periodik, audit log, Excel/PDF, dan backup.
+- Penghapusan audit lama khusus Developer dengan backup otomatis dan konfirmasi.
 - Notifikasi Telegram dan persetujuan akun.
 - Tampilan ringkas untuk kegiatan harian dan tampilan lengkap untuk administrasi.
 - UI responsif untuk komputer dan telepon seluler.
@@ -50,7 +51,7 @@ instalasi pelanggan lain.
 9. Uji login, koneksi database, transaksi masuk/keluar, backup, dan Telegram.
 10. Serahkan akun dan panduan penggunaan kepada pelanggan.
 
-Backend yang diperlukan adalah versi `7.3-accounts-delete`.
+Backend yang diperlukan adalah versi `7.4-audit-clear`.
 
 ## Alur akun baru
 

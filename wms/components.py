@@ -6,6 +6,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from .api import show_api_error
+from .auth import has_permission, set_flash
 from .config import (
     AUDIT_COLUMNS,
     AUTO_SYNC_ENABLED,
@@ -14,8 +16,9 @@ from .config import (
     RIWAYAT_COLUMNS,
     SECONDARY_SYNC_SECONDS,
 )
-from .data import sync_if_changed
+from .data import require_online_operation, sync_if_changed
 from .exports import excel_bytes, pdf_table
+from .operations import clear_audit_log
 from .utils import (
     hari_ini_wib,
     natural_key,
@@ -452,3 +455,41 @@ def render_audit_live():
         use_container_width=True,
         key="download_audit_live",
     )
+
+    if has_permission("reset"):
+        st.divider()
+        with st.expander("🗑️ Hapus Seluruh Audit Log", expanded=False):
+            st.error(
+                "Tindakan ini menghapus seluruh catatan audit lama secara permanen. "
+                "Backend akan membuat backup server sebelum penghapusan."
+            )
+            understood = st.checkbox(
+                "Saya memahami audit lama akan dihapus permanen",
+                key="audit_clear_understood",
+            )
+            confirmation = st.text_input(
+                "Ketik HAPUS-AUDIT untuk mengonfirmasi",
+                key="audit_clear_confirmation",
+                disabled=not understood,
+            )
+            ready = understood and confirmation.strip() == "HAPUS-AUDIT"
+            if st.button(
+                "🗑️ Hapus Seluruh Audit Log",
+                use_container_width=True,
+                disabled=not ready,
+                type="primary",
+                key="audit_clear_submit",
+            ):
+                try:
+                    require_online_operation()
+                    result = clear_audit_log()
+                    deleted = int(result.get("deleted_rows", 0) or 0)
+                    backup_name = str(result.get("backup_name") or "backup server")
+                    set_flash(
+                        "success",
+                        f"{deleted} catatan audit lama berhasil dihapus. "
+                        f"Backup dibuat: {backup_name}.",
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    show_api_error("Audit log gagal dihapus", exc)

@@ -1,5 +1,5 @@
 /**
- * WMS Microcement Backend v7.3
+ * Mirai Backend v7.4
  *
  * Semua credential wajib disimpan di Apps Script > Project Settings >
  * Script Properties. Jangan menaruh token, key, atau ID produksi di file ini.
@@ -21,7 +21,7 @@
  * - REQUIRE_SERVER_BACKUP_BEFORE_RESET=true
  */
 
-const BACKEND_VERSION = "7.3-accounts-delete";
+const BACKEND_VERSION = "7.4-audit-clear";
 const SHEET_STOCK = "stok";
 const SHEET_HISTORY = "riwayat";
 const SHEET_AUDIT = "audit";
@@ -151,6 +151,10 @@ function routeRequest_(payload) {
     case "reset":
       return withScriptLock_(function () {
         return handleReset_(payload);
+      });
+    case "audit_clear":
+      return withScriptLock_(function () {
+        return handleAuditClear_(payload);
       });
     case "server_backup":
       return handleServerBackup_(payload);
@@ -563,6 +567,36 @@ function handleTransactionCorrect_(payload) {
   );
   bumpRevision_();
   return { new_tx_id: newTxId };
+}
+
+function handleAuditClear_(payload) {
+  const actor = resolveActor_(payload);
+  requireRoles_(actor, ["Developer"]);
+  if (String(payload.confirm || "") !== "HAPUS-AUDIT") {
+    throw new Error("Konfirmasi penghapusan audit tidak valid.");
+  }
+
+  const backup = createServerBackup_();
+  const spreadsheet = getSpreadsheet_();
+  ensureSchema_(spreadsheet);
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  const deletedRows = Math.max(auditSheet.getLastRow() - 1, 0);
+
+  resetSheet_(auditSheet, AUDIT_HEADERS);
+  writeAudit_(
+    spreadsheet,
+    actor,
+    "AUDIT_LOG_CLEARED",
+    "",
+    deletedRows + " catatan audit lama dihapus setelah backup " + backup.backup_name + "."
+  );
+  bumpRevision_();
+  return {
+    audit_cleared: true,
+    deleted_rows: deletedRows,
+    backup_name: backup.backup_name,
+    backup_url: backup.backup_url,
+  };
 }
 
 function handleReset_(payload) {
