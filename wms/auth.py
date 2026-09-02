@@ -247,7 +247,7 @@ def login_gate():
         st.session_state.login_lock_until = 0
         lock_until = 0
 
-    st.title("🔐 WMS Microcement")
+    st.title("🔐 Mirai")
     st.caption("Masuk atau ajukan akun baru sesuai jabatan.")
 
     if lock_until > now:
