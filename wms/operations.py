@@ -128,6 +128,20 @@ def adjust_stock(barang, stok_baru, alasan, tgl_transaksi, expected_stock_before
     return result
 
 
+def clear_audit_log():
+    """Hapus audit lama setelah backend membuat backup server."""
+    result = api_post(
+        {
+            "action": "audit_clear",
+            "confirm": "HAPUS-AUDIT",
+            **actor_payload(),
+        },
+        timeout=90,
+    )
+    clear_and_refresh()
+    return result
+
+
 def reset_database():
     result = api_post({"action": "reset", "confirm": "RESET-DATABASE", **actor_payload()})
     clear_and_refresh()
