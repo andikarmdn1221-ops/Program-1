@@ -76,45 +76,80 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    menu_options = [
+    full_menu_options = [
         "🏠 Dashboard",
         "📋 Lihat Semua Stok",
     ]
 
     if has_permission("manage_master"):
-        menu_options.append("➕ Kelola Master Item")
+        full_menu_options.append("➕ Kelola Master Item")
 
     if has_permission("manage_accounts"):
-        menu_options.append("👥 Kelola Akun")
+        full_menu_options.append("👥 Kelola Akun")
 
     if has_permission("transaction"):
-        menu_options.extend(["📥 Barang Masuk", "📤 Barang Keluar"])
+        full_menu_options.extend(["📥 Barang Masuk", "📤 Barang Keluar"])
 
     if has_permission("stock_adjust"):
-        menu_options.append("🧮 Penyesuaian Stok")
+        full_menu_options.append("🧮 Penyesuaian Stok")
 
     if has_permission("correct_transaction"):
-        menu_options.append("✏️ Koreksi Transaksi")
+        full_menu_options.append("✏️ Koreksi Transaksi")
 
-    menu_options.append("📊 Riwayat Transaksi")
+    full_menu_options.append("📊 Riwayat Transaksi")
 
     if has_permission("view_reports"):
-        menu_options.append("📈 Laporan Periodik")
+        full_menu_options.append("📈 Laporan Periodik")
 
     if has_permission("view_audit"):
-        menu_options.append("📜 Audit Log")
+        full_menu_options.append("📜 Audit Log")
 
     if has_permission("backup"):
-        menu_options.append("💾 Backup Data")
+        full_menu_options.append("💾 Backup Data")
 
-    menu_options.append("🔔 Status Notifikasi")
+    full_menu_options.append("🔔 Status Notifikasi")
 
     if has_permission("reset"):
-        menu_options.append("⚙️ Pengaturan & Reset")
+        full_menu_options.append("⚙️ Pengaturan & Reset")
 
-    menu_options.append("ℹ️ Tentang Aplikasi")
+    full_menu_options.append("ℹ️ Tentang Aplikasi")
 
-    active_raw = st.radio("NAVIGASI", menu_options)
+    # Pengguna operasional mendapat tampilan ringkas secara default.
+    # Hak akses tidak dihapus: Boss/Admin tetap dapat beralih ke menu lengkap.
+    simple_names = {
+        "Dashboard",
+        "Lihat Semua Stok",
+        "Barang Masuk",
+        "Barang Keluar",
+        "Riwayat Transaksi",
+    }
+    simple_menu_options = [
+        option
+        for option in full_menu_options
+        if option.split(" ", 1)[1] in simple_names
+    ]
+
+    if role_now in {ROLE_DEVELOPER, ROLE_BOSS} or has_permission("manage_master"):
+        default_mode = "Lengkap" if role_now == ROLE_DEVELOPER else "Ringkas"
+        mode_key = f"navigation_mode_{role_now.lower()}"
+        view_mode = st.selectbox(
+            "TAMPILAN MENU",
+            ["Ringkas", "Lengkap"],
+            index=0 if default_mode == "Ringkas" else 1,
+            key=mode_key,
+            help="Ringkas untuk pekerjaan harian; Lengkap untuk administrasi.",
+        )
+    else:
+        view_mode = "Ringkas"
+
+    menu_options = (
+        simple_menu_options if view_mode == "Ringkas" else full_menu_options
+    )
+    active_raw = st.radio(
+        "NAVIGASI",
+        menu_options,
+        key=f"navigation_{role_now.lower()}_{view_mode.lower()}",
+    )
     active_menu = active_raw.split(" ", 1)[1]
 
     st.markdown("---")
