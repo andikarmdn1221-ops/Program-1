@@ -1,4 +1,4 @@
-"""Entry point dan router WMS Microcement."""
+"""Entry point dan router Mirai Inventory Operations."""
 
 import html
 
