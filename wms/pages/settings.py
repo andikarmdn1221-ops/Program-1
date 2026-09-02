@@ -27,8 +27,7 @@ from ..utils import sekarang_wib
 
 def render_settings_page():
     require_permission("reset")
-    sync_if_changed(force_health=True)
-    require_online_operation()
+    sync_if_changed()
 
     with st.expander("🔐 Generator Password Hash PBKDF2", expanded=False):
         st.caption("Gunakan hasil ini sebagai password_hash di secrets.toml. Password tidak disimpan oleh aplikasi.")
@@ -82,6 +81,7 @@ def render_settings_page():
     confirm = st.text_input("Ketik RESET-DATABASE", disabled=not understood)
     if st.button("🚨 Reset Database", disabled=not (understood and confirm == "RESET-DATABASE")):
         try:
+            require_online_operation()
             if REQUIRE_SERVER_BACKUP_BEFORE_RESET:
                 result_backup = server_backup_now()
                 st.info(f"Backup server sebelum reset berhasil: {result_backup.get('backup_name', 'WMS backup')}")
