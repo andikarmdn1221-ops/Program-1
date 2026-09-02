@@ -3,7 +3,7 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="Microcement Warehouse",
+    page_title="Mirai",
     page_icon="📦",
     layout="wide",
 )
@@ -50,7 +50,7 @@ if "stok" not in st.session_state:
     refresh_data(force=True)
 
 with st.sidebar:
-    st.markdown("### 📦 WMS Microcement")
+    st.markdown("### 📦 Mirai")
     role_now = current_role()
     display_name = st.session_state.get("auth_display_name") or st.session_state.get("auth_user")
     st.caption(f"👤 {display_name}")
