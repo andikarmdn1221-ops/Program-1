@@ -359,6 +359,162 @@ def inject_responsive_css():
             .wms-kpi-label { font-size: 0.7rem; }
             .wms-kpi-value { font-size: 1.4rem; }
         }
+
+        /* =====================================================
+           MIRAI LOGIN
+           Hanya aktif saat marker login hadir di halaman.
+           ===================================================== */
+        body:has(#mirai-login-marker) [data-testid="stAppViewContainer"] {
+            background:
+                radial-gradient(circle at 12% 10%, rgba(59, 130, 246, 0.13), transparent 28rem),
+                radial-gradient(circle at 88% 88%, rgba(99, 102, 241, 0.10), transparent 30rem),
+                linear-gradient(145deg, #f8fbff 0%, #f4f7fb 52%, #f8fafc 100%);
+        }
+        body:has(#mirai-login-marker) [data-testid="stHeader"] {
+            background: transparent !important;
+        }
+        body:has(#mirai-login-marker) .block-container {
+            width: min(100%, 580px) !important;
+            max-width: 580px !important;
+            padding-top: clamp(2.8rem, 8vh, 6rem) !important;
+            padding-left: 1.25rem !important;
+            padding-right: 1.25rem !important;
+            padding-bottom: 3rem !important;
+        }
+        .mirai-login-hero {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 0.65rem;
+        }
+        .mirai-brand-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 3.5rem;
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 1.05rem;
+            background: linear-gradient(145deg, #2563eb 0%, #4f46e5 100%);
+            color: #ffffff;
+            box-shadow: 0 12px 28px rgba(37, 99, 235, 0.24);
+            font-size: 1.55rem;
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -0.04em;
+        }
+        .mirai-login-title {
+            color: #0f172a;
+            font-size: 2.15rem;
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -0.045em;
+        }
+        .mirai-login-kicker {
+            margin-top: 0.42rem;
+            color: #2563eb;
+            font-size: 0.68rem;
+            font-weight: 750;
+            line-height: 1.2;
+            letter-spacing: 0.13em;
+        }
+        .mirai-login-subtitle {
+            margin: 0 0 1.35rem 0;
+            color: #64748b;
+            font-size: 0.93rem;
+            line-height: 1.55;
+        }
+        body:has(#mirai-login-marker) [data-baseweb="tab-list"] {
+            gap: 0.35rem;
+            padding: 0.3rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.85rem;
+            background: rgba(255, 255, 255, 0.78);
+        }
+        body:has(#mirai-login-marker) [data-baseweb="tab"] {
+            flex: 1 1 0;
+            justify-content: center;
+            min-height: 2.55rem;
+            border-radius: 0.62rem;
+            color: #64748b;
+            font-weight: 650;
+        }
+        body:has(#mirai-login-marker) [aria-selected="true"] {
+            background: #eff6ff !important;
+            color: #1d4ed8 !important;
+        }
+        body:has(#mirai-login-marker) [data-baseweb="tab-highlight"] {
+            display: none !important;
+        }
+        body:has(#mirai-login-marker) [data-testid="stForm"] {
+            margin-top: 0.8rem;
+            padding: 1.35rem 1.35rem 1.2rem;
+            border: 1px solid rgba(203, 213, 225, 0.88);
+            border-radius: 1.1rem;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.09);
+            backdrop-filter: blur(12px);
+        }
+        body:has(#mirai-login-marker) [data-baseweb="input"] {
+            border-color: #dbe3ef !important;
+            border-radius: 0.75rem !important;
+            background: #f8fafc !important;
+        }
+        body:has(#mirai-login-marker) [data-baseweb="input"]:focus-within {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12) !important;
+        }
+        body:has(#mirai-login-marker) [data-testid="stFormSubmitButton"] > button {
+            min-height: 2.85rem;
+            border: 0 !important;
+            border-radius: 0.75rem !important;
+            background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
+            color: #ffffff !important;
+            font-weight: 750 !important;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.20);
+            transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+        }
+        body:has(#mirai-login-marker) [data-testid="stFormSubmitButton"] > button:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.04);
+            box-shadow: 0 11px 24px rgba(37, 99, 235, 0.27);
+        }
+        body:has(#mirai-login-marker) [data-testid="stAlert"] {
+            border-radius: 0.85rem;
+        }
+
+        @media (max-width: 768px) {
+            body:has(#mirai-login-marker) .block-container {
+                width: min(100%, 560px) !important;
+                max-width: 560px !important;
+                padding-top: max(4.25rem, calc(3.8rem + env(safe-area-inset-top))) !important;
+                padding-left: max(0.9rem, env(safe-area-inset-left)) !important;
+                padding-right: max(0.9rem, env(safe-area-inset-right)) !important;
+            }
+        }
+        @media (max-width: 430px) {
+            body:has(#mirai-login-marker) .block-container {
+                padding-top: max(3.9rem, calc(3.45rem + env(safe-area-inset-top))) !important;
+                padding-left: max(0.72rem, env(safe-area-inset-left)) !important;
+                padding-right: max(0.72rem, env(safe-area-inset-right)) !important;
+            }
+            .mirai-login-hero { gap: 0.78rem; }
+            .mirai-brand-mark {
+                flex-basis: 3rem;
+                width: 3rem;
+                height: 3rem;
+                border-radius: 0.88rem;
+                font-size: 1.3rem;
+            }
+            .mirai-login-title { font-size: 1.75rem; }
+            .mirai-login-kicker { font-size: 0.58rem; letter-spacing: 0.1em; }
+            .mirai-login-subtitle { margin-bottom: 1rem; font-size: 0.86rem; }
+            body:has(#mirai-login-marker) [data-testid="stForm"] {
+                padding: 1rem 0.9rem 0.9rem;
+                border-radius: 0.95rem;
+            }
+        }
+
         </style>
         """,
         unsafe_allow_html=True,
