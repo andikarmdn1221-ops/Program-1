@@ -21,8 +21,7 @@ from ..utils import (
 
 def render_transaction_page(active_menu):
     require_permission("transaction")
-    sync_if_changed(force_health=True)
-    require_online_operation()
+    sync_if_changed()
     stock = st.session_state.get("stok", {})
     master = st.session_state.get("master_info", {})
     tipe = "MASUK" if active_menu == "Barang Masuk" else "KELUAR"
@@ -57,6 +56,7 @@ def render_transaction_page(active_menu):
                 st.warning("Nama Pembeli / Proyek wajib diisi.")
             else:
                 try:
+                    require_online_operation()
                     image_bytes = compress_image(bukti) if bukti else None
                     result = do_transaction(
                         tipe,
@@ -97,8 +97,7 @@ def render_transaction_page(active_menu):
 
 def render_adjustment_page():
     require_permission("stock_adjust")
-    sync_if_changed(force_health=True)
-    require_online_operation()
+    sync_if_changed()
     stock = st.session_state.get("stok", {})
     master = st.session_state.get("master_info", {})
     st.info("Gunakan fitur ini saat stok fisik berbeda dari stok sistem. Semua perubahan dicatat di riwayat dan audit log.")
@@ -127,6 +126,7 @@ def render_adjustment_page():
                 st.warning("Alasan penyesuaian wajib diisi.")
             else:
                 try:
+                    require_online_operation()
                     result = adjust_stock(barang, stok_baru, alasan, tgl, stok_lama)
                     delta = result.get("selisih", int(stok_baru) - int(stok_lama))
                     notification_results = [deliver_notification(
@@ -148,8 +148,7 @@ def render_adjustment_page():
 
 def render_correction_page():
     require_permission("correct_transaction")
-    sync_if_changed(force_health=True)
-    require_online_operation()
+    sync_if_changed()
     stock = st.session_state.get("stok", {})
     master = st.session_state.get("master_info", {})
     history = st.session_state.get("riwayat", [])
@@ -196,6 +195,7 @@ def render_correction_page():
                 "Pembeli / Keterangan": ket.strip() or "-",
             }
             try:
+                require_online_operation()
                 result = correct_transaction(old, new_tx)
                 notification = deliver_notification(
                     f"✏️ *KOREKSI TRANSAKSI*\nID: {old['ID Transaksi']}\n"
@@ -216,6 +216,7 @@ def render_correction_page():
         confirm_void = st.checkbox("Saya yakin ingin membatalkan transaksi ini")
         if st.button("🚫 Void Transaksi", disabled=not confirm_void):
             try:
+                require_online_operation()
                 void_transaction(old["ID Transaksi"])
                 notification = deliver_notification(
                     f"🚫 *VOID TRANSAKSI*\nID: {old['ID Transaksi']}\n{old['Tipe']} {old['Barang']} {old['Jumlah']} pcs\n👤 {actor_label()}",
