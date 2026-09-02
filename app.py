@@ -118,8 +118,12 @@ with st.sidebar:
     active_menu = active_raw.split(" ", 1)[1]
 
     st.markdown("---")
+    connection_status = st.session_state.get("connection_status", "online")
     if st.session_state.get("is_connected"):
-        st.success("🟢 Database terhubung")
+        if connection_status == "recovering":
+            st.warning("🟡 Koneksi sedang dipulihkan")
+        else:
+            st.success("🟢 Database terhubung")
         if st.session_state.get("last_server_sync"):
             st.caption(f"Sinkron: {st.session_state.get('last_server_sync')}")
     else:
