@@ -95,6 +95,42 @@ def render_dashboard_kpis(active_count: int, total_stock: int, critical_count: i
     st.markdown(f'<div class="wms-kpi-grid">{card_html}</div>', unsafe_allow_html=True)
 
 
+def render_stock_health(safe_count: int, critical_count: int, out_count: int):
+    """Ringkasan status stok native HTML agar cepat dan stabil di semua perangkat."""
+    total = safe_count + critical_count + out_count
+    denominator = max(total, 1)
+    safe_pct = round((safe_count / denominator) * 100, 2)
+    critical_end = round(((safe_count + critical_count) / denominator) * 100, 2)
+    chart_style = (
+        f"--safe-end:{safe_pct}%;"
+        f"--critical-end:{critical_end}%;"
+    )
+    st.markdown(
+        f"""
+        <div class="mirai-health-card">
+            <div class="mirai-health-heading">
+                <span class="mirai-health-title">Kesehatan Stok</span>
+                <span class="mirai-health-badge">{total} item aktif</span>
+            </div>
+            <div class="mirai-health-content">
+                <div class="mirai-donut" style="{chart_style}">
+                    <div class="mirai-donut-center">
+                        <strong>{total}</strong>
+                        <span>Total Item</span>
+                    </div>
+                </div>
+                <div class="mirai-health-legend">
+                    <div><span class="mirai-dot mirai-dot-safe"></span><span>Aman</span><strong>{safe_count}</strong></div>
+                    <div><span class="mirai-dot mirai-dot-critical"></span><span>Kritis</span><strong>{critical_count}</strong></div>
+                    <div><span class="mirai-dot mirai-dot-empty"></span><span>Habis</span><strong>{out_count}</strong></div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 @_live_fragment(AUTO_SYNC_SECONDS if AUTO_SYNC_ENABLED else None)
 def render_dashboard_live():
     sync_if_changed()
@@ -129,30 +165,18 @@ def render_dashboard_live():
         out_count=len(out_now),
     )
 
-    st.divider()
+    st.markdown('<div class="mirai-section-divider"></div>', unsafe_allow_html=True)
     left, right = st.columns(2)
     with left:
-        st.subheader("📊 Status Stok")
         safe_count = len(active_now) - len(critical_now) - len(out_now)
-        df_chart = pd.DataFrame(
-            {"Status": ["Aman", "Kritis", "Habis"], "Jumlah": [safe_count, len(critical_now), len(out_now)]}
-        )
-        if int(df_chart["Jumlah"].sum()) > 0:
-            fig = px.pie(
-                df_chart,
-                names="Status",
-                values="Jumlah",
-                hole=0.52,
-                color="Status",
-                color_discrete_map={"Aman": "#22c55e", "Kritis": "#f59e0b", "Habis": "#ef4444"},
-            )
-            fig.update_layout(legend_orientation="h", margin=dict(l=10, r=10, t=20, b=10))
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Belum ada data stok aktif untuk ditampilkan.")
+        render_stock_health(safe_count, len(critical_now), len(out_now))
 
     with right:
-        st.subheader("🚨 Perlu Perhatian")
+        st.markdown(
+            '<div class="mirai-section-heading"><span class="mirai-section-icon mirai-section-icon-red">!</span>'
+            '<div><strong>Perlu Perhatian</strong><small>Item yang harus segera ditindaklanjuti</small></div></div>',
+            unsafe_allow_html=True,
+        )
         rows = []
         for nama in sorted(set(critical_now + out_now), key=natural_key):
             qty = active_now[nama]
@@ -169,8 +193,12 @@ def render_dashboard_live():
         else:
             st.success("Semua stok aman.")
 
-    st.divider()
-    st.subheader("📋 Ringkasan Stok")
+    st.markdown('<div class="mirai-section-divider"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="mirai-section-heading"><span class="mirai-section-icon">≡</span>'
+        '<div><strong>Ringkasan Stok</strong><small>Cari dan periksa kondisi setiap barang</small></div></div>',
+        unsafe_allow_html=True,
+    )
     keyword = st.text_input("🔍 Cari barang", placeholder="Contoh: top coat", key="dashboard_search_live")
     rows = []
     for nama in sorted(stock_now, key=natural_key):
