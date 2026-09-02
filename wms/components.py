@@ -148,8 +148,17 @@ def render_dashboard_live():
             unsafe_allow_html=True,
         )
 
-    if not st.session_state.get("is_connected"):
-        st.error("Database sedang offline. Dashboard menampilkan snapshot terakhir dan tidak boleh dianggap real-time.")
+    connection_status = st.session_state.get("connection_status", "online")
+    if connection_status == "recovering":
+        st.warning(
+            "Koneksi database sempat terlambat dan sedang dipulihkan otomatis. "
+            "Data terakhir tetap ditampilkan; perubahan stok tetap diverifikasi ke server."
+        )
+    elif not st.session_state.get("is_connected"):
+        st.error(
+            "Database benar-benar tidak dapat dihubungi setelah beberapa percobaan. "
+            "Dashboard menampilkan snapshot terakhir dan tidak boleh dianggap real-time."
+        )
 
     if critical_now or out_now:
         alert_label = f"{len(out_now)} item habis · {len(critical_now)} item kritis"
