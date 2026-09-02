@@ -13,7 +13,6 @@ from ..accounts import (
 from ..api import show_api_error
 from ..auth import require_permission
 from ..config import ROLE_ADMIN, ROLE_BOSS, ROLE_DEVELOPER, ROLE_STAFF
-from ..data import require_online_operation
 
 
 ROLES = [ROLE_STAFF, ROLE_ADMIN, ROLE_BOSS, ROLE_DEVELOPER]
@@ -29,7 +28,6 @@ def _same_username(left, right) -> bool:
 
 def render_accounts_page():
     require_permission("manage_accounts")
-    require_online_operation()
     st.caption(
         "Hanya Developer yang dapat menyetujui akun, menentukan role final, mengubah role, atau menonaktifkan akun. "
         "Status Dinonaktifkan dapat dipulihkan kembali kapan saja."
