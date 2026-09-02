@@ -11,8 +11,7 @@ from ..utils import clean_item_name, natural_key
 
 def render_master_page():
     require_permission("manage_master")
-    sync_if_changed(force_health=True)
-    require_online_operation()
+    sync_if_changed()
     stock = st.session_state.get("stok", {})
     master = st.session_state.get("master_info", {})
     tab_add, tab_edit = st.tabs(["➕ Tambah Barang", "⚙️ Edit / Nonaktifkan"])
@@ -30,6 +29,7 @@ def render_master_page():
                 if nama.casefold() in {item.casefold() for item in stock}:
                     st.error("Nama barang sudah ada, termasuk perbedaan huruf besar/kecil.")
                 else:
+                    require_online_operation()
                     add_master(nama, stok_awal, minimum)
                     notification = deliver_notification(
                         f"✨ *ITEM BARU*\n📦 {nama}\nStok awal: {stok_awal} pcs\nMinimum: {minimum} pcs\n👤 {actor_label()}",
@@ -63,6 +63,7 @@ def render_master_page():
                     duplicates = {item.casefold() for item in stock if item != selected}
                     if cleaned_name.casefold() in duplicates:
                         raise ValueError("Nama barang sudah digunakan item lain")
+                    require_online_operation()
                     update_master(selected, cleaned_name, new_status, new_min)
                     set_flash("success", "Master barang berhasil diperbarui.")
                     st.rerun()
@@ -74,6 +75,7 @@ def render_master_page():
                 confirm = st.checkbox(f"Saya yakin ingin menghapus {selected}", key="confirm_delete_master")
                 if st.button("Hapus Permanen", disabled=not confirm):
                     try:
+                        require_online_operation()
                         delete_master(selected)
                         notification = deliver_notification(
                             f"🗑️ *ITEM DIHAPUS*\n📦 {selected}\n👤 {actor_label()}",
