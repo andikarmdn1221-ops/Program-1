@@ -247,8 +247,21 @@ def login_gate():
         st.session_state.login_lock_until = 0
         lock_until = 0
 
-    st.title("🔐 Mirai")
-    st.caption("Masuk atau ajukan akun baru sesuai jabatan.")
+    st.markdown(
+        """
+        <div id="mirai-login-marker" class="mirai-login-hero">
+            <div class="mirai-brand-mark" aria-hidden="true">M</div>
+            <div>
+                <div class="mirai-login-title">Mirai</div>
+                <div class="mirai-login-kicker">WAREHOUSE MANAGEMENT SYSTEM</div>
+            </div>
+        </div>
+        <p class="mirai-login-subtitle">
+            Kelola stok dan aktivitas gudang dalam satu sistem yang aman dan terhubung.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if lock_until > now:
         remaining = max(1, int(lock_until - now))
