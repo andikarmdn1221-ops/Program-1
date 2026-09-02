@@ -1,5 +1,7 @@
 """Client aman untuk Google Apps Script backend."""
 
+import time
+
 import requests
 import streamlit as st
 
@@ -7,13 +9,32 @@ from .auth import actor_payload
 from .config import (
     API_SHARED_KEY,
     AUTH_SIGNING_KEY,
+    DATABASE_RETRY_ATTEMPTS,
+    DATABASE_RETRY_BACKOFF_SECONDS,
     HEALTH_TIMEOUT_SECONDS,
     REQUIRE_HMAC,
     URL_GSHEET_API,
 )
 from .utils import api_error_detail, make_request_signature, redact_sensitive
 
-def _post_json(payload: dict, timeout=60):
+def _request_with_retry(method: str, url: str, *, attempts=1, **kwargs):
+    """Ulangi gangguan jaringan sementara; mutation tetap memakai satu percobaan."""
+    attempts = max(1, int(attempts))
+    last_error = None
+    for attempt in range(attempts):
+        try:
+            response = requests.request(method, url, **kwargs)
+            response.raise_for_status()
+            return response
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as exc:
+            last_error = exc
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(DATABASE_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+    raise last_error or RuntimeError("Permintaan database gagal.")
+
+
+def _post_json(payload: dict, timeout=60, retry_attempts=1):
     """POST JSON bertanda tangan. API key berada di body, bukan query URL."""
     if not URL_GSHEET_API:
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
@@ -24,8 +45,13 @@ def _post_json(payload: dict, timeout=60):
 
     signed_payload = make_request_signature(payload)
     signed_payload = {**signed_payload, "api_key": API_SHARED_KEY}
-    response = requests.post(URL_GSHEET_API, json=signed_payload, timeout=timeout)
-    response.raise_for_status()
+    response = _request_with_retry(
+        "post",
+        URL_GSHEET_API,
+        attempts=retry_attempts,
+        json=signed_payload,
+        timeout=timeout,
+    )
     try:
         data = response.json()
     except ValueError as exc:
@@ -40,7 +66,11 @@ def _post_json(payload: dict, timeout=60):
 def api_get(timeout=20):
     """Baca database lewat signed POST. GET legacy hanya jika REQUIRE_HMAC dimatikan sengaja."""
     if AUTH_SIGNING_KEY:
-        return _post_json({"action": "read", **actor_payload()}, timeout=timeout)
+        return _post_json(
+            {"action": "read", **actor_payload()},
+            timeout=timeout,
+            retry_attempts=DATABASE_RETRY_ATTEMPTS,
+        )
     if REQUIRE_HMAC:
         raise RuntimeError("Mode aman aktif tetapi AUTH_SIGNING_KEY belum tersedia.")
 
@@ -48,8 +78,13 @@ def api_get(timeout=20):
         raise RuntimeError("URL_GSHEET_API belum diatur di Streamlit Secrets.")
     if not API_SHARED_KEY:
         raise RuntimeError("API_SHARED_KEY belum diatur di Streamlit Secrets.")
-    response = requests.get(URL_GSHEET_API, params={"key": API_SHARED_KEY}, timeout=timeout)
-    response.raise_for_status()
+    response = _request_with_retry(
+        "get",
+        URL_GSHEET_API,
+        attempts=DATABASE_RETRY_ATTEMPTS,
+        params={"key": API_SHARED_KEY},
+        timeout=timeout,
+    )
     try:
         data = response.json()
     except ValueError as exc:
@@ -62,7 +97,11 @@ def api_get(timeout=20):
 def api_health(timeout=HEALTH_TIMEOUT_SECONDS):
     """Health check ringan untuk auto-sync berdasarkan revision backend."""
     if AUTH_SIGNING_KEY:
-        return _post_json({"action": "health", **actor_payload()}, timeout=timeout)
+        return _post_json(
+            {"action": "health", **actor_payload()},
+            timeout=timeout,
+            retry_attempts=DATABASE_RETRY_ATTEMPTS,
+        )
     if REQUIRE_HMAC:
         raise RuntimeError("Mode aman aktif tetapi AUTH_SIGNING_KEY belum tersedia.")
     data = api_get(timeout=timeout)
