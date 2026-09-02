@@ -13,7 +13,7 @@ except Exception:
     _SECRETS = {}
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "8.4-account-security"
+APP_VERSION = "8.5-commercial-ready"
 EXPECTED_BACKEND_VERSION = "7.3-accounts-delete"
 URL_GSHEET_API = _SECRETS.get("URL_GSHEET_API", "")
 API_SHARED_KEY = _SECRETS.get("API_SHARED_KEY", "")

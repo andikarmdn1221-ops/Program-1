@@ -28,7 +28,7 @@ def render_notification_status_page():
     if current_role() in {ROLE_DEVELOPER, ROLE_BOSS} and TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         if st.button("🧪 Kirim Pesan Tes Sekarang", use_container_width=True):
             ok, detail = deliver_notification(
-                f"✅ Tes notifikasi WMS Microcement\n{waktu_display()}\n👤 {actor_label()}",
+                f"✅ Tes notifikasi Mirai\n{waktu_display()}\n👤 {actor_label()}",
                 "Tes manual",
             )
             if ok:
