@@ -515,6 +515,496 @@ def inject_responsive_css():
             }
         }
 
+
+        /* =====================================================
+           MIRAI APPLICATION SHELL + DASHBOARD
+           ===================================================== */
+        section[data-testid="stSidebar"] {
+            border-right: 1px solid #e2e8f0;
+            background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+        }
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+            padding-top: 1.1rem;
+        }
+        .mirai-sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            margin: 0.2rem 0 1rem;
+        }
+        .mirai-sidebar-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 2.55rem;
+            width: 2.55rem;
+            height: 2.55rem;
+            border-radius: 0.78rem;
+            background: linear-gradient(145deg, #2563eb 0%, #4f46e5 100%);
+            color: #ffffff;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+        .mirai-sidebar-name {
+            color: #0f172a;
+            font-size: 1.12rem;
+            font-weight: 800;
+            line-height: 1.05;
+            letter-spacing: -0.025em;
+        }
+        .mirai-sidebar-tagline {
+            margin-top: 0.24rem;
+            color: #64748b;
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .mirai-user-card {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            margin-bottom: 0.25rem;
+            padding: 0.7rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.85rem;
+            background: rgba(255, 255, 255, 0.8);
+        }
+        .mirai-user-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 2rem;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.65rem;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+        .mirai-user-name {
+            max-width: 11rem;
+            overflow: hidden;
+            color: #1e293b;
+            font-size: 0.8rem;
+            font-weight: 750;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .mirai-user-role {
+            margin-top: 0.16rem;
+            color: #64748b;
+            font-size: 0.67rem;
+            line-height: 1.2;
+        }
+        section[data-testid="stSidebar"] [role="radiogroup"] {
+            gap: 0.18rem;
+        }
+        section[data-testid="stSidebar"] [role="radiogroup"] label {
+            min-height: 2.2rem;
+            padding: 0.34rem 0.55rem;
+            border: 1px solid transparent;
+            border-radius: 0.68rem;
+            color: #475569;
+            transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+        }
+        section[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+            border-color: #dbeafe;
+            background: #eff6ff;
+            color: #1d4ed8;
+        }
+        section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+            border-color: #bfdbfe;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-weight: 700;
+        }
+        section[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
+            display: none;
+        }
+        section[data-testid="stSidebar"] [data-testid="stAlert"] {
+            padding: 0.65rem 0.7rem;
+            border-radius: 0.78rem;
+            font-size: 0.75rem;
+        }
+
+        .mirai-page-header {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            overflow: hidden;
+            min-height: 7.4rem;
+            padding: 1.25rem 1.35rem;
+            border: 1px solid #dbeafe;
+            border-radius: 1.15rem;
+            background:
+                radial-gradient(circle at 88% 10%, rgba(99, 102, 241, 0.13), transparent 12rem),
+                linear-gradient(135deg, #f8fbff 0%, #eff6ff 100%);
+            box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06);
+        }
+        .mirai-page-header::after {
+            content: "";
+            position: absolute;
+            right: -2.2rem;
+            bottom: -3.5rem;
+            width: 11rem;
+            height: 11rem;
+            border: 1.6rem solid rgba(37, 99, 235, 0.055);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        .mirai-page-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 3.5rem;
+            width: 3.5rem;
+            height: 3.5rem;
+            border-radius: 1rem;
+            background: linear-gradient(145deg, #2563eb 0%, #4f46e5 100%);
+            color: #ffffff;
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.23);
+            font-size: 1.4rem;
+            font-weight: 850;
+        }
+        .mirai-page-copy {
+            position: relative;
+            z-index: 1;
+            min-width: 0;
+        }
+        .mirai-page-eyebrow {
+            margin-bottom: 0.3rem;
+            color: #2563eb;
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.11em;
+        }
+        .mirai-page-copy h1 {
+            margin: 0 !important;
+            color: #0f172a;
+            font-size: 2rem;
+            font-weight: 800;
+            line-height: 1.05;
+            letter-spacing: -0.04em;
+        }
+        .mirai-page-copy p {
+            margin: 0.42rem 0 0;
+            color: #64748b;
+            font-size: 0.86rem;
+            line-height: 1.4;
+        }
+        .mirai-page-meta {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: flex-end;
+            flex-direction: column;
+            gap: 0.42rem;
+            margin-left: auto;
+        }
+        .mirai-page-meta span {
+            padding: 0.34rem 0.58rem;
+            border: 1px solid rgba(191, 219, 254, 0.9);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            color: #475569;
+            font-size: 0.66rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .st-key-main_refresh {
+            width: 9.7rem !important;
+            max-width: 9.7rem !important;
+            margin: 0.7rem 0 0.25rem auto !important;
+        }
+        .st-key-main_refresh .stButton > button {
+            width: 9.7rem !important;
+            min-height: 2.45rem !important;
+            height: 2.45rem !important;
+            padding: 0.4rem 0.75rem !important;
+            border: 1px solid #bfdbfe !important;
+            border-radius: 0.72rem !important;
+            background: #ffffff !important;
+            color: #1d4ed8 !important;
+            font-size: 0.78rem !important;
+            font-weight: 700 !important;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.045);
+        }
+        .mirai-header-divider,
+        .mirai-section-divider {
+            width: 100%;
+            height: 1px;
+            margin: 1rem 0;
+            background: linear-gradient(90deg, transparent 0%, #e2e8f0 8%, #e2e8f0 92%, transparent 100%);
+        }
+
+        .wms-sync-pill {
+            border-color: #bfdbfe;
+            background: #eff6ff;
+            color: #1e40af;
+            font-weight: 650;
+        }
+        .wms-alert-strip {
+            box-shadow: 0 5px 16px rgba(245, 158, 11, 0.08);
+        }
+        .wms-kpi-grid {
+            gap: 0.9rem;
+            margin-top: 1rem;
+        }
+        .wms-kpi-card {
+            min-height: 7.4rem;
+            border-color: #e2e8f0;
+            border-top-width: 1px;
+            padding: 1.05rem 1.1rem;
+            box-shadow: 0 7px 22px rgba(15, 23, 42, 0.055);
+            transition: transform 150ms ease, box-shadow 150ms ease;
+        }
+        .wms-kpi-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.085);
+        }
+        .wms-kpi-card::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 3px;
+            background: var(--kpi-color);
+        }
+        .wms-kpi-value {
+            font-size: 2rem;
+        }
+
+        .mirai-health-card {
+            min-height: 19rem;
+            padding: 1.1rem 1.15rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            background: #ffffff;
+            box-shadow: 0 7px 22px rgba(15, 23, 42, 0.05);
+        }
+        .mirai-health-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.7rem;
+            margin-bottom: 1.2rem;
+        }
+        .mirai-health-title {
+            color: #0f172a;
+            font-size: 1rem;
+            font-weight: 780;
+        }
+        .mirai-health-badge {
+            padding: 0.3rem 0.52rem;
+            border-radius: 999px;
+            background: #eff6ff;
+            color: #1d4ed8;
+            font-size: 0.65rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+        .mirai-health-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(1rem, 3vw, 2.5rem);
+            min-height: 13.5rem;
+        }
+        .mirai-donut {
+            position: relative;
+            display: grid;
+            flex: 0 0 9.5rem;
+            width: 9.5rem;
+            height: 9.5rem;
+            place-items: center;
+            border-radius: 50%;
+            background: conic-gradient(
+                #22c55e 0 var(--safe-end),
+                #f59e0b var(--safe-end) var(--critical-end),
+                #ef4444 var(--critical-end) 100%
+            );
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.03);
+        }
+        .mirai-donut::after {
+            content: "";
+            position: absolute;
+            inset: 1.22rem;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 3px 15px rgba(15, 23, 42, 0.08);
+        }
+        .mirai-donut-center {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            flex-direction: column;
+        }
+        .mirai-donut-center strong {
+            color: #0f172a;
+            font-size: 1.75rem;
+            line-height: 1;
+        }
+        .mirai-donut-center span {
+            margin-top: 0.28rem;
+            color: #64748b;
+            font-size: 0.62rem;
+            font-weight: 650;
+        }
+        .mirai-health-legend {
+            min-width: 8.5rem;
+        }
+        .mirai-health-legend > div {
+            display: grid;
+            grid-template-columns: 0.62rem 1fr auto;
+            align-items: center;
+            gap: 0.48rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #f1f5f9;
+            color: #475569;
+            font-size: 0.75rem;
+        }
+        .mirai-health-legend > div:last-child {
+            border-bottom: 0;
+        }
+        .mirai-health-legend strong {
+            color: #0f172a;
+            font-size: 0.82rem;
+        }
+        .mirai-dot {
+            width: 0.55rem;
+            height: 0.55rem;
+            border-radius: 50%;
+        }
+        .mirai-dot-safe { background: #22c55e; }
+        .mirai-dot-critical { background: #f59e0b; }
+        .mirai-dot-empty { background: #ef4444; }
+
+        .mirai-section-heading {
+            display: flex;
+            align-items: center;
+            gap: 0.72rem;
+            margin: 0.15rem 0 0.75rem;
+            padding: 0.3rem 0.15rem;
+        }
+        .mirai-section-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 2rem;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 0.62rem;
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-size: 0.88rem;
+            font-weight: 800;
+        }
+        .mirai-section-icon-red {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+        .mirai-section-heading strong {
+            display: block;
+            color: #0f172a;
+            font-size: 1rem;
+            line-height: 1.2;
+        }
+        .mirai-section-heading small {
+            display: block;
+            margin-top: 0.18rem;
+            color: #64748b;
+            font-size: 0.68rem;
+            line-height: 1.25;
+        }
+        [data-testid="stDataFrame"] {
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.9rem;
+            background: #ffffff;
+            box-shadow: 0 5px 18px rgba(15, 23, 42, 0.045);
+        }
+
+        @media (max-width: 900px) {
+            .mirai-page-meta {
+                display: none;
+            }
+            .mirai-health-content {
+                gap: 1rem;
+            }
+            .mirai-donut {
+                flex-basis: 8rem;
+                width: 8rem;
+                height: 8rem;
+            }
+        }
+        @media (max-width: 768px) {
+            .mirai-page-header {
+                align-items: flex-start;
+                min-height: 0;
+                padding: 1rem;
+                border-radius: 1rem;
+            }
+            .mirai-page-mark {
+                flex-basis: 2.8rem;
+                width: 2.8rem;
+                height: 2.8rem;
+                border-radius: 0.82rem;
+                font-size: 1.1rem;
+            }
+            .mirai-page-eyebrow {
+                font-size: 0.55rem;
+                letter-spacing: 0.08em;
+            }
+            .mirai-page-copy h1 {
+                font-size: 1.55rem !important;
+            }
+            .mirai-page-copy p {
+                font-size: 0.78rem;
+            }
+            .st-key-main_refresh {
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0.6rem 0 0.2rem !important;
+            }
+            .st-key-main_refresh .stButton > button {
+                width: 100% !important;
+                min-height: 2.75rem !important;
+                height: 2.75rem !important;
+            }
+            .mirai-health-card {
+                min-height: 0;
+            }
+        }
+        @media (max-width: 430px) {
+            .mirai-page-header {
+                gap: 0.72rem;
+                padding: 0.85rem;
+            }
+            .mirai-page-mark {
+                flex-basis: 2.55rem;
+                width: 2.55rem;
+                height: 2.55rem;
+            }
+            .mirai-page-copy p {
+                display: none;
+            }
+            .mirai-health-content {
+                align-items: stretch;
+                flex-direction: column;
+            }
+            .mirai-donut {
+                margin: 0.25rem auto;
+            }
+            .mirai-health-legend {
+                width: 100%;
+            }
+        }
+
         </style>
         """,
         unsafe_allow_html=True,
