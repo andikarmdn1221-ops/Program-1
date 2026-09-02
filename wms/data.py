@@ -12,6 +12,7 @@ from .config import (
     AUDIT_COLUMNS,
     AUTH_SIGNING_KEY,
     AUTO_SYNC_ENABLED,
+    CONNECTION_FAILURE_THRESHOLD,
     DATA_CACHE_TTL_SECONDS,
     EXPECTED_BACKEND_VERSION,
     HEALTH_CACHE_SECONDS,
@@ -214,9 +215,12 @@ def refresh_data(force=False, quiet=False):
         st.session_state.riwayat = history
         st.session_state.audit = audit
         st.session_state.is_connected = True
+        st.session_state.connection_status = "online"
+        st.session_state.connection_failure_count = 0
         st.session_state.data_source = "server"
         st.session_state.last_server_sync = waktu_display()
         st.session_state.last_server_sync_epoch = time.time()
+        st.session_state.last_health_success_epoch = time.time()
         revision = (
             str(raw.get("data_revision", "") or "") if isinstance(raw, dict) else ""
         )
@@ -239,8 +243,13 @@ def refresh_data(force=False, quiet=False):
         st.session_state.last_health_check = waktu_display()
         return True
     except Exception as exc:
-        st.session_state.is_connected = False
-        if "stok" not in st.session_state:
+        failures = int(st.session_state.get("connection_failure_count", 0) or 0) + 1
+        st.session_state.connection_failure_count = failures
+        has_snapshot = "stok" in st.session_state
+
+        if not has_snapshot:
+            st.session_state.is_connected = False
+            st.session_state.connection_status = "offline"
             if OFFLINE_USE_DEFAULT_STOCK:
                 st.session_state.stok = STOK_DEFAULT.copy()
                 st.session_state.master_info = {
@@ -255,6 +264,14 @@ def refresh_data(force=False, quiet=False):
             st.session_state.audit = []
         else:
             st.session_state.data_source = "last_known_session"
+            if failures < CONNECTION_FAILURE_THRESHOLD:
+                # Gangguan singkat tidak langsung mengubah seluruh UI menjadi offline.
+                st.session_state.is_connected = True
+                st.session_state.connection_status = "recovering"
+            else:
+                st.session_state.is_connected = False
+                st.session_state.connection_status = "offline"
+
         if not quiet:
             show_api_error("Gagal mengambil data", exc)
         return False
@@ -274,7 +291,10 @@ def _apply_health_to_session(health: dict):
     st.session_state.health_cache = dict(health)
     st.session_state.last_health_epoch = time.time()
     st.session_state.last_health_check = waktu_display()
+    st.session_state.last_health_success_epoch = time.time()
     st.session_state.is_connected = True
+    st.session_state.connection_status = "online"
+    st.session_state.connection_failure_count = 0
     if backend_version:
         st.session_state.backend_version = backend_version
         st.session_state.backend_version_mismatch = (
@@ -307,26 +327,28 @@ def sync_if_changed(force_health=False):
             return refresh_data(force=True, quiet=True)
         return False
     except Exception:
-        st.session_state.is_connected = False
-        if "stok" in st.session_state:
-            st.session_state.data_source = "last_known_session"
-        return False
+        # Health endpoint dapat terlambat saat Apps Script cold start.
+        # Coba full read sebelum menyatakan koneksi gagal.
+        return refresh_data(force=True, quiet=True)
 
 
 def require_online_operation():
-    """Gunakan health terbaru bila masih fresh; server tetap memvalidasi setiap mutation saat submit."""
+    """Verifikasi server terbaru sebelum mutation; snapshot tidak pernah dianggap cukup untuk menulis."""
     if not WRITE_BLOCK_WHEN_OFFLINE:
         return
-    try:
-        get_server_health(force=False)
-    except Exception:
-        st.session_state.is_connected = False
-        if "stok" in st.session_state:
-            st.session_state.data_source = "last_known_session"
 
-    if not st.session_state.get("is_connected"):
+    verified = False
+    try:
+        get_server_health(force=True)
+        verified = True
+    except Exception:
+        # Health ringan gagal: full read menjadi verifikasi cadangan.
+        verified = refresh_data(force=True, quiet=True)
+
+    if not verified:
         st.error(
-            "⛔ Operasi perubahan stok dinonaktifkan karena database sedang offline. Segarkan koneksi terlebih dahulu."
+            "⛔ Server belum dapat diverifikasi. Sistem mempertahankan data terakhir, "
+            "tetapi perubahan stok ditahan agar tidak terjadi data ganda atau kehilangan data."
         )
         st.stop()
 
