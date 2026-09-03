@@ -9,9 +9,9 @@ def render_about_page():
     st.subheader("Mirai")
     st.caption("Inventory Operations · Warehouse Management System")
     st.write(
-        "Mirai membantu tim gudang mencatat pergerakan barang, memantau stok, "
-        "mengelola akses pengguna, dan menerima notifikasi operasional dalam "
-        "satu aplikasi."
+        "Mirai membantu usaha kecil dan menengah mencatat pergerakan barang, "
+        "memantau stok, mengelola akses tim gudang, dan menerima notifikasi "
+        "operasional dalam satu aplikasi."
     )
 
     version_col, storage_col, notification_col = st.columns(3)

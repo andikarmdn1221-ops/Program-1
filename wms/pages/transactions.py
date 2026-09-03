@@ -39,7 +39,11 @@ def render_transaction_page(active_menu):
         with st.form(f"tx_{tipe.lower()}", clear_on_submit=True):
             jumlah = st.number_input("Jumlah (pcs)", min_value=1, value=1, step=1)
             tgl = st.date_input("Tanggal Transaksi", value=hari_ini_wib())
-            label_ket = "Supplier / Keterangan" if tipe == "MASUK" else "Nama Pembeli / Proyek"
+            label_ket = (
+                "Pemasok / Keterangan"
+                if tipe == "MASUK"
+                else "Penerima / Keperluan"
+            )
             keterangan = st.text_input(label_ket, "" if tipe == "KELUAR" else "-")
             bukti = st.file_uploader(
                 "Upload Bukti / Nota (Opsional)" if tipe == "MASUK" else "Upload Surat Jalan (Opsional)",
@@ -53,7 +57,7 @@ def render_transaction_page(active_menu):
 
         if submit:
             if tipe == "KELUAR" and not keterangan.strip():
-                st.warning("Nama Pembeli / Proyek wajib diisi.")
+                st.warning("Penerima atau keperluan barang wajib diisi.")
             else:
                 try:
                     require_online_operation()
@@ -182,7 +186,10 @@ def render_correction_page():
             idx = names.index(old["Barang"]) if old["Barang"] in names else 0
             barang = st.selectbox("Barang", names, index=idx)
             jumlah = st.number_input("Jumlah", min_value=1, value=max(1, safe_int(old["Jumlah"])), step=1)
-            ket = st.text_input("Keterangan / Pembeli", value=str(old["Pembeli / Keterangan"]))
+            ket = st.text_input(
+                "Penerima / Keperluan",
+                value=str(old["Pembeli / Keterangan"]),
+            )
             save = st.form_submit_button("💾 Simpan Koreksi", use_container_width=True)
 
         if save:

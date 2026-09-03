@@ -211,7 +211,11 @@ def render_dashboard_live():
         '<div><strong>Ringkasan Stok</strong><small>Cari dan periksa kondisi setiap barang</small></div></div>',
         unsafe_allow_html=True,
     )
-    keyword = st.text_input("🔍 Cari barang", placeholder="Contoh: top coat", key="dashboard_search_live")
+    keyword = st.text_input(
+        "🔍 Cari barang",
+        placeholder="Contoh: kardus atau lakban",
+        key="dashboard_search_live",
+    )
     rows = []
     for nama in sorted(stock_now, key=natural_key):
         if keyword and keyword.lower() not in nama.lower():

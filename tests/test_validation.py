@@ -46,7 +46,7 @@ def test_position_is_normalized_and_validated():
 
 
 def test_common_input_validation():
-    assert clean_item_name("  Top   Coat A ") == "Top Coat A"
+    assert clean_item_name("  Kardus   Besar ") == "Kardus Besar"
     assert clean_note(" catatan\x00aman ") == "catatanaman"
     assert safe_int("12.0") == 12
     assert status_stok(0, 5) == "HABIS"
@@ -57,22 +57,22 @@ def test_common_input_validation():
 def test_stock_normalization_enforces_inventory_invariants():
     rows = [
         ["Nama Barang", "Jumlah Stok", "Status", "Batas Minimum"],
-        ["Top Coat A", "12.0", "AKTIF", "5"],
+        ["Kardus Besar", "12.0", "AKTIF", "5"],
     ]
     stock, master = normalize_stock_rows(rows)
-    assert stock == {"Top Coat A": 12}
-    assert master["Top Coat A"] == {"status": "Aktif", "min_stok": 5}
+    assert stock == {"Kardus Besar": 12}
+    assert master["Kardus Besar"] == {"status": "Aktif", "min_stok": 5}
 
 
 @pytest.mark.parametrize(
     "rows, message",
     [
         (
-            [["Top Coat A", 1, "Aktif", 5], ["top coat a", 2, "Aktif", 5]],
+            [["Kardus Besar", 1, "Aktif", 5], ["kardus besar", 2, "Aktif", 5]],
             "duplikat",
         ),
-        ([["Top Coat A", -1, "Aktif", 5]], "negatif"),
-        ([["Top Coat A", 1, "Aktif", 0]], "minimal 1"),
+        ([["Kardus Besar", -1, "Aktif", 5]], "negatif"),
+        ([["Kardus Besar", 1, "Aktif", 0]], "minimal 1"),
     ],
 )
 def test_invalid_stock_data_is_rejected(rows, message):
@@ -82,13 +82,13 @@ def test_invalid_stock_data_is_rejected(rows, message):
 
 def test_headerless_legacy_rows_do_not_lose_first_record():
     history = normalize_history_rows(
-        [["01-09-2026 08:00", "MASUK", "Primer", 2, "Supplier"]]
+        [["01-09-2026 08:00", "MASUK", "Lakban", 2, "Pemasok"]]
     )
     audit = normalize_audit_rows(
-        [["01-09-2026 08:01", "TRANSACTION", "TRX-1", "Primer +2"]]
+        [["01-09-2026 08:01", "TRANSACTION", "TRX-1", "Lakban +2"]]
     )
     assert len(history) == 1
-    assert history[0]["Barang"] == "Primer"
+    assert history[0]["Barang"] == "Lakban"
     assert len(audit) == 1
     assert audit[0]["Aksi"] == "TRANSACTION"
 
