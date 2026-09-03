@@ -1,12 +1,9 @@
 # Mirai
 
-Mirai adalah aplikasi manajemen inventaris dan operasional gudang untuk usaha
-kecil dan menengah. Aplikasi berbasis Streamlit ini menggunakan Google Sheets
-melalui Google Apps Script sebagai database, Google Drive untuk bukti transaksi,
-serta Telegram untuk notifikasi operasional.
-
-Data bawaan adalah data demo gudang umum. Mirai tidak memuat nama barang,
-riwayat, akun, atau identitas perusahaan tempat pengembangan awal dilakukan.
+Mirai adalah aplikasi manajemen inventaris dan operasional gudang berbasis
+Streamlit. Sistem menggunakan Google Sheets melalui Google Apps Script sebagai
+database, Google Drive untuk bukti transaksi, serta Telegram untuk notifikasi
+operasional.
 
 ## Fitur utama
 
@@ -42,7 +39,7 @@ Setiap perusahaan harus menggunakan database, folder Drive, token Telegram,
 kunci API, dan akun miliknya sendiri. Jangan memakai credential atau data dari
 instalasi pelanggan lain.
 
-1. Buat spreadsheet kosong dan folder Google Drive baru khusus pelanggan.
+1. Salin spreadsheet dan siapkan folder Google Drive baru.
 2. Buat proyek Apps Script dan tempel seluruh isi `Code_Accounts.gs`.
 3. Isi Script Properties: `SPREADSHEET_ID`, `API_SHARED_KEY`,
    `AUTH_SIGNING_KEY`, dan konfigurasi opsional lainnya.

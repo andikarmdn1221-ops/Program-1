@@ -54,7 +54,7 @@ def test_telegram_connection():
 
         # 2) Pastikan CHAT ID bisa menerima pesan dari bot tersebut.
         send_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        test_message = f"✅ Tes koneksi Mirai Inventory berhasil\n{waktu_display()}"
+        test_message = f"✅ Tes koneksi WMS Microcement berhasil\n{waktu_display()}"
         sent = requests.post(
             send_url,
             json={"chat_id": str(TELEGRAM_CHAT_ID), "text": test_message},
