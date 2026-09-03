@@ -10,7 +10,26 @@ st.set_page_config(
     layout="wide",
 )
 
-from wms.auth import clear_auth_session, current_role, get_users_config, has_permission, login_gate, render_flash
+from wms.loading import hide_loading_screen, show_loading_screen
+
+# Loader dipasang sebelum modul aplikasi yang lebih berat diimpor. Dengan begitu,
+# pengguna melihat identitas Mirai saat Python menyiapkan halaman dan koneksi data.
+startup_loader = None
+startup_complete = bool(st.session_state.get("_mirai_startup_complete"))
+login_shell_ready = bool(st.session_state.get("_mirai_login_shell_ready"))
+if not startup_complete and (
+    st.session_state.get("auth_user") or not login_shell_ready
+):
+    startup_loader = show_loading_screen()
+
+from wms.auth import (
+    clear_auth_session,
+    current_role,
+    get_users_config,
+    has_permission,
+    login_gate,
+    render_flash,
+)
 from wms.components import (
     render_audit_live,
     render_dashboard_live,
@@ -45,15 +64,23 @@ from wms.utils import waktu_display
 
 inject_responsive_css()
 
-login_gate()
-validate_runtime_security()
+login_gate(startup_loader=startup_loader)
+try:
+    validate_runtime_security()
 
-if "stok" not in st.session_state:
-    refresh_data(force=True)
+    if "stok" not in st.session_state:
+        refresh_data(force=True)
+finally:
+    # Error keamanan/koneksi tetap harus terlihat, bukan tertutup oleh overlay.
+    hide_loading_screen(startup_loader)
+
+st.session_state["_mirai_startup_complete"] = True
 
 with st.sidebar:
     role_now = current_role()
-    display_name = st.session_state.get("auth_display_name") or st.session_state.get("auth_user")
+    display_name = st.session_state.get("auth_display_name") or st.session_state.get(
+        "auth_user"
+    )
     role_label = ROLE_LABEL.get(role_now, role_now)
     st.markdown(
         f"""
@@ -142,9 +169,7 @@ with st.sidebar:
     else:
         view_mode = "Ringkas"
 
-    menu_options = (
-        simple_menu_options if view_mode == "Ringkas" else full_menu_options
-    )
+    menu_options = simple_menu_options if view_mode == "Ringkas" else full_menu_options
     active_raw = st.radio(
         "NAVIGASI",
         menu_options,
@@ -178,7 +203,11 @@ with st.sidebar:
     else:
         st.info("🟡 Telegram dikonfigurasi · belum diuji")
 
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID and role_now in {ROLE_DEVELOPER, ROLE_BOSS}:
+    if (
+        TELEGRAM_BOT_TOKEN
+        and TELEGRAM_CHAT_ID
+        and role_now in {ROLE_DEVELOPER, ROLE_BOSS}
+    ):
         if st.button("🧪 Tes Telegram", use_container_width=True):
             with st.spinner("Menguji Telegram..."):
                 ok, detail = test_telegram_connection()
@@ -213,7 +242,9 @@ page_descriptions = {
     "Pengaturan & Reset": "Kelola konfigurasi khusus Developer.",
     "Tentang Aplikasi": "Informasi versi dan kemampuan sistem Mirai.",
 }
-page_description = page_descriptions.get(active_menu, "Kelola operasional gudang dengan lebih teratur.")
+page_description = page_descriptions.get(
+    active_menu, "Kelola operasional gudang dengan lebih teratur."
+)
 st.markdown(
     f"""
     <div class="mirai-page-header">
@@ -231,7 +262,9 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-if st.button("↻ Segarkan data", help="Ambil data terbaru dari server", key="main_refresh"):
+if st.button(
+    "↻ Segarkan data", help="Ambil data terbaru dari server", key="main_refresh"
+):
     clear_and_refresh()
     st.rerun()
 
@@ -242,11 +275,17 @@ if not st.session_state.get("is_connected"):
     source = st.session_state.get("data_source", "offline")
     if source == "last_known_session":
         last_sync = st.session_state.get("last_server_sync", "tidak diketahui")
-        st.error(f"🚨 Database tidak dapat dihubungi. Data yang tampil adalah snapshot sesi terakhir (sinkron terakhir: {last_sync}). Jangan anggap sebagai stok real-time.")
+        st.error(
+            f"🚨 Database tidak dapat dihubungi. Data yang tampil adalah snapshot sesi terakhir (sinkron terakhir: {last_sync}). Jangan anggap sebagai stok real-time."
+        )
     elif source == "default_offline":
-        st.error("🚨 Database offline. Yang tampil adalah STOK DEFAULT/DUMMY, bukan stok aktual. Jangan gunakan untuk keputusan operasional.")
+        st.error(
+            "🚨 Database offline. Yang tampil adalah STOK DEFAULT/DUMMY, bukan stok aktual. Jangan gunakan untuk keputusan operasional."
+        )
     else:
-        st.error("🚨 Database tidak dapat dihubungi. Data stok aktual tidak ditampilkan untuk mencegah penggunaan angka yang menyesatkan.")
+        st.error(
+            "🚨 Database tidak dapat dihubungi. Data stok aktual tidak ditampilkan untuk mencegah penggunaan angka yang menyesatkan."
+        )
 
 
 # ============================================================

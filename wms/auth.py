@@ -23,6 +23,7 @@ from .config import (
     SESSION_REVALIDATE_SECONDS,
     SESSION_TIMEOUT_MINUTES,
 )
+from .loading import hide_loading_screen, show_loading_screen
 from .security import LoginRateLimiter
 
 
@@ -138,7 +139,9 @@ def clear_auth_session():
         st.session_state.pop(key, None)
 
 
-def _complete_login(username: str, role: str, now: float, display_name="", source="local"):
+def _complete_login(
+    username: str, role: str, now: float, display_name="", source="local"
+):
     st.session_state.auth_user = username
     st.session_state.auth_display_name = display_name or username
     st.session_state.auth_role = normalize_role(role)
@@ -180,11 +183,13 @@ def _revalidate_active_session(users: dict, now: float) -> bool:
             status = str(result.get("status") or "").upper()
             if not result.get("active") or status != "ACTIVE":
                 clear_auth_session()
-                st.error("Akun telah dinonaktifkan atau dihapus. Silakan hubungi Developer.")
+                st.error(
+                    "Akun telah dinonaktifkan atau dihapus. Silakan hubungi Developer."
+                )
                 return False
             st.session_state.auth_role = normalize_role(result.get("role"))
-            st.session_state.auth_display_name = (
-                str(result.get("full_name") or username)
+            st.session_state.auth_display_name = str(
+                result.get("full_name") or username
             )
         else:
             configured_username, cfg = find_local_user(users, username)
@@ -209,7 +214,7 @@ def _revalidate_active_session(users: dict, now: float) -> bool:
     return True
 
 
-def login_gate():
+def login_gate(startup_loader=None):
     users = get_users_config()
     now = time.time()
 
@@ -220,6 +225,7 @@ def login_gate():
             st.session_state.auth_login_at = now
             st.session_state.auth_last_activity = now
             return
+        hide_loading_screen(startup_loader)
         st.error("Konfigurasi USERS belum dibuat di Streamlit Secrets.")
         st.info(
             "Tambahkan akun Developer, Boss, Admin, dan Staff di Streamlit Secrets sebelum aplikasi digunakan."
@@ -240,6 +246,11 @@ def login_gate():
             )
             st.session_state.auth_last_activity = now
             return
+
+    # Login sudah siap ditampilkan. Simpan penanda agar splash startup tidak
+    # berkedip lagi pada setiap percobaan login yang gagal.
+    hide_loading_screen(startup_loader)
+    st.session_state["_mirai_login_shell_ready"] = True
 
     lock_until = float(st.session_state.get("login_lock_until", 0) or 0)
     if lock_until and now >= lock_until:
@@ -279,58 +290,69 @@ def login_gate():
             submit = st.form_submit_button("Masuk", use_container_width=True)
 
         if submit:
-            global_retry_after = LOGIN_RATE_LIMITER.retry_after(username, now=now)
-            if global_retry_after:
-                st.error(
-                    "Login untuk username ini dikunci sementara. "
-                    f"Coba lagi dalam {global_retry_after} detik."
-                )
-                st.stop()
-
+            verification_loader = show_loading_screen(
+                "Memverifikasi akun",
+                "Memeriksa akses dan menyiapkan sesi Anda dengan aman.",
+            )
             try:
-                configured_username, cfg = find_local_user(users, username)
-            except RuntimeError as exc:
-                st.error(str(exc))
-                st.stop()
-            if cfg and password_matches(password, cfg):
-                LOGIN_RATE_LIMITER.record_success(username)
-                _complete_login(
-                    configured_username or username,
-                    cfg.get("role", ROLE_STAFF),
-                    now,
-                    str(cfg.get("display_name") or configured_username or username),
-                    source="local",
-                )
+                global_retry_after = LOGIN_RATE_LIMITER.retry_after(username, now=now)
+                if global_retry_after:
+                    st.error(
+                        "Login untuk username ini dikunci sementara. "
+                        f"Coba lagi dalam {global_retry_after} detik."
+                    )
+                    st.stop()
 
-            try:
-                from .accounts import authenticate_account
+                try:
+                    configured_username, cfg = find_local_user(users, username)
+                except RuntimeError as exc:
+                    st.error(str(exc))
+                    st.stop()
+                if cfg and password_matches(password, cfg):
+                    LOGIN_RATE_LIMITER.record_success(username)
+                    _complete_login(
+                        configured_username or username,
+                        cfg.get("role", ROLE_STAFF),
+                        now,
+                        str(cfg.get("display_name") or configured_username or username),
+                        source="local",
+                    )
 
-                dynamic = authenticate_account(username, password)
-            except Exception:
-                dynamic = {"authenticated": False, "status": "ERROR"}
+                try:
+                    from .accounts import authenticate_account
 
-            if dynamic.get("authenticated"):
-                LOGIN_RATE_LIMITER.record_success(username)
-                _complete_login(
-                    str(dynamic.get("username") or username),
-                    str(dynamic.get("role") or ROLE_STAFF),
-                    now,
-                    str(dynamic.get("full_name") or username),
-                    source="dynamic",
-                )
+                    dynamic = authenticate_account(username, password)
+                except Exception:
+                    dynamic = {"authenticated": False, "status": "ERROR"}
 
-            status = str(dynamic.get("status") or "").upper()
-            if status == "PENDING":
-                st.warning("Akun masih menunggu persetujuan Developer.")
-            elif status == "SUSPENDED":
-                st.error("Akun sedang dinonaktifkan. Hubungi Developer.")
-            elif status == "REJECTED":
-                st.error("Permintaan akun ditolak. Hubungi Developer jika diperlukan.")
-            elif status == "ERROR":
-                st.error("Layanan akun sedang tidak dapat dihubungi. Coba lagi nanti.")
-            else:
-                LOGIN_RATE_LIMITER.record_failure(username, now=now)
-                _record_failed_login(now)
+                if dynamic.get("authenticated"):
+                    LOGIN_RATE_LIMITER.record_success(username)
+                    _complete_login(
+                        str(dynamic.get("username") or username),
+                        str(dynamic.get("role") or ROLE_STAFF),
+                        now,
+                        str(dynamic.get("full_name") or username),
+                        source="dynamic",
+                    )
+
+                status = str(dynamic.get("status") or "").upper()
+                if status == "PENDING":
+                    st.warning("Akun masih menunggu persetujuan Developer.")
+                elif status == "SUSPENDED":
+                    st.error("Akun sedang dinonaktifkan. Hubungi Developer.")
+                elif status == "REJECTED":
+                    st.error(
+                        "Permintaan akun ditolak. Hubungi Developer jika diperlukan."
+                    )
+                elif status == "ERROR":
+                    st.error(
+                        "Layanan akun sedang tidak dapat dihubungi. Coba lagi nanti."
+                    )
+                else:
+                    LOGIN_RATE_LIMITER.record_failure(username, now=now)
+                    _record_failed_login(now)
+            finally:
+                hide_loading_screen(verification_loader)
 
     with register_tab:
         st.info("Akun baru belum bisa login sebelum disetujui oleh Developer.")
@@ -359,6 +381,10 @@ def login_gate():
             )
 
         if register_submit:
+            registration_loader = show_loading_screen(
+                "Mengirim permintaan akun",
+                "Menyimpan data dan mengirim pemberitahuan kepada Developer.",
+            )
             try:
                 from .accounts import normalize_username, register_account
                 from .notifications import send_account_request_notification
@@ -397,6 +423,8 @@ def login_gate():
                     )
             except Exception as exc:
                 st.error(str(exc))
+            finally:
+                hide_loading_screen(registration_loader)
     st.stop()
 
 
