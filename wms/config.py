@@ -13,7 +13,7 @@ except Exception:
     _SECRETS = {}
 
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "8.8-sme"
+APP_VERSION = "8.7-performance"
 EXPECTED_BACKEND_VERSION = "7.5-performance"
 URL_GSHEET_API = _SECRETS.get("URL_GSHEET_API", "")
 API_SHARED_KEY = _SECRETS.get("API_SHARED_KEY", "")
@@ -77,49 +77,26 @@ NOTIFICATION_LOG_LIMIT = max(
 )
 
 STOK_DEFAULT = {
-    "Kardus Packing Besar": 48,
-    "Kardus Packing Sedang": 65,
-    "Lakban Cokelat": 36,
-    "Bubble Wrap": 18,
-    "Plastik Stretch Film": 4,
-    "Label Pengiriman": 120,
-    "Pallet Kayu": 3,
-    "Tali Strapping": 24,
-    "Plastik Packing": 75,
-    "Sarung Tangan Kerja": 40,
-    "Masker Debu": 55,
-    "Cutter Gudang": 9,
-    "Spidol Permanen": 20,
-    "Kertas A4": 25,
-    "Tinta Printer": 2,
-    "Rompi Keselamatan": 10,
-    "Sepatu Keselamatan": 8,
+    "Microcement base": 16,
+    "Ready to use": 15,
+    "Mixed resin A": 12,
+    "Ceramic microcement": 4,
+    "Microrock": 17,
+    "Primer ordinary": 7,
+    "Epoxy primer": 3,
+    "Self leveling white finish": 4,
+    "Top coat A": 15,
+    "Top coat B": 1,
+    "Top coat C": 5,
+    "Pewarna no 1": 3,
+    "Pewarna no 2": 10,
+    "Pewarna no 3": 0,
+    "Pewarna no 4": 9,
+    "Metal glaze wax": 0,
+    "Metallic glaze wax": 0,
 }
 
-_DEMO_MINIMUM_STOCK = {
-    "Kardus Packing Besar": 10,
-    "Kardus Packing Sedang": 15,
-    "Lakban Cokelat": 10,
-    "Bubble Wrap": 6,
-    "Plastik Stretch Film": 5,
-    "Label Pengiriman": 30,
-    "Pallet Kayu": 4,
-    "Tali Strapping": 8,
-    "Plastik Packing": 20,
-    "Sarung Tangan Kerja": 10,
-    "Masker Debu": 15,
-    "Cutter Gudang": 3,
-    "Spidol Permanen": 5,
-    "Kertas A4": 8,
-    "Tinta Printer": 3,
-    "Rompi Keselamatan": 4,
-    "Sepatu Keselamatan": 4,
-}
-
-MASTER_DEFAULT = {
-    nama: {"status": "Aktif", "min_stok": _DEMO_MINIMUM_STOCK[nama]}
-    for nama in STOK_DEFAULT
-}
+MASTER_DEFAULT = {nama: {"status": "Aktif", "min_stok": 5} for nama in STOK_DEFAULT}
 
 RIWAYAT_COLUMNS = [
     "ID Transaksi",
