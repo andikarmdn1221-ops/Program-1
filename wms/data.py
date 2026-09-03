@@ -227,6 +227,9 @@ def refresh_data(force=False, quiet=False):
         backend_version = (
             str(raw.get("backend_version", "") or "") if isinstance(raw, dict) else ""
         )
+        server_duration_ms = (
+            safe_int(raw.get("server_duration_ms", 0)) if isinstance(raw, dict) else 0
+        )
         if revision:
             st.session_state.server_revision = revision
         if backend_version:
@@ -234,6 +237,8 @@ def refresh_data(force=False, quiet=False):
             st.session_state.backend_version_mismatch = (
                 backend_version != EXPECTED_BACKEND_VERSION
             )
+        if server_duration_ms > 0:
+            st.session_state.last_server_duration_ms = server_duration_ms
         st.session_state.health_cache = {
             "ok": True,
             "backend_version": backend_version,

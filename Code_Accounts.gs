@@ -1,5 +1,5 @@
 /**
- * Mirai Backend v7.4
+ * Mirai Backend v7.5
  *
  * Semua credential wajib disimpan di Apps Script > Project Settings >
  * Script Properties. Jangan menaruh token, key, atau ID produksi di file ini.
@@ -21,7 +21,8 @@
  * - REQUIRE_SERVER_BACKUP_BEFORE_RESET=true
  */
 
-const BACKEND_VERSION = "7.4-audit-clear";
+const BACKEND_VERSION = "7.5-performance";
+const SCHEMA_CACHE_SECONDS = 300;
 const SHEET_STOCK = "stok";
 const SHEET_HISTORY = "riwayat";
 const SHEET_AUDIT = "audit";
@@ -98,6 +99,7 @@ function doGet() {
 }
 
 function doPost(e) {
+  const requestStartedAt = Date.now();
   try {
     if (e && e.parameter && e.parameter.telegram_secret) {
       return handleTelegramWebhook_(e);
@@ -106,10 +108,18 @@ function doPost(e) {
     const payload = parseJsonBody_(e);
     verifySignedRequest_(payload);
     const result = routeRequest_(payload);
-    return jsonResponse_(Object.assign({ ok: true }, result || {}));
+    return jsonResponse_(
+      Object.assign({ ok: true }, result || {}, {
+        server_duration_ms: Date.now() - requestStartedAt,
+      })
+    );
   } catch (error) {
     console.error("[WMS backend] " + safeError_(error));
-    return jsonResponse_({ ok: false, message: safeError_(error) });
+    return jsonResponse_({
+      ok: false,
+      message: safeError_(error),
+      server_duration_ms: Date.now() - requestStartedAt,
+    });
   }
 }
 
@@ -196,7 +206,9 @@ function routeRequest_(payload) {
 }
 
 function handleHealth_(payload) {
-  resolveActor_(payload);
+  // Endpoint health hanya mengembalikan metadata non-sensitif. Signature dan
+  // identitas tetap divalidasi, tetapi tidak perlu membuka Google Sheets.
+  resolveHealthIdentity_(payload);
   const properties = PropertiesService.getScriptProperties();
   return {
     backend_version: BACKEND_VERSION,
@@ -206,9 +218,11 @@ function handleHealth_(payload) {
 }
 
 function handleRead_(payload) {
-  const actor = resolveActor_(payload);
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
+  // Pakai spreadsheet yang sama untuk validasi akun dan pembacaan data.
+  // Sebelumnya proses ini membuka file serta memeriksa schema dua kali.
+  const actor = resolveActor_(payload, spreadsheet, true);
   return {
     backend_version: BACKEND_VERSION,
     data_revision:
@@ -931,7 +945,19 @@ function handleAccountDelete_(payload) {
   return { username: username, deleted: true, status: "DELETED" };
 }
 
-function resolveActor_(payload) {
+function resolveHealthIdentity_(payload) {
+  const username = String(payload.actor || "").trim();
+  if (!username) {
+    throw new Error("Identitas pengguna tidak tersedia.");
+  }
+  return {
+    username: username,
+    role: normalizeRole_(payload.role),
+    source: String(payload.auth_source || "local").toLowerCase(),
+  };
+}
+
+function resolveActor_(payload, existingSpreadsheet, schemaReady) {
   const username = String(payload.actor || "").trim();
   if (!username) {
     throw new Error("Identitas pengguna tidak tersedia.");
@@ -939,8 +965,10 @@ function resolveActor_(payload) {
   const source = String(payload.auth_source || "local").toLowerCase();
   let role = normalizeRole_(payload.role);
 
-  const spreadsheet = getSpreadsheet_();
-  ensureSchema_(spreadsheet);
+  const spreadsheet = existingSpreadsheet || getSpreadsheet_();
+  if (!schemaReady) {
+    ensureSchema_(spreadsheet);
+  }
   const account = findAccount_(
     spreadsheet.getSheetByName(SHEET_ACCOUNTS),
     username
@@ -1152,10 +1180,17 @@ function getSpreadsheet_() {
 }
 
 function ensureSchema_(spreadsheet) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "schema_ready_" + BACKEND_VERSION;
+  if (cache.get(cacheKey) === "1") {
+    return;
+  }
+
   ensureSheet_(spreadsheet, SHEET_STOCK, STOCK_HEADERS);
   ensureSheet_(spreadsheet, SHEET_HISTORY, HISTORY_HEADERS);
   ensureSheet_(spreadsheet, SHEET_AUDIT, AUDIT_HEADERS);
   ensureSheet_(spreadsheet, SHEET_ACCOUNTS, ACCOUNT_HEADERS);
+  cache.put(cacheKey, "1", SCHEMA_CACHE_SECONDS);
 }
 
 function ensureSheet_(spreadsheet, name, headers) {
@@ -1163,31 +1198,41 @@ function ensureSheet_(spreadsheet, name, headers) {
   if (!sheet) {
     sheet = spreadsheet.insertSheet(name);
   }
-  const current = sheet.getLastRow()
+  let lastRow = sheet.getLastRow();
+  const current = lastRow
     ? sheet.getRange(1, 1, 1, Math.max(headers.length, sheet.getLastColumn())).getValues()[0]
     : [];
   const correct = headers.every(function (header, index) {
     return String(current[index] || "").trim() === header;
   });
   if (!correct) {
-    if (sheet.getLastRow() === 0) {
+    if (lastRow === 0) {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      lastRow = 1;
     } else {
       throw new Error(
         "Header sheet " + name + " tidak cocok. Jalankan migrasi sebelum menggunakan backend."
       );
     }
   }
-  sheet.setFrozenRows(1);
+  // Hindari operasi tulis pada setiap request hanya untuk pengaturan visual.
+  if (lastRow === 1 && sheet.getFrozenRows() !== 1) {
+    sheet.setFrozenRows(1);
+  }
   return sheet;
 }
 
 function getSheetValues_(sheet) {
-  if (!sheet || sheet.getLastRow() < 1) {
+  if (!sheet) {
     return [];
   }
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) {
+    return [];
+  }
+  const lastColumn = sheet.getLastColumn();
   return sheet
-    .getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn())
+    .getRange(1, 1, lastRow, lastColumn)
     .getValues();
 }
 

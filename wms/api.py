@@ -9,6 +9,7 @@ from .auth import actor_payload
 from .config import (
     API_SHARED_KEY,
     AUTH_SIGNING_KEY,
+    DATABASE_READ_TIMEOUT_SECONDS,
     DATABASE_RETRY_ATTEMPTS,
     DATABASE_RETRY_BACKOFF_SECONDS,
     HEALTH_TIMEOUT_SECONDS,
@@ -16,6 +17,7 @@ from .config import (
     URL_GSHEET_API,
 )
 from .utils import api_error_detail, make_request_signature, redact_sensitive
+
 
 def _request_with_retry(method: str, url: str, *, attempts=1, **kwargs):
     """Ulangi gangguan jaringan sementara; mutation tetap memakai satu percobaan."""
@@ -30,7 +32,7 @@ def _request_with_retry(method: str, url: str, *, attempts=1, **kwargs):
             last_error = exc
             if attempt + 1 >= attempts:
                 raise
-            time.sleep(DATABASE_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+            time.sleep(DATABASE_RETRY_BACKOFF_SECONDS * (2**attempt))
     raise last_error or RuntimeError("Permintaan database gagal.")
 
 
@@ -43,15 +45,25 @@ def _post_json(payload: dict, timeout=60, retry_attempts=1):
     if REQUIRE_HMAC and not AUTH_SIGNING_KEY:
         raise RuntimeError("AUTH_SIGNING_KEY wajib diisi karena REQUIRE_HMAC=true.")
 
-    signed_payload = make_request_signature(payload)
-    signed_payload = {**signed_payload, "api_key": API_SHARED_KEY}
-    response = _request_with_retry(
-        "post",
-        URL_GSHEET_API,
-        attempts=retry_attempts,
-        json=signed_payload,
-        timeout=timeout,
-    )
+    # Setiap retry wajib memakai nonce/signature baru. Mengirim ulang signature
+    # lama akan ditolak backend sebagai replay request.
+    retry_attempts = max(1, int(retry_attempts))
+    for attempt in range(retry_attempts):
+        signed_payload = make_request_signature(payload)
+        signed_payload = {**signed_payload, "api_key": API_SHARED_KEY}
+        try:
+            response = _request_with_retry(
+                "post",
+                URL_GSHEET_API,
+                attempts=1,
+                json=signed_payload,
+                timeout=timeout,
+            )
+            break
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError):
+            if attempt + 1 >= retry_attempts:
+                raise
+            time.sleep(DATABASE_RETRY_BACKOFF_SECONDS * (2**attempt))
     try:
         data = response.json()
     except ValueError as exc:
@@ -59,11 +71,13 @@ def _post_json(payload: dict, timeout=60, retry_attempts=1):
     if not isinstance(data, dict):
         raise RuntimeError("Respons server tidak valid.")
     if data.get("ok") is False:
-        raise RuntimeError(redact_sensitive(data.get("message", "Operasi ditolak server.")))
+        raise RuntimeError(
+            redact_sensitive(data.get("message", "Operasi ditolak server."))
+        )
     return data
 
 
-def api_get(timeout=20):
+def api_get(timeout=DATABASE_READ_TIMEOUT_SECONDS):
     """Baca database lewat signed POST. GET legacy hanya jika REQUIRE_HMAC dimatikan sengaja."""
     if AUTH_SIGNING_KEY:
         return _post_json(
@@ -90,7 +104,9 @@ def api_get(timeout=20):
     except ValueError as exc:
         raise RuntimeError("Respons server bukan JSON yang valid.") from exc
     if isinstance(data, dict) and data.get("ok") is False:
-        raise RuntimeError(redact_sensitive(data.get("message", "Server menolak permintaan.")))
+        raise RuntimeError(
+            redact_sensitive(data.get("message", "Server menolak permintaan."))
+        )
     return data
 
 

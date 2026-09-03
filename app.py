@@ -69,7 +69,9 @@ try:
     validate_runtime_security()
 
     if "stok" not in st.session_state:
-        refresh_data(force=True)
+        # Gunakan cache aman per pengguna/role pada pembukaan ulang. Jika cache
+        # kosong, fungsi tetap mengambil data terbaru dari server.
+        refresh_data(force=False)
 finally:
     # Error keamanan/koneksi tetap harus terlihat, bukan tertutup oleh overlay.
     hide_loading_screen(startup_loader)
@@ -186,6 +188,11 @@ with st.sidebar:
             st.success("🟢 Database terhubung")
         if st.session_state.get("last_server_sync"):
             st.caption(f"Sinkron: {st.session_state.get('last_server_sync')}")
+        server_duration_ms = int(
+            st.session_state.get("last_server_duration_ms", 0) or 0
+        )
+        if server_duration_ms > 0:
+            st.caption(f"Respons server: {server_duration_ms / 1000:.1f} detik")
     else:
         st.error("🔴 Database offline")
     if st.session_state.get("backend_version_mismatch"):

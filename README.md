@@ -51,7 +51,14 @@ instalasi pelanggan lain.
 9. Uji login, koneksi database, transaksi masuk/keluar, backup, dan Telegram.
 10. Serahkan akun dan panduan penggunaan kepada pelanggan.
 
-Backend yang diperlukan adalah versi `7.4-audit-clear`.
+Backend yang diperlukan adalah versi `7.5-performance`.
+
+Versi ini mengurangi pekerjaan Google Apps Script saat startup: health check tidak
+membuka spreadsheet, validasi akun dan pembacaan data memakai satu koneksi, serta
+pengecekan schema di-cache selama lima menit. Batas kegagalan koneksi frontend juga
+dipangkas dari sekitar 62 detik menjadi maksimal sekitar 25 detik dengan konfigurasi
+default. Cache data aman per pengguna dipakai selama dua menit dan tetap diperiksa
+melalui revision backend, tanpa menambah jeda buatan pada respons normal.
 
 ## Alur akun baru
 
