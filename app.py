@@ -6,7 +6,7 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Mirai",
-    page_icon="logo_mirai.png.jpeg",
+    page_icon="logo mirai.jpeg",
     layout="wide",
 )
 
