@@ -257,22 +257,27 @@ page_description = page_descriptions.get(
 )
 
 
-st.markdown(
-    f"""
-    <div class="mirai-page-header">
-        <div 
-        <div class="mirai-page-copy">
-            <div class="mirai-page-eyebrow">MIRAI · INVENTORY OPERATIONS</div>
-            <h1>{html.escape(active_menu)}</h1>
-            <p>{html.escape(page_description)}</p>
+with st.sidebar:
+    role_now = current_role()
+    display_name = st.session_state.get("auth_display_name") or st.session_state.get("auth_user"
+    )
+    role_label = ROLE_LABEL.get(role_now, role_now)
+    
+    # Letakkan st.image di sini agar muncul di sidebar atas
+    st.image("logo mirai 1.png", width=90)
+    
+    st.markdown(
+        f"""
+        <div class="mirai-sidebar-brand">
+            <div>
+                <div class="mirai-sidebar-name">Mirai</div>
+                <div class="mirai-sidebar-tagline">Inventory Operations</div>
+            </div>
         </div>
-        <div class="mirai-page-meta">
-            <span>{html.escape(waktu_display())}</span>
-            <span>v{html.escape(str(APP_VERSION))}</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
+        ...
+        """,
+        unsafe_allow_html=True,
+    )
 )
 if st.button(
     "↻ Segarkan data", help="Ambil data terbaru dari server", key="main_refresh"
