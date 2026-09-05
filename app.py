@@ -10,7 +10,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.logo("/logo mirai 1.png")
 from wms.loading import hide_loading_screen, show_loading_screen
 
 # Loader dipasang sebelum modul aplikasi yang lebih berat diimpor. Dengan begitu,
