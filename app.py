@@ -274,10 +274,8 @@ with st.sidebar:
                 <div class="mirai-sidebar-tagline">Inventory Operations</div>
             </div>
         </div>
-        ...
         """,
         unsafe_allow_html=True,
-    )
 )
 if st.button(
     "↻ Segarkan data", help="Ambil data terbaru dari server", key="main_refresh"
