@@ -87,7 +87,7 @@ with st.sidebar:
     st.markdown(
         f"""
         <div class="mirai-sidebar-brand">
-            <div class="mirai-sidebar-mark">logo mirai 1.png</div>
+            st.image("logo mirai 1.png", width=40)
             <div>
                 <div class="mirai-sidebar-name">Mirai</div>
                 <div class="mirai-sidebar-tagline">Inventory Operations</div>
