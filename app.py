@@ -6,9 +6,11 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Mirai",
-    page_icon="logo_mirai.png",
+    page_icon="logo_mirai.png.jpeg",
     layout="wide",
 )
+
+st.logo("logo_mirai.png.jpeg")
 
 from wms.loading import hide_loading_screen, show_loading_screen
 
