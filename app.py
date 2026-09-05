@@ -6,11 +6,13 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Mirai",
-    page_icon="logo mirai.jpeg",
+    page_icon="logo_mirai.png-removebg-preview.png
+",
     layout="wide",
 )
 
-st.logo("logo mirai.jpeg")
+st.logo("logo_mirai.png-removebg-preview.png
+")
 from wms.loading import hide_loading_screen, show_loading_screen
 
 # Loader dipasang sebelum modul aplikasi yang lebih berat diimpor. Dengan begitu,
