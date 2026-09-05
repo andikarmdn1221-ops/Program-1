@@ -255,10 +255,14 @@ page_descriptions = {
 page_description = page_descriptions.get(
     active_menu, "Kelola operasional gudang dengan lebih teratur."
 )
+
+# 2. Tampilkan logo gambar di sini (di luar markdown)
+    st.image("logo mirai 1.png", width=100)
+
 st.markdown(
     f"""
     <div class="mirai-page-header">
-        <div class="mirai-page-mark">M</div>
+        <div 
         <div class="mirai-page-copy">
             <div class="mirai-page-eyebrow">MIRAI · INVENTORY OPERATIONS</div>
             <h1>{html.escape(active_menu)}</h1>
