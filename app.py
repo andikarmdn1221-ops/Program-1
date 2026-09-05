@@ -84,10 +84,13 @@ with st.sidebar:
         "auth_user"
     )
     role_label = ROLE_LABEL.get(role_now, role_now)
+    
+    # 1. Tampilkan logo gambar di sini (di luar markdown)
+    st.image("logo mirai 1.png", width=40)
+    
     st.markdown(
         f"""
         <div class="mirai-sidebar-brand">
-            st.image("logo mirai 1.png", width=40)
             <div>
                 <div class="mirai-sidebar-name">Mirai</div>
                 <div class="mirai-sidebar-tagline">Inventory Operations</div>
@@ -97,7 +100,7 @@ with st.sidebar:
             <div class="mirai-user-avatar">{html.escape(str(display_name or "M"))[:1].upper()}</div>
             <div>
                 <div class="mirai-user-name">{html.escape(str(display_name or "-"))}</div>
-                <div class="mirai-user-role">{html.escape(str(role_label))}</div>
+                <div class="mirai-user-role">{html.escape(role_label)}</div>
             </div>
         </div>
         """,
