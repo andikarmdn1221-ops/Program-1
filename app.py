@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.logo("logo_mirai.png.jpeg")
+st.logo("logo_mirai.jpeg") # Pastikan menggunakan nama file baru Anda
 
 from wms.loading import hide_loading_screen, show_loading_screen
 
