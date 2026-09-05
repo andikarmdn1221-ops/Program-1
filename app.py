@@ -10,8 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.logo("logo_mirai.jpeg") # Pastikan menggunakan nama file baru Anda
-
+st.logo("logo mirai.jpeg")
 from wms.loading import hide_loading_screen, show_loading_screen
 
 # Loader dipasang sebelum modul aplikasi yang lebih berat diimpor. Dengan begitu,
