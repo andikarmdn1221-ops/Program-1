@@ -86,7 +86,7 @@ with st.sidebar:
     role_label = ROLE_LABEL.get(role_now, role_now)
     
     # 1. Tampilkan logo gambar di sini (di luar markdown)
-    st.image("logo mirai 1.png", width=80)
+    st.image("logo mirai 1.png", width=85)
     
     st.markdown(
         f"""
