@@ -394,14 +394,17 @@ def inject_responsive_css():
             flex: 0 0 3.5rem;
             width: 3.5rem;
             height: 3.5rem;
-            border-radius: 1.05rem;
-            background: linear-gradient(145deg, #2563eb 0%, #4f46e5 100%);
-            color: #ffffff;
+            overflow: hidden;
+            border-radius: 50%;
+            background: #081a4b;
             box-shadow: 0 12px 28px rgba(37, 99, 235, 0.24);
-            font-size: 1.55rem;
-            font-weight: 800;
-            line-height: 1;
-            letter-spacing: -0.04em;
+        }
+        .mirai-brand-mark img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
         }
         .mirai-login-title {
             color: #0f172a;
@@ -503,8 +506,7 @@ def inject_responsive_css():
                 flex-basis: 3rem;
                 width: 3rem;
                 height: 3rem;
-                border-radius: 0.88rem;
-                font-size: 1.3rem;
+                border-radius: 50%;
             }
             .mirai-login-title { font-size: 1.75rem; }
             .mirai-login-kicker { font-size: 0.58rem; letter-spacing: 0.1em; }
@@ -532,19 +534,22 @@ def inject_responsive_css():
             gap: 0.72rem;
             margin: 0.2rem 0 1rem;
         }
-        .mirai-sidebar-mark {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex: 0 0 2.55rem;
-            width: 2.55rem;
-            height: 2.55rem;
-            border-radius: 0.78rem;
-            background: linear-gradient(145deg, #2563eb 0%, #4f46e5 100%);
-            color: #ffffff;
-            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
-            font-size: 1.05rem;
-            font-weight: 800;
+        .mirai-sidebar-logo {
+            flex: 0 0 3.15rem;
+            width: 3.15rem;
+            height: 3.15rem;
+            overflow: hidden;
+            border: 1px solid rgba(59, 130, 246, 0.24);
+            border-radius: 50%;
+            background: #081a4b;
+            box-shadow: 0 9px 20px rgba(30, 64, 175, 0.20);
+        }
+        .mirai-sidebar-logo img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
         }
         .mirai-sidebar-name {
             color: #0f172a;
@@ -664,12 +669,18 @@ def inject_responsive_css():
             flex: 0 0 3.5rem;
             width: 3.5rem;
             height: 3.5rem;
-            border-radius: 1rem;
-            background: linear-gradient(145deg, #2563eb 0%, #4f46e5 100%);
-            color: #ffffff;
+            overflow: hidden;
+            border: 1px solid rgba(59, 130, 246, 0.22);
+            border-radius: 50%;
+            background: #081a4b;
             box-shadow: 0 12px 24px rgba(37, 99, 235, 0.23);
-            font-size: 1.4rem;
-            font-weight: 850;
+        }
+        .mirai-page-mark img {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
         }
         .mirai-page-copy {
             position: relative;
@@ -953,8 +964,7 @@ def inject_responsive_css():
                 flex-basis: 2.8rem;
                 width: 2.8rem;
                 height: 2.8rem;
-                border-radius: 0.82rem;
-                font-size: 1.1rem;
+                border-radius: 50%;
             }
             .mirai-page-eyebrow {
                 font-size: 0.55rem;
