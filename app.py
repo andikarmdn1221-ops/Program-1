@@ -6,7 +6,9 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Mirai",
-    page_icon="logo mirai 1.png",
+    # Streamlit menerima emoji secara stabil sebagai favicon. Logo gambar tetap
+    # ditampilkan di sidebar melalui st.image di bawah.
+    page_icon="📦",
     layout="wide",
 )
 
@@ -85,7 +87,8 @@ with st.sidebar:
     )
     role_label = ROLE_LABEL.get(role_now, role_now)
     
-    # 1. Tampilkan logo gambar di sini (di luar markdown)
+    # Logo ditempatkan sebagai elemen Streamlit agar jalur file diproses dengan
+    # benar pada desktop maupun perangkat seluler.
     st.image("logo mirai 1.png", width=100)
     
     st.markdown(
@@ -100,7 +103,7 @@ with st.sidebar:
             <div class="mirai-user-avatar">{html.escape(str(display_name or "M"))[:1].upper()}</div>
             <div>
                 <div class="mirai-user-name">{html.escape(str(display_name or "-"))}</div>
-                <div class="mirai-user-role">{html.escape(role_label)}</div>
+                <div class="mirai-user-role">{html.escape(str(role_label))}</div>
             </div>
         </div>
         """,
@@ -255,27 +258,22 @@ page_descriptions = {
 page_description = page_descriptions.get(
     active_menu, "Kelola operasional gudang dengan lebih teratur."
 )
-
-
-with st.sidebar:
-    role_now = current_role()
-    display_name = st.session_state.get("auth_display_name") or st.session_state.get("auth_user"
-    )
-    role_label = ROLE_LABEL.get(role_now, role_now)
-    
-    # Letakkan st.image di sini agar muncul di sidebar atas
-    st.image("logo mirai 1.png", width=90)
-    
-    st.markdown(
-        f"""
-        <div class="mirai-sidebar-brand">
-            <div>
-                <div class="mirai-sidebar-name">Mirai</div>
-                <div class="mirai-sidebar-tagline">Inventory Operations</div>
-            </div>
+st.markdown(
+    f"""
+    <div class="mirai-page-header">
+        <div class="mirai-page-mark">M</div>
+        <div class="mirai-page-copy">
+            <div class="mirai-page-eyebrow">MIRAI · INVENTORY OPERATIONS</div>
+            <h1>{html.escape(active_menu)}</h1>
+            <p>{html.escape(page_description)}</p>
         </div>
-        """,
-        unsafe_allow_html=True,
+        <div class="mirai-page-meta">
+            <span>{html.escape(waktu_display())}</span>
+            <span>v{html.escape(str(APP_VERSION))}</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 if st.button(
     "↻ Segarkan data", help="Ambil data terbaru dari server", key="main_refresh"
