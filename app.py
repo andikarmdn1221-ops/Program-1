@@ -32,6 +32,7 @@ from wms.auth import (
     login_gate,
     render_flash,
 )
+from wms.branding import logo_data_uri
 from wms.components import (
     render_audit_live,
     render_dashboard_live,
@@ -65,6 +66,7 @@ from wms.styles import inject_responsive_css
 from wms.utils import waktu_display
 
 inject_responsive_css()
+mirai_logo_uri = html.escape(logo_data_uri(), quote=True)
 
 login_gate(startup_loader=startup_loader)
 try:
@@ -87,13 +89,12 @@ with st.sidebar:
     )
     role_label = ROLE_LABEL.get(role_now, role_now)
     
-    # Logo ditempatkan sebagai elemen Streamlit agar jalur file diproses dengan
-    # benar pada desktop maupun perangkat seluler.
-    st.image("logo mirai 1.png", width=100)
-    
     st.markdown(
         f"""
         <div class="mirai-sidebar-brand">
+            <div class="mirai-sidebar-logo" aria-hidden="true">
+                <img src="{mirai_logo_uri}" alt="">
+            </div>
             <div>
                 <div class="mirai-sidebar-name">Mirai</div>
                 <div class="mirai-sidebar-tagline">Inventory Operations</div>
@@ -261,7 +262,9 @@ page_description = page_descriptions.get(
 st.markdown(
     f"""
     <div class="mirai-page-header">
-        <div class="mirai-page-mark">M</div>
+        <div class="mirai-page-mark" aria-hidden="true">
+            <img src="{mirai_logo_uri}" alt="">
+        </div>
         <div class="mirai-page-copy">
             <div class="mirai-page-eyebrow">MIRAI · INVENTORY OPERATIONS</div>
             <h1>{html.escape(active_menu)}</h1>
