@@ -1,6 +1,7 @@
 """Autentikasi, session, role, dan permission."""
 
 import hashlib
+import html
 import hmac
 import secrets
 import time
@@ -24,6 +25,7 @@ from .config import (
     SESSION_TIMEOUT_MINUTES,
 )
 from .loading import hide_loading_screen, show_loading_screen
+from .branding import logo_data_uri
 from .security import LoginRateLimiter
 
 
@@ -258,10 +260,13 @@ def login_gate(startup_loader=None):
         st.session_state.login_lock_until = 0
         lock_until = 0
 
+    safe_logo_uri = html.escape(logo_data_uri(), quote=True)
     st.markdown(
-        """
+        f"""
         <div id="mirai-login-marker" class="mirai-login-hero">
-            <div class="mirai-brand-mark" aria-hidden="true">M</div>
+            <div class="mirai-brand-mark" aria-hidden="true">
+                <img src="{safe_logo_uri}" alt="">
+            </div>
             <div>
                 <div class="mirai-login-title">Mirai</div>
                 <div class="mirai-login-kicker">WAREHOUSE MANAGEMENT SYSTEM</div>

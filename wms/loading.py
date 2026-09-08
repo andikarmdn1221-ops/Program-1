@@ -4,6 +4,8 @@ import html
 
 import streamlit as st
 
+from .branding import logo_data_uri
+
 
 def show_loading_screen(
     title: str = "Menyiapkan Mirai",
@@ -12,6 +14,7 @@ def show_loading_screen(
     """Tampilkan overlay loading dan kembalikan placeholder untuk ditutup pemanggil."""
     safe_title = html.escape(str(title))
     safe_message = html.escape(str(message))
+    safe_logo_uri = html.escape(logo_data_uri(), quote=True)
     placeholder = st.empty()
     placeholder.markdown(
         f"""
@@ -102,7 +105,8 @@ def show_loading_screen(
             width: 4.55rem;
             height: 4.55rem;
             border: 1px solid rgba(255, 255, 255, 0.54);
-            border-radius: 1.35rem;
+            overflow: hidden;
+            border-radius: 50%;
             place-items: center;
             background: linear-gradient(145deg, #3b82f6 0%, #4f46e5 58%, #7c3aed 100%);
             box-shadow:
@@ -113,6 +117,13 @@ def show_loading_screen(
             font-weight: 850;
             letter-spacing: -0.07em;
             animation: mirai-logo-breathe 1.8s ease-in-out infinite;
+        }}
+        .mirai-loading-logo img {{
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
         }}
         .mirai-loading-brand {{
             color: #1e3a8a;
@@ -221,7 +232,9 @@ def show_loading_screen(
             <div class="mirai-loading-card">
                 <div class="mirai-loading-emblem" aria-hidden="true">
                     <div class="mirai-loading-orbit"></div>
-                    <div class="mirai-loading-logo">M</div>
+                    <div class="mirai-loading-logo">
+                        <img src="{safe_logo_uri}" alt="">
+                    </div>
                 </div>
                 <div class="mirai-loading-brand">Mirai · Warehouse</div>
                 <div class="mirai-loading-title">{safe_title}</div>
