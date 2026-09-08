@@ -16,7 +16,7 @@ def inject_responsive_css():
 
         /* Tampilan lebih bersih tanpa mengubah komponen bawaan Streamlit. */
         .block-container {
-            padding-top: 2rem;
+            padding-top: 1.25rem;
             max-width: 1440px;
         }
         [data-testid="stMetric"] {
@@ -128,11 +128,13 @@ def inject_responsive_css():
             font-weight: 650;
             line-height: 1.3;
         }
-        .st-key-main_refresh {
+        .st-key-main_refresh,
+        .st-key-dashboard_refresh {
             width: 2.75rem;
             max-width: 2.75rem;
         }
-        .st-key-main_refresh .stButton > button {
+        .st-key-main_refresh .stButton > button,
+        .st-key-dashboard_refresh .stButton > button {
             width: 2.75rem !important;
             min-height: 2.55rem !important;
             height: 2.55rem !important;
@@ -144,7 +146,8 @@ def inject_responsive_css():
             font-size: 1rem !important;
             font-weight: 650 !important;
         }
-        .st-key-main_refresh .stButton > button:hover {
+        .st-key-main_refresh .stButton > button:hover,
+        .st-key-dashboard_refresh .stButton > button:hover {
             border-color: #60a5fa !important;
             background: #dbeafe !important;
         }
@@ -532,7 +535,7 @@ def inject_responsive_css():
             display: flex;
             align-items: center;
             gap: 0.72rem;
-            margin: 0.2rem 0 1rem;
+            margin: 0.2rem 0 0.8rem;
         }
         .mirai-sidebar-logo {
             flex: 0 0 3.15rem;
@@ -570,7 +573,7 @@ def inject_responsive_css():
             display: flex;
             align-items: center;
             gap: 0.65rem;
-            margin-bottom: 0.25rem;
+            margin-bottom: 0.1rem;
             padding: 0.7rem;
             border: 1px solid #e2e8f0;
             border-radius: 0.85rem;
@@ -606,11 +609,11 @@ def inject_responsive_css():
             line-height: 1.2;
         }
         section[data-testid="stSidebar"] [role="radiogroup"] {
-            gap: 0.18rem;
+            gap: 0.1rem;
         }
         section[data-testid="stSidebar"] [role="radiogroup"] label {
-            min-height: 2.2rem;
-            padding: 0.34rem 0.55rem;
+            min-height: 2.05rem;
+            padding: 0.28rem 0.55rem;
             border: 1px solid transparent;
             border-radius: 0.68rem;
             color: #475569;
@@ -627,8 +630,13 @@ def inject_responsive_css():
             color: #1d4ed8;
             font-weight: 700;
         }
-        section[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child {
-            display: none;
+        section[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child,
+        section[data-testid="stSidebar"] [role="radiogroup"] label[data-baseweb="radio"] > div:first-of-type {
+            display: none !important;
+        }
+        section[data-testid="stSidebar"] hr {
+            margin: 0.7rem 0 0.8rem !important;
+            border-color: #e2e8f0 !important;
         }
         section[data-testid="stSidebar"] [data-testid="stAlert"] {
             padding: 0.65rem 0.7rem;
@@ -641,9 +649,10 @@ def inject_responsive_css():
             display: flex;
             align-items: center;
             gap: 1rem;
+            box-sizing: border-box;
             overflow: hidden;
-            min-height: 7.4rem;
-            padding: 1.25rem 1.35rem;
+            min-height: 6.65rem;
+            padding: 0.95rem 1.2rem;
             border: 1px solid #dbeafe;
             border-radius: 1.15rem;
             background:
@@ -666,9 +675,9 @@ def inject_responsive_css():
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            flex: 0 0 3.5rem;
-            width: 3.5rem;
-            height: 3.5rem;
+            flex: 0 0 3.25rem;
+            width: 3.25rem;
+            height: 3.25rem;
             overflow: hidden;
             border: 1px solid rgba(59, 130, 246, 0.22);
             border-radius: 50%;
@@ -697,7 +706,7 @@ def inject_responsive_css():
         .mirai-page-copy h1 {
             margin: 0 !important;
             color: #0f172a;
-            font-size: 2rem;
+            font-size: 1.85rem;
             font-weight: 800;
             line-height: 1.05;
             letter-spacing: -0.04em;
@@ -727,10 +736,15 @@ def inject_responsive_css():
             line-height: 1;
             white-space: nowrap;
         }
+        .mirai-page-meta .mirai-version-badge {
+            border-color: #c7d2fe;
+            background: rgba(238, 242, 255, 0.88);
+            color: #4338ca;
+        }
         .st-key-main_refresh {
             width: 9.7rem !important;
             max-width: 9.7rem !important;
-            margin: 0.7rem 0 0.25rem auto !important;
+            margin: 0.55rem 0 0.1rem auto !important;
         }
         .st-key-main_refresh .stButton > button {
             width: 9.7rem !important;
@@ -745,29 +759,56 @@ def inject_responsive_css():
             font-weight: 700 !important;
             box-shadow: 0 4px 12px rgba(15, 23, 42, 0.045);
         }
+        .st-key-dashboard_refresh {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+        }
+        .st-key-dashboard_refresh .stButton > button {
+            width: 100% !important;
+            min-height: 2.45rem !important;
+            height: 2.45rem !important;
+            padding: 0.4rem 0.65rem !important;
+            border: 1px solid #bfdbfe !important;
+            border-radius: 0.72rem !important;
+            background: #ffffff !important;
+            color: #1d4ed8 !important;
+            font-size: 0.76rem !important;
+            font-weight: 700 !important;
+            white-space: nowrap !important;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.045);
+        }
         .mirai-header-divider,
         .mirai-section-divider {
             width: 100%;
             height: 1px;
-            margin: 1rem 0;
+            margin: 0.7rem 0;
             background: linear-gradient(90deg, transparent 0%, #e2e8f0 8%, #e2e8f0 92%, transparent 100%);
         }
 
         .wms-sync-pill {
+            min-height: 2.45rem;
+            box-sizing: border-box;
+            margin: 0;
             border-color: #bfdbfe;
             background: #eff6ff;
             color: #1e40af;
             font-weight: 650;
+        }
+        .wms-sync-pill-offline {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
         }
         .wms-alert-strip {
             box-shadow: 0 5px 16px rgba(245, 158, 11, 0.08);
         }
         .wms-kpi-grid {
             gap: 0.9rem;
-            margin-top: 1rem;
+            margin-top: 0.75rem;
         }
         .wms-kpi-card {
-            min-height: 7.4rem;
+            min-height: 6.9rem;
             border-color: #e2e8f0;
             border-top-width: 1px;
             padding: 1.05rem 1.1rem;
@@ -790,7 +831,7 @@ def inject_responsive_css():
         }
 
         .mirai-health-card {
-            min-height: 19rem;
+            min-height: 17.5rem;
             padding: 1.1rem 1.15rem;
             border: 1px solid #e2e8f0;
             border-radius: 1rem;
@@ -985,6 +1026,17 @@ def inject_responsive_css():
                 width: 100% !important;
                 min-height: 2.75rem !important;
                 height: 2.75rem !important;
+            }
+            .st-key-dashboard_refresh {
+                margin: 0 !important;
+            }
+            .st-key-dashboard_refresh .stButton > button {
+                width: 100% !important;
+                min-height: 2.75rem !important;
+                height: 2.75rem !important;
+            }
+            .wms-sync-pill {
+                width: 100%;
             }
             .mirai-health-card {
                 min-height: 0;

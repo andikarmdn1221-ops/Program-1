@@ -259,6 +259,13 @@ page_descriptions = {
 page_description = page_descriptions.get(
     active_menu, "Kelola operasional gudang dengan lebih teratur."
 )
+page_meta_html = f'<span>{html.escape(waktu_display())}</span>'
+if role_now == ROLE_DEVELOPER:
+    page_meta_html += (
+        '<span class="mirai-version-badge" title="Versi aplikasi">'
+        f'v{html.escape(str(APP_VERSION))}</span>'
+    )
+
 st.markdown(
     f"""
     <div class="mirai-page-header">
@@ -271,18 +278,23 @@ st.markdown(
             <p>{html.escape(page_description)}</p>
         </div>
         <div class="mirai-page-meta">
-            <span>{html.escape(waktu_display())}</span>
-            <span>v{html.escape(str(APP_VERSION))}</span>
+            {page_meta_html}
         </div>
     </div>
     """,
     unsafe_allow_html=True,
 )
-if st.button(
-    "↻ Segarkan data", help="Ambil data terbaru dari server", key="main_refresh"
-):
-    clear_and_refresh()
-    st.rerun()
+
+# Di Dashboard tombol segarkan ditempatkan bersama status sinkronisasi supaya
+# area atas lebih ringkas. Halaman lain tetap memiliki tombol global ini.
+if active_menu != "Dashboard":
+    if st.button(
+        "↻ Segarkan data",
+        help="Ambil data terbaru dari server",
+        key="main_refresh",
+    ):
+        clear_and_refresh()
+        st.rerun()
 
 st.markdown('<div class="mirai-header-divider"></div>', unsafe_allow_html=True)
 render_flash()
