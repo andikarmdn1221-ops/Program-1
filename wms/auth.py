@@ -1,6 +1,7 @@
 """Autentikasi, session, role, dan permission."""
 
 import hashlib
+import html
 import hmac
 import secrets
 import time
