@@ -201,7 +201,8 @@ def inject_responsive_css():
                 flex-wrap: wrap !important;
                 gap: 0.55rem !important;
             }
-            [data-testid="column"] {
+            [data-testid="column"],
+            [data-testid="stColumn"] {
                 flex: 1 1 100% !important;
                 width: 100% !important;
                 min-width: 0 !important;
@@ -213,7 +214,8 @@ def inject_responsive_css():
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
                 gap: 0.55rem !important;
             }
-            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="column"] {
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="column"],
+            [data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]) > [data-testid="stColumn"] {
                 width: auto !important;
                 min-width: 0 !important;
                 flex: none !important;
@@ -630,9 +632,12 @@ def inject_responsive_css():
             color: #1d4ed8;
             font-weight: 700;
         }
-        section[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child,
+        section[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child > div:first-child,
         section[data-testid="stSidebar"] [role="radiogroup"] label[data-baseweb="radio"] > div:first-of-type {
             display: none !important;
+        }
+        section[data-testid="stSidebar"] [data-testid="stRadioOption"] > div > div:first-child {
+            gap: 0 !important;
         }
         section[data-testid="stSidebar"] hr {
             margin: 0.7rem 0 0.8rem !important;
@@ -694,14 +699,11 @@ def inject_responsive_css():
         .mirai-page-copy {
             position: relative;
             z-index: 1;
+            display: flex;
+            justify-content: center;
+            flex-direction: column;
+            align-self: stretch;
             min-width: 0;
-        }
-        .mirai-page-eyebrow {
-            margin-bottom: 0.3rem;
-            color: #2563eb;
-            font-size: 0.64rem;
-            font-weight: 800;
-            letter-spacing: 0.11em;
         }
         .mirai-page-copy h1 {
             margin: 0 !important;
@@ -777,6 +779,26 @@ def inject_responsive_css():
             font-weight: 700 !important;
             white-space: nowrap !important;
             box-shadow: 0 4px 12px rgba(15, 23, 42, 0.045);
+        }
+        @media (min-width: 769px) {
+            [data-testid="stHorizontalBlock"]:has(.st-key-dashboard_refresh) {
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 0.6rem !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.st-key-dashboard_refresh) > [data-testid="column"]:first-child,
+            [data-testid="stHorizontalBlock"]:has(.st-key-dashboard_refresh) > [data-testid="stColumn"]:first-child {
+                flex: 0 1 auto !important;
+                width: auto !important;
+                max-width: calc(100% - 9.35rem) !important;
+                min-width: 0 !important;
+            }
+            [data-testid="stHorizontalBlock"]:has(.st-key-dashboard_refresh) > [data-testid="column"]:last-child,
+            [data-testid="stHorizontalBlock"]:has(.st-key-dashboard_refresh) > [data-testid="stColumn"]:last-child {
+                flex: 0 0 8.75rem !important;
+                width: 8.75rem !important;
+                min-width: 8.75rem !important;
+            }
         }
         .mirai-header-divider,
         .mirai-section-divider {
@@ -1006,10 +1028,6 @@ def inject_responsive_css():
                 width: 2.8rem;
                 height: 2.8rem;
                 border-radius: 50%;
-            }
-            .mirai-page-eyebrow {
-                font-size: 0.55rem;
-                letter-spacing: 0.08em;
             }
             .mirai-page-copy h1 {
                 font-size: 1.55rem !important;

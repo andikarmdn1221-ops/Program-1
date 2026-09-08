@@ -273,7 +273,6 @@ st.markdown(
             <img src="{mirai_logo_uri}" alt="">
         </div>
         <div class="mirai-page-copy">
-            <div class="mirai-page-eyebrow">MIRAI · INVENTORY OPERATIONS</div>
             <h1>{html.escape(active_menu)}</h1>
             <p>{html.escape(page_description)}</p>
         </div>
