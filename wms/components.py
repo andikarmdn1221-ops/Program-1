@@ -16,7 +16,7 @@ from .config import (
     RIWAYAT_COLUMNS,
     SECONDARY_SYNC_SECONDS,
 )
-from .data import require_online_operation, sync_if_changed
+from .data import clear_and_refresh, require_online_operation, sync_if_changed
 from .exports import excel_bytes, pdf_table
 from .operations import clear_audit_log
 from .utils import (
@@ -141,17 +141,37 @@ def render_dashboard_live():
 
     sync_text = st.session_state.get("last_server_sync", "belum tersinkron")
     revision = st.session_state.get("server_revision", "-")
+    connection_status = st.session_state.get("connection_status", "online")
+    connected = bool(st.session_state.get("is_connected"))
+
     if AUTO_SYNC_ENABLED:
         sync_label = (
             f"● Sinkron otomatis {AUTO_SYNC_SECONDS} dtk · "
             f"terakhir {sync_text} · rev {revision}"
         )
+    else:
+        sync_label = f"Sinkron terakhir {sync_text} · rev {revision}"
+
+    sync_column, refresh_column = st.columns(
+        [5, 1], gap="small", vertical_alignment="center"
+    )
+    with sync_column:
+        sync_state_class = "" if connected else " wms-sync-pill-offline"
         st.markdown(
-            f'<div class="wms-sync-pill">{html.escape(sync_label)}</div>',
+            f'<div class="wms-sync-pill{sync_state_class}">'
+            f"{html.escape(sync_label)}</div>",
             unsafe_allow_html=True,
         )
+    with refresh_column:
+        if st.button(
+            "↻ Segarkan",
+            help="Ambil data terbaru dari server",
+            key="dashboard_refresh",
+            use_container_width=True,
+        ):
+            clear_and_refresh()
+            st.rerun()
 
-    connection_status = st.session_state.get("connection_status", "online")
     if connection_status == "recovering":
         st.warning(
             "Koneksi database sempat terlambat dan sedang dipulihkan otomatis. "
