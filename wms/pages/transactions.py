@@ -79,14 +79,12 @@ def render_transaction_page(active_menu):
                     )
                     if proof_url:
                         msg += f"\n📁 {proof_url}"
+                    alert = result.get("alert")
+                    if alert:
+                        msg += f"\n\n{alert}"
                     notification_results = [
                         deliver_notification(msg, f"Transaksi {tipe}", image_bytes)
                     ]
-                    alert = result.get("alert")
-                    if alert:
-                        notification_results.append(
-                            deliver_notification(alert, "Peringatan stok")
-                        )
                     notification_flash(
                         f"Transaksi berhasil. Stok akhir: {remaining} pcs.",
                         notification_results,
@@ -129,15 +127,17 @@ def render_adjustment_page():
                     require_online_operation()
                     result = adjust_stock(barang, stok_baru, alasan, tgl, stok_lama)
                     delta = result.get("selisih", int(stok_baru) - int(stok_lama))
-                    notification_results = [deliver_notification(
+                    message = (
                         f"🧮 *PENYESUAIAN STOK*\n📦 {barang}\n"
                         f"Stok lama: {stok_lama} pcs\nStok baru: {stok_baru} pcs\n"
-                        f"Selisih: {delta:+d} pcs\n📝 {alasan.strip()}\n👤 {actor_label()}",
-                        "Penyesuaian stok",
-                    )]
+                        f"Selisih: {delta:+d} pcs\n📝 {alasan.strip()}\n👤 {actor_label()}"
+                    )
                     alert = result.get("alert")
                     if alert:
-                        notification_results.append(deliver_notification(alert, "Peringatan stok"))
+                        message += f"\n\n{alert}"
+                    notification_results = [
+                        deliver_notification(message, "Penyesuaian stok")
+                    ]
                     notification_flash(
                         "Penyesuaian stok berhasil dan tercatat di audit log.",
                         notification_results,

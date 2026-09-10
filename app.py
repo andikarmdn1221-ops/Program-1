@@ -68,9 +68,11 @@ from wms.utils import waktu_display
 inject_responsive_css()
 mirai_logo_uri = html.escape(logo_data_uri(), quote=True)
 
-login_gate(startup_loader=startup_loader)
 try:
+    # Periksa konfigurasi sebelum bypass/login apa pun agar salah konfigurasi
+    # tidak pernah menghasilkan sesi Developer tanpa autentikasi.
     validate_runtime_security()
+    login_gate(startup_loader=startup_loader)
 
     if "stok" not in st.session_state:
         # Gunakan cache aman per pengguna/role pada pembukaan ulang. Jika cache
@@ -205,6 +207,22 @@ with st.sidebar:
     if st.session_state.get("backend_version_mismatch"):
         st.warning(
             f"⚠️ Versi backend {st.session_state.get('backend_version', '?')} tidak sama dengan app {EXPECTED_BACKEND_VERSION}."
+        )
+    if st.session_state.get("sync_scale_warning"):
+        row_counts = st.session_state.get("server_row_counts", {})
+        st.warning(
+            "⚠️ Riwayat/audit mendekati batas sinkronisasi aman. "
+            f"Riwayat: {int(row_counts.get('riwayat', 0)):,}; "
+            f"audit: {int(row_counts.get('audit', 0)):,}. Buat backup lalu arsipkan data lama."
+        )
+    active_legacy_accounts = int(
+        st.session_state.get("dynamic_account_security", {}).get("active_legacy", 0)
+        or 0
+    )
+    if active_legacy_accounts:
+        st.warning(
+            f"⚠️ {active_legacy_accounts} akun aktif belum dimigrasikan ke PBKDF2. "
+            "Minta pengguna login sekali melalui versi ini sebelum go-live."
         )
 
     telegram_status = st.session_state.get("telegram_test_status")

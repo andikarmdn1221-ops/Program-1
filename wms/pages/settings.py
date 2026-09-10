@@ -4,6 +4,7 @@ import streamlit as st
 
 from ..api import show_api_error
 from ..auth import account_security_report, generate_pbkdf2_hash, notification_flash, require_permission
+from ..accounts import MIN_PASSWORD_LENGTH
 from ..config import (
     ALLOW_LEGACY_PASSWORDS,
     AUTH_SIGNING_KEY,
@@ -15,14 +16,13 @@ from ..config import (
     LOGIN_MAX_ATTEMPTS,
     MAX_UPLOAD_MB,
     REQUIRE_HMAC,
-    REQUIRE_SERVER_BACKUP_BEFORE_RESET,
     SECONDARY_SYNC_SECONDS,
     SESSION_TIMEOUT_MINUTES,
 )
 from ..data import require_online_operation, sync_if_changed
 from ..exports import full_backup_bytes
 from ..notifications import record_notification, send_telegram_document_detailed
-from ..operations import reset_database, server_backup_now
+from ..operations import reset_database
 from ..utils import sekarang_wib
 
 def render_settings_page():
@@ -34,8 +34,10 @@ def render_settings_page():
         new_password = st.text_input("Password baru", type="password", key="pbkdf2_password")
         confirm_password = st.text_input("Ulangi password", type="password", key="pbkdf2_password_confirm")
         if st.button("Buat Password Hash", use_container_width=True):
-            if len(new_password) < 8:
-                st.warning("Gunakan password minimal 8 karakter.")
+            if len(new_password) < MIN_PASSWORD_LENGTH:
+                st.warning(
+                    f"Gunakan password minimal {MIN_PASSWORD_LENGTH} karakter."
+                )
             elif new_password != confirm_password:
                 st.error("Konfirmasi password tidak sama.")
             else:
@@ -82,18 +84,16 @@ def render_settings_page():
     if st.button("🚨 Reset Database", disabled=not (understood and confirm == "RESET-DATABASE")):
         try:
             require_online_operation()
-            if REQUIRE_SERVER_BACKUP_BEFORE_RESET:
-                result_backup = server_backup_now()
-                st.info(f"Backup server sebelum reset berhasil: {result_backup.get('backup_name', 'WMS backup')}")
             telegram_ok, telegram_detail = send_telegram_document_detailed(
                 "🚨 AUTO BACKUP SEBELUM RESET",
                 backup,
                 f"PRE_RESET_{sekarang_wib().strftime('%Y%m%d_%H%M%S')}.xlsx",
             )
             record_notification("Backup sebelum reset", telegram_ok, telegram_detail)
-            reset_database()
+            reset_result = reset_database()
+            backup_name = reset_result.get("backup_name", "WMS backup")
             notification_flash(
-                "Database berhasil di-reset setelah prosedur pengamanan.",
+                f"Database berhasil di-reset setelah backup server {backup_name} terverifikasi.",
                 [(telegram_ok, telegram_detail)],
             )
             st.rerun()

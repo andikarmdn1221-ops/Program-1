@@ -23,6 +23,8 @@ from .config import (
     WIB,
 )
 
+MAX_IMAGE_PIXELS = 25_000_000
+
 
 def sekarang_wib() -> datetime:
     return datetime.now(WIB)
@@ -56,6 +58,8 @@ def clean_item_name(value: str) -> str:
         raise ValueError("Nama barang maksimal 80 karakter")
     if any(ord(ch) < 32 for ch in name):
         raise ValueError("Nama barang mengandung karakter yang tidak valid")
+    if name != "-" and name.startswith(("=", "+", "-", "@")):
+        raise ValueError("Nama barang tidak boleh diawali karakter formula")
     return name
 
 
@@ -65,6 +69,8 @@ def clean_note(value: str, *, required=False, max_length=240) -> str:
         raise ValueError("Keterangan wajib diisi")
     if len(note) > max_length:
         raise ValueError(f"Keterangan maksimal {max_length} karakter")
+    if note != "-" and note.startswith(("=", "+", "-", "@")):
+        raise ValueError("Keterangan tidak boleh diawali karakter formula")
     return note or "-"
 
 
@@ -203,6 +209,8 @@ def compress_image(uploaded_file, max_size=(1200, 1200), quality=80):
 
         uploaded_file.seek(0)
         img = Image.open(uploaded_file)
+        if int(img.width) * int(img.height) > MAX_IMAGE_PIXELS:
+            raise ValueError("Resolusi gambar melebihi batas 25 megapiksel")
         img.verify()
         uploaded_file.seek(0)
         img = Image.open(uploaded_file)

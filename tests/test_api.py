@@ -54,3 +54,24 @@ def test_signed_retry_generates_fresh_signature(monkeypatch):
     }
     assert nonces == ["nonce-1", "nonce-2"]
     assert attempt_counts == [1, 1]
+
+
+def test_api_post_retries_only_mutations_with_stable_business_id(monkeypatch):
+    calls = []
+
+    def fake_post(payload, timeout, retry_attempts):
+        calls.append((payload["action"], timeout, retry_attempts))
+        return {"ok": True}
+
+    monkeypatch.setattr(api, "_post_json", fake_post)
+    monkeypatch.setattr(api, "DATABASE_RETRY_ATTEMPTS", 2)
+
+    api.api_post({"action": "transaction", "tx_id": "TRX-1"}, timeout=9)
+    api.api_post({"action": "master_update"}, timeout=9)
+    api.api_post({"action": "transaction"}, timeout=9)
+
+    assert calls == [
+        ("transaction", 9, 2),
+        ("master_update", 9, 1),
+        ("transaction", 9, 1),
+    ]

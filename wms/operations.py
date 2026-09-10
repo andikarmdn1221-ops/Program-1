@@ -26,6 +26,8 @@ def do_transaction(
     image_bytes=None,
     expected_stock_before=None,
 ):
+    if expected_stock_before is None:
+        raise ValueError("Stok sebelumnya wajib tersedia sebelum transaksi.")
     payload = {
         "action": "transaction",
         "tx_id": make_tx_id(),
@@ -38,10 +40,7 @@ def do_transaction(
         **to_image_payload(file_uploaded, image_bytes),
         **actor_payload(),
     }
-    if expected_stock_before is not None:
-        # Backend baru dapat memakai nilai ini sebagai stale-stock guard;
-        # backend 7.1 yang belum mendukung akan mengabaikan field tambahan ini.
-        payload["expected_stock_before"] = int(expected_stock_before)
+    payload["expected_stock_before"] = int(expected_stock_before)
     result = api_post(payload)
     clear_and_refresh()
     return result

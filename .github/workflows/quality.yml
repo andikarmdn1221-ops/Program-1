@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -22,10 +22,14 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
       - name: Scan tracked files for secrets
         run: python scripts/check_secrets.py
+      - name: Audit Python dependencies
+        run: python -m pip_audit --cache-dir /tmp/mirai-pip-audit -r requirements.txt
       - name: Compile source
         run: python -m compileall -q app.py wms tests scripts
       - name: Validate Apps Script syntax
         run: cp Code_Accounts.gs /tmp/Code_Accounts.js && node --check /tmp/Code_Accounts.js
+      - name: Test Apps Script production contract
+        run: node scripts/test_backend_contract.js
       - name: Lint source
         run: python -m ruff check app.py wms tests scripts
       - name: Run tests

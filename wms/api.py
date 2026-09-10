@@ -19,8 +19,18 @@ from .config import (
 from .utils import api_error_detail, make_request_signature, redact_sensitive
 
 
+IDEMPOTENT_MUTATION_KEYS = {
+    "account_register": "request_id",
+    "transaction": "tx_id",
+    "master_add": "tx_id",
+    "stock_adjust": "tx_id",
+    "transaction_correct": "new_tx_id",
+    "transaction_void": "tx_id",
+}
+
+
 def _request_with_retry(method: str, url: str, *, attempts=1, **kwargs):
-    """Ulangi gangguan jaringan sementara; mutation tetap memakai satu percobaan."""
+    """Retry transient transport failures within the caller's explicit budget."""
     attempts = max(1, int(attempts))
     last_error = None
     for attempt in range(attempts):
@@ -130,7 +140,19 @@ def api_health(timeout=HEALTH_TIMEOUT_SECONDS):
 
 
 def api_post(payload: dict, timeout=60):
-    return _post_json(payload, timeout=timeout)
+    """Retry only mutations whose stable business ID makes replay safe."""
+    action = str(payload.get("action", "") or "")
+    idempotency_key = IDEMPOTENT_MUTATION_KEYS.get(action)
+    retry_attempts = (
+        DATABASE_RETRY_ATTEMPTS
+        if idempotency_key and str(payload.get(idempotency_key, "") or "").strip()
+        else 1
+    )
+    return _post_json(
+        payload,
+        timeout=timeout,
+        retry_attempts=retry_attempts,
+    )
 
 
 def show_api_error(prefix: str, exc: Exception):

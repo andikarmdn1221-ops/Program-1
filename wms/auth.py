@@ -36,6 +36,25 @@ LOGIN_RATE_LIMITER = LoginRateLimiter(
 )
 
 
+def _parse_pbkdf2_hash(value: str):
+    try:
+        algorithm, iterations_text, salt_hex, digest_hex = str(value).split("$", 3)
+        iterations = int(iterations_text)
+        salt = bytes.fromhex(salt_hex)
+        bytes.fromhex(digest_hex)
+        if (
+            algorithm != "pbkdf2_sha256"
+            or iterations < 200_000
+            or iterations > 1_000_000
+            or len(salt) < 16
+            or len(digest_hex) != 64
+        ):
+            return None
+        return iterations, salt, digest_hex.lower()
+    except (ValueError, TypeError):
+        return None
+
+
 def find_local_user(users: dict, username: str):
     """Cari akun secrets secara case-insensitive dan tolak konfigurasi ambigu."""
     wanted = str(username or "").strip().casefold()
@@ -55,10 +74,16 @@ def account_security_report():
     """Klasifikasikan penyimpanan password tanpa pernah menampilkan password/hash lengkap."""
     report = []
     for username, raw_cfg in get_users_config().items():
-        cfg = dict(raw_cfg)
+        try:
+            cfg = dict(raw_cfg)
+        except (TypeError, ValueError):
+            report.append((str(username), "KONFIGURASI_TIDAK_VALID"))
+            continue
         configured_hash = str(cfg.get("password_hash", "") or "").strip()
-        if configured_hash.startswith("pbkdf2_sha256$"):
+        if _parse_pbkdf2_hash(configured_hash):
             status = "PBKDF2"
+        elif configured_hash.startswith("pbkdf2_sha256$"):
+            status = "PBKDF2_TIDAK_VALID"
         elif configured_hash:
             status = "LEGACY_SHA256"
         elif cfg.get("password") is not None:
@@ -101,20 +126,14 @@ def password_matches(input_password: str, configured: dict) -> bool:
     configured_hash = str(configured.get("password_hash", "") or "").strip()
     if configured_hash:
         if configured_hash.startswith("pbkdf2_sha256$"):
-            try:
-                _algo, iterations_txt, salt_hex, expected_hex = configured_hash.split(
-                    "$", 3
-                )
-                iterations = int(iterations_txt)
-                if iterations < 100_000:
-                    return False
-                salt = bytes.fromhex(salt_hex)
-                digest = hashlib.pbkdf2_hmac(
-                    "sha256", input_password.encode("utf-8"), salt, iterations
-                ).hex()
-                return hmac.compare_digest(digest, expected_hex.lower())
-            except (ValueError, TypeError):
+            parsed = _parse_pbkdf2_hash(configured_hash)
+            if not parsed:
                 return False
+            iterations, salt, expected_hex = parsed
+            digest = hashlib.pbkdf2_hmac(
+                "sha256", input_password.encode("utf-8"), salt, iterations
+            ).hex()
+            return hmac.compare_digest(digest, expected_hex)
 
         if not ALLOW_LEGACY_PASSWORDS:
             return False
@@ -313,15 +332,23 @@ def login_gate(startup_loader=None):
                 except RuntimeError as exc:
                     st.error(str(exc))
                     st.stop()
-                if cfg and password_matches(password, cfg):
-                    LOGIN_RATE_LIMITER.record_success(username)
-                    _complete_login(
-                        configured_username or username,
-                        cfg.get("role", ROLE_STAFF),
-                        now,
-                        str(cfg.get("display_name") or configured_username or username),
-                        source="local",
-                    )
+                if cfg:
+                    if password_matches(password, cfg):
+                        LOGIN_RATE_LIMITER.record_success(username)
+                        _complete_login(
+                            configured_username or username,
+                            cfg.get("role", ROLE_STAFF),
+                            now,
+                            str(
+                                cfg.get("display_name")
+                                or configured_username
+                                or username
+                            ),
+                            source="local",
+                        )
+                    LOGIN_RATE_LIMITER.record_failure(username, now=now)
+                    _record_failed_login(now)
+                    st.stop()
 
                 try:
                     from .accounts import authenticate_account
@@ -343,6 +370,12 @@ def login_gate(startup_loader=None):
                 status = str(dynamic.get("status") or "").upper()
                 if status == "PENDING":
                     st.warning("Akun masih menunggu persetujuan Developer.")
+                elif status == "LOCKED":
+                    retry_after = max(1, int(dynamic.get("retry_after", 1) or 1))
+                    st.error(
+                        "Login akun dikunci sementara oleh server. "
+                        f"Coba lagi dalam {retry_after} detik."
+                    )
                 elif status == "SUSPENDED":
                     st.error("Akun sedang dinonaktifkan. Hubungi Developer.")
                 elif status == "REJECTED":
