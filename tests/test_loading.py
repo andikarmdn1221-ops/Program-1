@@ -44,4 +44,6 @@ def test_hide_loading_screen_accepts_placeholder_or_none():
     loading.hide_loading_screen(placeholder)
     loading.hide_loading_screen(None)
 
-    assert placeholder.empty_calls == 1
+    assert placeholder.empty_calls == 0
+    assert placeholder.unsafe_allow_html is True
+    assert ".mirai-loading-screen{display:none!important}" in placeholder.payload

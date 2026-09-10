@@ -14,14 +14,12 @@ st.set_page_config(
 
 from wms.loading import hide_loading_screen, show_loading_screen
 
-# Loader dipasang sebelum modul aplikasi yang lebih berat diimpor. Dengan begitu,
-# pengguna melihat identitas Mirai saat Python menyiapkan halaman dan koneksi data.
+# Loader hanya dipasang untuk sesi yang sudah terautentikasi. Pada kunjungan pertama,
+# halaman login harus langsung terlihat; overlay yang dibuat dan dihapus dalam render
+# awal dapat tertinggal di browser Streamlit Community Cloud.
 startup_loader = None
 startup_complete = bool(st.session_state.get("_mirai_startup_complete"))
-login_shell_ready = bool(st.session_state.get("_mirai_login_shell_ready"))
-if not startup_complete and (
-    st.session_state.get("auth_user") or not login_shell_ready
-):
+if not startup_complete and st.session_state.get("auth_user"):
     startup_loader = show_loading_screen()
 
 from wms.auth import (
