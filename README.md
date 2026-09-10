@@ -15,6 +15,8 @@ operasional.
 - Riwayat, laporan periodik, audit log, Excel/PDF, dan backup.
 - Penghapusan audit lama khusus Developer dengan backup otomatis dan konfirmasi.
 - Notifikasi Telegram dan persetujuan akun.
+- Idempotensi transaksi, stale-stock guard, serta rollback otomatis bila penulisan
+  stok/riwayat/audit terputus di tengah jalan.
 - Tampilan ringkas untuk kegiatan harian dan tampilan lengkap untuk administrasi.
 - UI responsif untuk komputer dan telepon seluler.
 
@@ -41,8 +43,8 @@ instalasi pelanggan lain.
 
 1. Salin spreadsheet dan siapkan folder Google Drive baru.
 2. Buat proyek Apps Script dan tempel seluruh isi `Code_Accounts.gs`.
-3. Isi Script Properties: `SPREADSHEET_ID`, `API_SHARED_KEY`,
-   `AUTH_SIGNING_KEY`, dan konfigurasi opsional lainnya.
+3. Isi seluruh Script Properties wajib mengikuti `DEPLOYMENT.md`, termasuk
+   `DRIVE_FOLDER_ID`, pemetaan akun lokal, dan pengaman approver Telegram.
 4. Deploy Apps Script sebagai Web App dan simpan URL berakhiran `/exec`.
 5. Deploy repository ke Streamlit Community Cloud.
 6. Isi Streamlit Secrets berdasarkan `.streamlit/secrets.example.toml`.
@@ -51,14 +53,11 @@ instalasi pelanggan lain.
 9. Uji login, koneksi database, transaksi masuk/keluar, backup, dan Telegram.
 10. Serahkan akun dan panduan penggunaan kepada pelanggan.
 
-Backend yang diperlukan adalah versi `7.5-performance`.
+Backend yang diperlukan adalah versi `7.6-production`.
 
-Versi ini mengurangi pekerjaan Google Apps Script saat startup: health check tidak
-membuka spreadsheet, validasi akun dan pembacaan data memakai satu koneksi, serta
-pengecekan schema di-cache selama lima menit. Batas kegagalan koneksi frontend juga
-dipangkas dari sekitar 62 detik menjadi maksimal sekitar 25 detik dengan konfigurasi
-default. Cache data aman per pengguna dipakai selama dua menit dan tetap diperiksa
-melalui revision backend, tanpa menambah jeda buatan pada respons normal.
+Deploy backend **lebih dahulu**, baru frontend. Aplikasi memblokir mutasi bila versi
+atau capability backend tidak cocok. Urutan, verifikasi, rollback, dan uji penerimaan
+lengkap tersedia di `DEPLOYMENT.md`.
 
 ## Alur akun baru
 
@@ -78,6 +77,7 @@ melalui revision backend, tanpa menambah jeda buatan pada respons normal.
 - Aktifkan branch protection pada `main` dan wajibkan pemeriksaan `test`.
 - Rotasi seluruh credential yang pernah muncul dalam repository atau screenshot.
 - Jangan menonaktifkan HMAC dan pemblokiran perubahan ketika database offline.
+- Jangan menjalankan **Reset Database** pada database produksi untuk pengujian.
 - Ikuti `SECURITY.md` sebelum menggunakan data produksi.
 
 Repository ini pernah memiliki riwayat `secrets.toml`. Menghapus file dari
@@ -89,9 +89,11 @@ pernah terekspos harus diganti sebelum penjualan atau pemasangan pelanggan.
 ```bash
 python -m pip install -r requirements-dev.txt
 python scripts/check_secrets.py
+python -m pip_audit --cache-dir /tmp/mirai-pip-audit -r requirements.txt
 python -m compileall -q app.py wms tests scripts
 cp Code_Accounts.gs /tmp/Code_Accounts.js
 node --check /tmp/Code_Accounts.js
+node scripts/test_backend_contract.js
 python -m ruff check app.py wms tests scripts
 python -m pytest
 ```

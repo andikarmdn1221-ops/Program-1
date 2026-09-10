@@ -12,9 +12,24 @@ except Exception:
     # konfigurasi wajib belum tersedia.
     _SECRETS = {}
 
+
+def _secret_bool(name: str, default: bool) -> bool:
+    """Parse boolean secrets without treating the string ``"false"`` as true."""
+    value = _SECRETS.get(name, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return bool(value)
+    normalized = str(value).strip().casefold()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    return default
+
 WIB = ZoneInfo("Asia/Jakarta")
-APP_VERSION = "8.8.1-ui"
-EXPECTED_BACKEND_VERSION = "7.5-performance"
+APP_VERSION = "8.9-production"
+EXPECTED_BACKEND_VERSION = "7.6-production"
 URL_GSHEET_API = _SECRETS.get("URL_GSHEET_API", "")
 API_SHARED_KEY = _SECRETS.get("API_SHARED_KEY", "")
 AUTH_SIGNING_KEY = _SECRETS.get("AUTH_SIGNING_KEY", "")
@@ -22,16 +37,21 @@ TELEGRAM_BOT_TOKEN = _SECRETS.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = _SECRETS.get("TELEGRAM_CHAT_ID", "")
 ACCOUNT_TELEGRAM_BOT_TOKEN = _SECRETS.get("ACCOUNT_TELEGRAM_BOT_TOKEN", "")
 ACCOUNT_TELEGRAM_CHAT_ID = _SECRETS.get("ACCOUNT_TELEGRAM_CHAT_ID", "")
-ALLOW_NO_LOGIN = bool(_SECRETS.get("ALLOW_NO_LOGIN", False))
+PRODUCTION_MODE = _secret_bool("PRODUCTION_MODE", True)
+ALLOW_NO_LOGIN = _secret_bool("ALLOW_NO_LOGIN", False)
 
 # Pengaturan keamanan / reliabilitas. Semua punya default aman dan tetap kompatibel.
-DATA_CACHE_TTL_SECONDS = max(30, int(_SECRETS.get("DATA_CACHE_TTL_SECONDS", 120)))
+DATA_CACHE_TTL_SECONDS = max(
+    30, min(600, int(_SECRETS.get("DATA_CACHE_TTL_SECONDS", 120)))
+)
 LOGIN_MAX_ATTEMPTS = max(3, int(_SECRETS.get("LOGIN_MAX_ATTEMPTS", 5)))
 LOGIN_LOCK_SECONDS = max(30, int(_SECRETS.get("LOGIN_LOCK_SECONDS", 300)))
 LOGIN_RATE_WINDOW_SECONDS = max(60, int(_SECRETS.get("LOGIN_RATE_WINDOW_SECONDS", 900)))
-SESSION_TIMEOUT_MINUTES = max(5, int(_SECRETS.get("SESSION_TIMEOUT_MINUTES", 60)))
+SESSION_TIMEOUT_MINUTES = max(
+    5, min(480, int(_SECRETS.get("SESSION_TIMEOUT_MINUTES", 60)))
+)
 SESSION_REVALIDATE_SECONDS = max(
-    30, int(_SECRETS.get("SESSION_REVALIDATE_SECONDS", 60))
+    30, min(300, int(_SECRETS.get("SESSION_REVALIDATE_SECONDS", 60)))
 )
 TELEGRAM_RETRY_ATTEMPTS = max(
     1, min(5, int(_SECRETS.get("TELEGRAM_RETRY_ATTEMPTS", 3)))
@@ -48,24 +68,27 @@ DATABASE_READ_TIMEOUT_SECONDS = max(
 CONNECTION_FAILURE_THRESHOLD = max(
     1, min(5, int(_SECRETS.get("CONNECTION_FAILURE_THRESHOLD", 3)))
 )
-OFFLINE_USE_DEFAULT_STOCK = bool(_SECRETS.get("OFFLINE_USE_DEFAULT_STOCK", False))
-SERVER_EMPTY_USE_DEFAULT_STOCK = bool(
-    _SECRETS.get("SERVER_EMPTY_USE_DEFAULT_STOCK", False)
+OFFLINE_USE_DEFAULT_STOCK = _secret_bool("OFFLINE_USE_DEFAULT_STOCK", False)
+SERVER_EMPTY_USE_DEFAULT_STOCK = _secret_bool("SERVER_EMPTY_USE_DEFAULT_STOCK", False)
+PBKDF2_ITERATIONS = max(
+    200_000, min(1_000_000, int(_SECRETS.get("PBKDF2_ITERATIONS", 310_000)))
 )
-PBKDF2_ITERATIONS = max(200_000, int(_SECRETS.get("PBKDF2_ITERATIONS", 310_000)))
-AUTO_SYNC_ENABLED = bool(_SECRETS.get("AUTO_SYNC_ENABLED", True))
-AUTO_SYNC_SECONDS = max(20, int(_SECRETS.get("AUTO_SYNC_SECONDS", 30)))
+AUTO_SYNC_ENABLED = _secret_bool("AUTO_SYNC_ENABLED", True)
+AUTO_SYNC_SECONDS = max(20, min(60, int(_SECRETS.get("AUTO_SYNC_SECONDS", 30))))
 HEALTH_TIMEOUT_SECONDS = max(5, min(10, int(_SECRETS.get("HEALTH_TIMEOUT_SECONDS", 6))))
-WRITE_BLOCK_WHEN_OFFLINE = bool(_SECRETS.get("WRITE_BLOCK_WHEN_OFFLINE", True))
-REQUIRE_HMAC = bool(_SECRETS.get("REQUIRE_HMAC", True))
-ALLOW_LEGACY_PASSWORDS = bool(_SECRETS.get("ALLOW_LEGACY_PASSWORDS", False))
-REQUIRE_SERVER_BACKUP_BEFORE_RESET = bool(
-    _SECRETS.get("REQUIRE_SERVER_BACKUP_BEFORE_RESET", True)
+WRITE_BLOCK_WHEN_OFFLINE = _secret_bool("WRITE_BLOCK_WHEN_OFFLINE", True)
+REQUIRE_HMAC = _secret_bool("REQUIRE_HMAC", True)
+ALLOW_LEGACY_PASSWORDS = _secret_bool("ALLOW_LEGACY_PASSWORDS", False)
+REQUIRE_SERVER_BACKUP_BEFORE_RESET = _secret_bool(
+    "REQUIRE_SERVER_BACKUP_BEFORE_RESET", True
 )
 # Performance mode: health-check berulang pada rerun cepat menggunakan hasil sesi terbaru.
-HEALTH_CACHE_SECONDS = max(5, int(_SECRETS.get("HEALTH_CACHE_SECONDS", 20)))
+HEALTH_CACHE_SECONDS = max(
+    5, min(60, int(_SECRETS.get("HEALTH_CACHE_SECONDS", 20)))
+)
 SECONDARY_SYNC_SECONDS = max(
-    AUTO_SYNC_SECONDS, int(_SECRETS.get("SECONDARY_SYNC_SECONDS", 60))
+    AUTO_SYNC_SECONDS,
+    min(300, int(_SECRETS.get("SECONDARY_SYNC_SECONDS", 60))),
 )
 BACKUP_STATUS_TTL_SECONDS = max(20, int(_SECRETS.get("BACKUP_STATUS_TTL_SECONDS", 60)))
 MAX_UPLOAD_MB = max(1, min(15, int(_SECRETS.get("MAX_UPLOAD_MB", 6))))
@@ -74,6 +97,13 @@ RESTOCK_TARGET_MULTIPLIER = max(
 )
 NOTIFICATION_LOG_LIMIT = max(
     10, min(100, int(_SECRETS.get("NOTIFICATION_LOG_LIMIT", 30)))
+)
+TELEGRAM_OPERATION_TIMEOUT_SECONDS = max(
+    5, min(12, int(_SECRETS.get("TELEGRAM_OPERATION_TIMEOUT_SECONDS", 8)))
+)
+MIN_SECRET_LENGTH = max(32, int(_SECRETS.get("MIN_SECRET_LENGTH", 32)))
+SYNC_ROW_WARNING_THRESHOLD = max(
+    1_000, int(_SECRETS.get("SYNC_ROW_WARNING_THRESHOLD", 5_000))
 )
 
 STOK_DEFAULT = {

@@ -5,11 +5,18 @@ import hmac
 import re
 
 from .api import api_post
-from .config import AUTH_SIGNING_KEY, PUBLIC_REGISTRATION_ROLES, VALID_ROLES
+from .config import (
+    AUTH_SIGNING_KEY,
+    PUBLIC_REGISTRATION_ROLES,
+    VALID_ROLES,
+)
+from .utils import make_tx_id
 
 
-MIN_PASSWORD_LENGTH = 8
+MIN_PASSWORD_LENGTH = 12
+MIN_EXISTING_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
+DYNAMIC_VERIFIER_ITERATIONS = 310_000
 
 
 def normalize_username(value: str) -> str:
@@ -29,6 +36,8 @@ def normalize_full_name(value: str) -> str:
         raise ValueError("Nama lengkap maksimal 80 karakter.")
     if any(ord(char) < 32 for char in name):
         raise ValueError("Nama mengandung karakter yang tidak valid.")
+    if name.startswith(("=", "+", "-", "@")):
+        raise ValueError("Nama tidak boleh diawali karakter formula spreadsheet.")
     return name
 
 
@@ -40,28 +49,50 @@ def normalize_position(value: str) -> str:
         raise ValueError("Jabatan maksimal 80 karakter.")
     if any(ord(char) < 32 for char in position):
         raise ValueError("Jabatan mengandung karakter yang tidak valid.")
+    if position.startswith(("=", "+", "-", "@")):
+        raise ValueError("Jabatan tidak boleh diawali karakter formula spreadsheet.")
     return position
 
 
-def validate_password(password: str) -> str:
+def validate_password(password: str, *, existing_account=False) -> str:
     value = str(password or "")
-    if len(value) < MIN_PASSWORD_LENGTH:
-        raise ValueError(f"Password minimal {MIN_PASSWORD_LENGTH} karakter.")
+    minimum = MIN_EXISTING_PASSWORD_LENGTH if existing_account else MIN_PASSWORD_LENGTH
+    if len(value) < minimum:
+        raise ValueError(f"Password minimal {minimum} karakter.")
     if len(value) > MAX_PASSWORD_LENGTH:
         raise ValueError(f"Password maksimal {MAX_PASSWORD_LENGTH} karakter.")
     return value
 
 
-def password_verifier(password: str, username: str) -> str:
-    """Buat verifier unik per username; password asli tidak dikirim atau disimpan."""
+def legacy_password_verifier(password: str, username: str) -> str:
+    """Legacy deterministic verifier, sent only once to migrate existing accounts."""
     if not AUTH_SIGNING_KEY:
         raise RuntimeError("AUTH_SIGNING_KEY diperlukan untuk fitur akun dinamis.")
-    clean_password = str(password or "")
     return hmac.new(
         str(AUTH_SIGNING_KEY).encode("utf-8"),
-        f"{normalize_username(username)}\0{clean_password}".encode("utf-8"),
+        f"{normalize_username(username)}\0{str(password or '')}".encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
+
+
+def password_verifier(password: str, username: str) -> str:
+    """Create a key-rotation-safe per-user verifier without sending plaintext."""
+    if not AUTH_SIGNING_KEY:
+        raise RuntimeError("AUTH_SIGNING_KEY diperlukan untuk fitur akun dinamis.")
+    clean_username = normalize_username(username)
+    # Salt PBKDF2 memang tidak perlu rahasia. Menurunkannya dari username membuat
+    # verifier stabil saat AUTH_SIGNING_KEY dirotasi, sementara tiap username
+    # tetap memiliki salt yang berbeda.
+    salt = hashlib.sha256(
+        f"mirai-dynamic-account-salt\0{clean_username}".encode("utf-8")
+    ).digest()[:16]
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        str(password or "").encode("utf-8"),
+        salt,
+        DYNAMIC_VERIFIER_ITERATIONS,
+    )
+    return f"pbkdf2_sha256${DYNAMIC_VERIFIER_ITERATIONS}${salt.hex()}${digest.hex()}"
 
 
 def register_account(
@@ -75,6 +106,7 @@ def register_account(
     return api_post(
         {
             "action": "account_register",
+            "request_id": make_tx_id("ACC"),
             "actor": "Public Registration",
             "role": "Staff",
             "full_name": normalize_full_name(full_name),
@@ -92,16 +124,22 @@ def register_account(
 def authenticate_account(username: str, password: str):
     try:
         clean_username = normalize_username(username)
-        validate_password(password)
+        validate_password(password, existing_account=True)
     except ValueError:
         return {"authenticated": False, "status": "INVALID"}
+    verifier = password_verifier(password, clean_username)
     return api_post(
         {
             "action": "account_auth",
             "actor": "Login",
             "role": "Staff",
             "username": clean_username,
-            "password_verifier": password_verifier(password, clean_username),
+            "password_verifier": verifier,
+            # Backend 7.6 uses this only when the stored account still has the
+            # former SHA-256 verifier, then atomically replaces it with PBKDF2.
+            "legacy_password_verifier": legacy_password_verifier(
+                password, clean_username
+            ),
         },
         timeout=20,
     )

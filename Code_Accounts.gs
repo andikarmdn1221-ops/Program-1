@@ -1,5 +1,5 @@
 /**
- * Mirai Backend v7.5
+ * Mirai Backend v7.6
  *
  * Semua credential wajib disimpan di Apps Script > Project Settings >
  * Script Properties. Jangan menaruh token, key, atau ID produksi di file ini.
@@ -9,7 +9,7 @@
  * - API_SHARED_KEY
  * - AUTH_SIGNING_KEY
  *
- * Opsional:
+ * Wajib untuk production:
  * - DRIVE_FOLDER_ID
  * - ACCOUNT_TELEGRAM_BOT_TOKEN
  * - ACCOUNT_TELEGRAM_CHAT_ID
@@ -21,12 +21,19 @@
  * - REQUIRE_SERVER_BACKUP_BEFORE_RESET=true
  */
 
-const BACKEND_VERSION = "7.5-performance";
+const BACKEND_VERSION = "7.6-production";
 const SCHEMA_CACHE_SECONDS = 300;
+const MAX_ROLLBACK_CELLS = 150000;
+const MAX_QUANTITY = 1000000000;
+const MAX_PBKDF2_ITERATIONS = 1000000;
+const ACCOUNT_AUTH_MAX_ATTEMPTS = 5;
+const ACCOUNT_AUTH_WINDOW_SECONDS = 900;
+const ACCOUNT_AUTH_LOCK_SECONDS = 300;
 const SHEET_STOCK = "stok";
 const SHEET_HISTORY = "riwayat";
 const SHEET_AUDIT = "audit";
 const SHEET_ACCOUNTS = "accounts";
+let requestSpreadsheet_ = null;
 
 const STOCK_HEADERS = [
   "Nama Barang",
@@ -100,6 +107,7 @@ function doGet() {
 
 function doPost(e) {
   const requestStartedAt = Date.now();
+  requestSpreadsheet_ = null;
   try {
     if (e && e.parameter && e.parameter.telegram_secret) {
       return handleTelegramWebhook_(e);
@@ -125,11 +133,14 @@ function doPost(e) {
 
 function routeRequest_(payload) {
   const action = String(payload.action || "").trim();
+  requireProductionMutationConfig_(action);
   switch (action) {
     case "health":
       return handleHealth_(payload);
     case "read":
-      return handleRead_(payload);
+      return withScriptLock_(function () {
+        return handleRead_(payload);
+      });
     case "transaction":
       return withScriptLock_(function () {
         return handleTransaction_(payload);
@@ -167,23 +178,35 @@ function routeRequest_(payload) {
         return handleAuditClear_(payload);
       });
     case "server_backup":
-      return handleServerBackup_(payload);
+      return withScriptLock_(function () {
+        return handleServerBackup_(payload);
+      });
     case "backup_status":
       return handleBackupStatus_(payload);
     case "install_backup_trigger":
-      return handleInstallBackupTrigger_(payload);
+      return withScriptLock_(function () {
+        return handleInstallBackupTrigger_(payload);
+      });
     case "remove_backup_trigger":
-      return handleRemoveBackupTrigger_(payload);
+      return withScriptLock_(function () {
+        return handleRemoveBackupTrigger_(payload);
+      });
     case "account_register":
       return withScriptLock_(function () {
         return handleAccountRegister_(payload);
       });
     case "account_auth":
-      return handleAccountAuth_(payload);
+      return withScriptLock_(function () {
+        return handleAccountAuth_(payload);
+      });
     case "account_validate":
-      return handleAccountValidate_(payload);
+      return withScriptLock_(function () {
+        return handleAccountValidate_(payload);
+      });
     case "account_list":
-      return handleAccountList_(payload);
+      return withScriptLock_(function () {
+        return handleAccountList_(payload);
+      });
     case "account_approve":
       return withScriptLock_(function () {
         return handleAccountApprove_(payload);
@@ -214,6 +237,7 @@ function handleHealth_(payload) {
     backend_version: BACKEND_VERSION,
     data_revision: properties.getProperty("DATA_REVISION") || "0",
     server_time: nowText_(),
+    capabilities: backendCapabilities_(),
   };
 }
 
@@ -223,18 +247,110 @@ function handleRead_(payload) {
   // Pakai spreadsheet yang sama untuk validasi akun dan pembacaan data.
   // Sebelumnya proses ini membuka file serta memeriksa schema dua kali.
   const actor = resolveActor_(payload, spreadsheet, true);
+  const stockValues = getSheetValues_(spreadsheet.getSheetByName(SHEET_STOCK));
+  const historyValues = getSheetValues_(spreadsheet.getSheetByName(SHEET_HISTORY));
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  const canViewAudit = actor.role === "Developer" || actor.role === "Boss";
+  const auditValues = canViewAudit ? getSheetValues_(auditSheet) : [AUDIT_HEADERS];
   return {
     backend_version: BACKEND_VERSION,
     data_revision:
       PropertiesService.getScriptProperties().getProperty("DATA_REVISION") || "0",
     server_time: nowText_(),
-    stok: getSheetValues_(spreadsheet.getSheetByName(SHEET_STOCK)),
-    riwayat: getSheetValues_(spreadsheet.getSheetByName(SHEET_HISTORY)),
-    audit:
-      actor.role === "Developer" || actor.role === "Boss"
-        ? getSheetValues_(spreadsheet.getSheetByName(SHEET_AUDIT))
-        : [AUDIT_HEADERS],
+    capabilities: backendCapabilities_(),
+    stok: stockValues,
+    riwayat: historyValues,
+    audit: auditValues,
+    row_counts: {
+      stok: Math.max(stockValues.length - 1, 0),
+      riwayat: Math.max(historyValues.length - 1, 0),
+      audit: Math.max(auditSheet.getLastRow() - 1, 0),
+    },
+    account_security: dynamicAccountSecurity_(spreadsheet),
   };
+}
+
+function dynamicAccountSecurity_(spreadsheet) {
+  const rows = dataRows_(
+    spreadsheet.getSheetByName(SHEET_ACCOUNTS),
+    ACCOUNT_HEADERS
+  );
+  let pbkdf2 = 0;
+  let legacy = 0;
+  let activeLegacy = 0;
+  rows.forEach(function (row) {
+    if (validPasswordVerifier_(String(row[3] || "").toLowerCase())) {
+      pbkdf2 += 1;
+      return;
+    }
+    legacy += 1;
+    if (String(row[7] || "").toUpperCase() === "ACTIVE") {
+      activeLegacy += 1;
+    }
+  });
+  return {
+    pbkdf2: pbkdf2,
+    legacy: legacy,
+    active_legacy: activeLegacy,
+  };
+}
+
+function backendCapabilities_() {
+  const properties = PropertiesService.getScriptProperties();
+  let localRolesEnforced = false;
+  try {
+    localRolesEnforced = Object.keys(trustedLocalRoles_()).length > 0;
+  } catch (error) {
+    localRolesEnforced = false;
+  }
+  return {
+    hmac_required:
+      String(properties.getProperty("REQUIRE_HMAC") || "").toLowerCase() ===
+      "true",
+    account_auth_rate_limit: true,
+    idempotent_mutations: true,
+    formula_guard: true,
+    mutation_rollback: true,
+    backup_before_reset:
+      String(
+        properties.getProperty("REQUIRE_SERVER_BACKUP_BEFORE_RESET") || ""
+      ).toLowerCase() === "true",
+    drive_folder_configured: Boolean(properties.getProperty("DRIVE_FOLDER_ID")),
+    local_roles_enforced: localRolesEnforced,
+    account_approval_configured: accountApprovalConfigured_(),
+  };
+}
+
+function requireProductionMutationConfig_(action) {
+  const readOnlyActions = [
+    "health",
+    "read",
+    "backup_status",
+    "account_auth",
+    "account_validate",
+    "account_list",
+  ];
+  if (readOnlyActions.indexOf(action) >= 0) {
+    return;
+  }
+  getRequiredProperty_("DRIVE_FOLDER_ID");
+  if (
+    getRequiredProperty_("REQUIRE_SERVER_BACKUP_BEFORE_RESET").toLowerCase() !==
+    "true"
+  ) {
+    throw new Error("REQUIRE_SERVER_BACKUP_BEFORE_RESET wajib true.");
+  }
+  if (action === "account_register") {
+    [
+      "ACCOUNT_TELEGRAM_BOT_TOKEN",
+      "ACCOUNT_TELEGRAM_CHAT_ID",
+      "TELEGRAM_APPROVER_USER_ID",
+      "TELEGRAM_WEBHOOK_SECRET",
+    ].forEach(function (name) {
+      getRequiredProperty_(name);
+    });
+    requireAccountApprovalConfig_();
+  }
 }
 
 function handleTransaction_(payload) {
@@ -252,10 +368,59 @@ function handleTransaction_(payload) {
     240,
     type === "KELUAR"
   );
+  const expectedStock = nonNegativeInt_(
+    payload.expected_stock_before,
+    "Stok sebelumnya"
+  );
   const txId = cleanText_(payload.tx_id, 80, true);
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
   const stockSheet = spreadsheet.getSheetByName(SHEET_STOCK);
+  const historySheet = spreadsheet.getSheetByName(SHEET_HISTORY);
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  const existing = findHistoryRow_(historySheet, txId);
+  if (existing) {
+    const replayFinalStock =
+      type === "MASUK" ? expectedStock + amount : expectedStock - amount;
+    const expectedAuditDetail =
+      itemName +
+      " " +
+      amount +
+      " pcs; stok " +
+      expectedStock +
+      " -> " +
+      replayFinalStock;
+    const existingAudit = findAuditRow_(
+      auditSheet,
+      txId,
+      "TRANSACTION_" + type
+    );
+    if (
+      existing.type !== type ||
+      !sameText_(existing.item, itemName) ||
+      existing.amount !== amount ||
+      !sameText_(existing.note, note) ||
+      !existingAudit ||
+      existingAudit.detail !== expectedAuditDetail
+    ) {
+      throw new Error("ID transaksi sudah digunakan untuk payload yang berbeda.");
+    }
+    const existingItem = findStockRow_(stockSheet, existing.item);
+    if (!existingItem) {
+      throw new Error("Transaksi sudah ada tetapi master barang tidak ditemukan.");
+    }
+    return {
+      tx_id: txId,
+      stok_akhir: existingItem.quantity,
+      file_url: existing.proofUrl,
+      alert: stockAlert_(
+        existingItem.name,
+        existingItem.quantity,
+        existingItem.minimum
+      ),
+      idempotent_replay: true,
+    };
+  }
   const found = findStockRow_(stockSheet, itemName);
   if (!found) {
     throw new Error("Barang tidak ditemukan.");
@@ -264,11 +429,7 @@ function handleTransaction_(payload) {
     throw new Error("Barang sedang nonaktif.");
   }
 
-  if (
-    payload.expected_stock_before !== undefined &&
-    payload.expected_stock_before !== null &&
-    intValue_(payload.expected_stock_before, "Stok sebelumnya") !== found.quantity
-  ) {
+  if (expectedStock !== found.quantity) {
     throw new Error(
       "Stok sudah berubah oleh pengguna lain. Segarkan data lalu ulangi transaksi."
     );
@@ -280,35 +441,51 @@ function handleTransaction_(payload) {
     throw new Error("Stok tidak mencukupi.");
   }
 
-  const proofUrl = saveEvidence_(payload);
-  stockSheet.getRange(found.row, 2).setValue(finalStock);
-  spreadsheet.getSheetByName(SHEET_HISTORY).appendRow([
-    txId,
-    cleanText_(payload.waktu, 40, true),
-    cleanText_(payload.tanggal, 20, true),
-    type,
-    found.name,
-    amount,
-    note,
-    proofUrl,
-    "AKTIF",
-    "",
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "TRANSACTION_" + type,
-    txId,
-    found.name + " " + amount + " pcs; stok akhir " + finalStock
-  );
-  bumpRevision_();
+  let proofUrl = "";
+  return withSheetRollback_(
+    [stockSheet, historySheet, auditSheet],
+    function () {
+      proofUrl = saveEvidence_(payload);
+      stockSheet.getRange(found.row, 2).setValue(finalStock);
+      historySheet.appendRow([
+        txId,
+        cleanText_(payload.waktu, 40, true),
+        cleanText_(payload.tanggal, 20, true),
+        type,
+        found.name,
+        amount,
+        note,
+        proofUrl,
+        "AKTIF",
+        "",
+      ]);
+      writeAudit_(
+        spreadsheet,
+        actor,
+        "TRANSACTION_" + type,
+        txId,
+        found.name +
+          " " +
+          amount +
+          " pcs; stok " +
+          found.quantity +
+          " -> " +
+          finalStock
+      );
+      bumpRevision_();
 
-  return {
-    tx_id: txId,
-    stok_akhir: finalStock,
-    file_url: proofUrl,
-    alert: stockAlert_(found.name, finalStock, found.minimum),
-  };
+      return {
+        tx_id: txId,
+        stok_akhir: finalStock,
+        file_url: proofUrl,
+        alert: stockAlert_(found.name, finalStock, found.minimum),
+        idempotent_replay: false,
+      };
+    },
+    function () {
+      trashEvidence_(proofUrl);
+    }
+  );
 }
 
 function handleMasterAdd_(payload) {
@@ -320,32 +497,60 @@ function handleMasterAdd_(payload) {
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
   const stockSheet = spreadsheet.getSheetByName(SHEET_STOCK);
+  const historySheet = spreadsheet.getSheetByName(SHEET_HISTORY);
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  const txId = cleanText_(payload.tx_id, 80, true);
+  const existing = findHistoryRow_(historySheet, txId);
+  if (existing) {
+    const expectedAuditDetail =
+      name + "; stok awal " + initial + "; minimum " + minimum;
+    const existingAudit = findAuditRow_(auditSheet, txId, "MASTER_ADD");
+    if (
+      existing.type !== "BARANG BARU" ||
+      !sameText_(existing.item, name) ||
+      existing.amount !== initial ||
+      !existingAudit ||
+      existingAudit.detail !== expectedAuditDetail
+    ) {
+      throw new Error("ID transaksi sudah digunakan untuk payload yang berbeda.");
+    }
+    const existingItem = findStockRow_(stockSheet, name);
+    if (!existingItem) {
+      throw new Error("Transaksi master sudah ada tetapi barang tidak ditemukan.");
+    }
+    return {
+      name: existingItem.name,
+      stok_akhir: existingItem.quantity,
+      idempotent_replay: true,
+    };
+  }
   if (findStockRow_(stockSheet, name)) {
     throw new Error("Nama barang sudah digunakan.");
   }
-  stockSheet.appendRow([name, initial, "Aktif", minimum]);
-  const txId = cleanText_(payload.tx_id, 80, true);
-  spreadsheet.getSheetByName(SHEET_HISTORY).appendRow([
-    txId,
-    cleanText_(payload.waktu, 40, true),
-    "",
-    "BARANG BARU",
-    name,
-    initial,
-    "Master item baru",
-    "",
-    "AKTIF",
-    "",
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "MASTER_ADD",
-    txId,
-    name + "; stok awal " + initial
-  );
-  bumpRevision_();
-  return { name: name, stok_akhir: initial };
+  return withSheetRollback_([stockSheet, historySheet, auditSheet], function () {
+    stockSheet.appendRow([name, initial, "Aktif", minimum]);
+    historySheet.appendRow([
+      txId,
+      cleanText_(payload.waktu, 40, true),
+      "",
+      "BARANG BARU",
+      name,
+      initial,
+      "Master item baru",
+      "",
+      "AKTIF",
+      "",
+    ]);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "MASTER_ADD",
+      txId,
+      name + "; stok awal " + initial + "; minimum " + minimum
+    );
+    bumpRevision_();
+    return { name: name, stok_akhir: initial, idempotent_replay: false };
+  });
 }
 
 function handleMasterUpdate_(payload) {
@@ -366,18 +571,21 @@ function handleMasterUpdate_(payload) {
   if (duplicate && duplicate.row !== current.row) {
     throw new Error("Nama barang sudah digunakan item lain.");
   }
-  sheet.getRange(current.row, 1, 1, 4).setValues([
-    [newName, current.quantity, status, minimum],
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "MASTER_UPDATE",
-    "",
-    oldName + " -> " + newName + "; " + status
-  );
-  bumpRevision_();
-  return { name: newName };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([sheet, auditSheet], function () {
+    sheet.getRange(current.row, 1, 1, 4).setValues([
+      [newName, current.quantity, status, minimum],
+    ]);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "MASTER_UPDATE",
+      "",
+      oldName + " -> " + newName + "; " + status
+    );
+    bumpRevision_();
+    return { name: newName };
+  });
 }
 
 function handleMasterDelete_(payload) {
@@ -403,10 +611,13 @@ function handleMasterDelete_(payload) {
   if (!found) {
     throw new Error("Barang tidak ditemukan.");
   }
-  stockSheet.deleteRow(found.row);
-  writeAudit_(spreadsheet, actor, "MASTER_DELETE", "", name);
-  bumpRevision_();
-  return { deleted: true };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([stockSheet, auditSheet], function () {
+    stockSheet.deleteRow(found.row);
+    writeAudit_(spreadsheet, actor, "MASTER_DELETE", "", name);
+    bumpRevision_();
+    return { deleted: true };
+  });
 }
 
 function handleStockAdjust_(payload) {
@@ -422,6 +633,36 @@ function handleStockAdjust_(payload) {
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
   const stockSheet = spreadsheet.getSheetByName(SHEET_STOCK);
+  const historySheet = spreadsheet.getSheetByName(SHEET_HISTORY);
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  const txId = cleanText_(payload.tx_id, 80, true);
+  const expectedDifference = newStock - expected;
+  const existing = findHistoryRow_(historySheet, txId);
+  if (existing) {
+    const expectedAuditDetail =
+      name + " " + expected + " -> " + newStock + "; " + reason;
+    const existingAudit = findAuditRow_(auditSheet, txId, "STOCK_ADJUST");
+    if (
+      existing.type !== "PENYESUAIAN" ||
+      !sameText_(existing.item, name) ||
+      existing.amount !== expectedDifference ||
+      !sameText_(existing.note, reason) ||
+      !existingAudit ||
+      existingAudit.detail !== expectedAuditDetail
+    ) {
+      throw new Error("ID transaksi sudah digunakan untuk payload yang berbeda.");
+    }
+    const existingItem = findStockRow_(stockSheet, name);
+    return {
+      tx_id: txId,
+      selisih: existing.amount,
+      stok_akhir: newStock,
+      alert: existingItem
+        ? stockAlert_(name, newStock, existingItem.minimum)
+        : "",
+      idempotent_replay: true,
+    };
+  }
   const found = findStockRow_(stockSheet, name);
   if (!found) {
     throw new Error("Barang tidak ditemukan.");
@@ -433,34 +674,36 @@ function handleStockAdjust_(payload) {
   }
 
   const difference = newStock - found.quantity;
-  stockSheet.getRange(found.row, 2).setValue(newStock);
-  const txId = cleanText_(payload.tx_id, 80, true);
-  spreadsheet.getSheetByName(SHEET_HISTORY).appendRow([
-    txId,
-    cleanText_(payload.waktu, 40, true),
-    cleanText_(payload.tanggal, 20, true),
-    "PENYESUAIAN",
-    found.name,
-    difference,
-    reason,
-    "",
-    "AKTIF",
-    "",
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "STOCK_ADJUST",
-    txId,
-    found.name + " " + found.quantity + " -> " + newStock + "; " + reason
-  );
-  bumpRevision_();
-  return {
-    tx_id: txId,
-    selisih: difference,
-    stok_akhir: newStock,
-    alert: stockAlert_(found.name, newStock, found.minimum),
-  };
+  return withSheetRollback_([stockSheet, historySheet, auditSheet], function () {
+    stockSheet.getRange(found.row, 2).setValue(newStock);
+    historySheet.appendRow([
+      txId,
+      cleanText_(payload.waktu, 40, true),
+      cleanText_(payload.tanggal, 20, true),
+      "PENYESUAIAN",
+      found.name,
+      difference,
+      reason,
+      "",
+      "AKTIF",
+      "",
+    ]);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "STOCK_ADJUST",
+      txId,
+      found.name + " " + found.quantity + " -> " + newStock + "; " + reason
+    );
+    bumpRevision_();
+    return {
+      tx_id: txId,
+      selisih: difference,
+      stok_akhir: newStock,
+      alert: stockAlert_(found.name, newStock, found.minimum),
+      idempotent_replay: false,
+    };
+  });
 }
 
 function handleTransactionVoid_(payload) {
@@ -471,14 +714,25 @@ function handleTransactionVoid_(payload) {
   ensureSchema_(spreadsheet);
   const historySheet = spreadsheet.getSheetByName(SHEET_HISTORY);
   const tx = findHistoryRow_(historySheet, txId);
-  if (!tx || tx.status !== "AKTIF") {
+  if (!tx) {
+    throw new Error("Transaksi aktif tidak ditemukan.");
+  }
+  const stockSheet = spreadsheet.getSheetByName(SHEET_STOCK);
+  const replayItem = findStockRow_(stockSheet, tx.item);
+  if (tx.status === "VOID" && String(tx.reference).indexOf("VOID oleh ") === 0) {
+    return {
+      voided: true,
+      stok_akhir: replayItem ? replayItem.quantity : null,
+      idempotent_replay: true,
+    };
+  }
+  if (tx.status !== "AKTIF") {
     throw new Error("Transaksi aktif tidak ditemukan.");
   }
   if (tx.type !== "MASUK" && tx.type !== "KELUAR") {
     throw new Error("Jenis transaksi ini tidak dapat di-void.");
   }
 
-  const stockSheet = spreadsheet.getSheetByName(SHEET_STOCK);
   const item = findStockRow_(stockSheet, tx.item);
   if (!item) {
     throw new Error("Master barang transaksi tidak ditemukan.");
@@ -491,18 +745,25 @@ function handleTransactionVoid_(payload) {
     throw new Error("Void akan membuat stok negatif dan ditolak.");
   }
 
-  stockSheet.getRange(item.row, 2).setValue(finalStock);
-  historySheet.getRange(tx.row, 9).setValue("VOID");
-  historySheet.getRange(tx.row, 10).setValue("VOID oleh " + actor.username);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "TRANSACTION_VOID",
-    txId,
-    tx.type + " " + tx.item + " " + tx.amount + " pcs"
-  );
-  bumpRevision_();
-  return { voided: true, stok_akhir: finalStock };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([stockSheet, historySheet, auditSheet], function () {
+    stockSheet.getRange(item.row, 2).setValue(finalStock);
+    historySheet.getRange(tx.row, 9).setValue("VOID");
+    historySheet.getRange(tx.row, 10).setValue("VOID oleh " + actor.username);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "TRANSACTION_VOID",
+      txId,
+      tx.type + " " + tx.item + " " + tx.amount + " pcs"
+    );
+    bumpRevision_();
+    return {
+      voided: true,
+      stok_akhir: finalStock,
+      idempotent_replay: false,
+    };
+  });
 }
 
 function handleTransactionCorrect_(payload) {
@@ -516,9 +777,23 @@ function handleTransactionCorrect_(payload) {
   }
   const newItemName = cleanText_(payload.new_barang, 80, true);
   const newAmount = positiveInt_(payload.new_jumlah, "Jumlah koreksi");
+  const newNote = cleanText_(payload.new_keterangan, 240, false);
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
   const historySheet = spreadsheet.getSheetByName(SHEET_HISTORY);
+  const existingReplacement = findHistoryRow_(historySheet, newTxId);
+  if (existingReplacement) {
+    if (
+      existingReplacement.type !== newType ||
+      !sameText_(existingReplacement.item, newItemName) ||
+      existingReplacement.amount !== newAmount ||
+      !sameText_(existingReplacement.note, newNote) ||
+      existingReplacement.reference !== oldTxId
+    ) {
+      throw new Error("ID transaksi koreksi sudah digunakan untuk payload berbeda.");
+    }
+    return { new_tx_id: newTxId, idempotent_replay: true };
+  }
   const oldTx = findHistoryRow_(historySheet, oldTxId);
   if (!oldTx || oldTx.status !== "AKTIF") {
     throw new Error("Transaksi aktif tidak ditemukan.");
@@ -543,7 +818,7 @@ function handleTransactionCorrect_(payload) {
   const oldKey = oldItem.name.toLowerCase();
   const newKey = newItem.name.toLowerCase();
   projected[oldKey] += oldTx.type === "MASUK" ? -oldTx.amount : oldTx.amount;
-  if (projected[oldKey] < 0) {
+  if (oldKey !== newKey && projected[oldKey] < 0) {
     throw new Error("Koreksi akan membuat stok lama negatif.");
   }
   projected[newKey] += newType === "MASUK" ? newAmount : -newAmount;
@@ -551,36 +826,35 @@ function handleTransactionCorrect_(payload) {
     throw new Error("Stok tidak mencukupi untuk hasil koreksi.");
   }
 
-  stockSheet.getRange(oldItem.row, 2).setValue(projected[oldKey]);
-  if (newItem.row !== oldItem.row) {
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([stockSheet, historySheet, auditSheet], function () {
+    stockSheet.getRange(oldItem.row, 2).setValue(projected[oldKey]);
     stockSheet.getRange(newItem.row, 2).setValue(projected[newKey]);
-  } else {
-    stockSheet.getRange(newItem.row, 2).setValue(projected[newKey]);
-  }
 
-  historySheet.getRange(oldTx.row, 9).setValue("DIKOREKSI");
-  historySheet.getRange(oldTx.row, 10).setValue(newTxId);
-  historySheet.appendRow([
-    newTxId,
-    cleanText_(payload.new_waktu, 40, true),
-    cleanText_(payload.new_tanggal, 20, true),
-    newType,
-    newItem.name,
-    newAmount,
-    cleanText_(payload.new_keterangan, 240, false),
-    oldTx.proofUrl,
-    "AKTIF",
-    oldTxId,
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "TRANSACTION_CORRECT",
-    oldTxId,
-    "Transaksi pengganti " + newTxId
-  );
-  bumpRevision_();
-  return { new_tx_id: newTxId };
+    historySheet.getRange(oldTx.row, 9).setValue("DIKOREKSI");
+    historySheet.getRange(oldTx.row, 10).setValue(newTxId);
+    historySheet.appendRow([
+      newTxId,
+      cleanText_(payload.new_waktu, 40, true),
+      cleanText_(payload.new_tanggal, 20, true),
+      newType,
+      newItem.name,
+      newAmount,
+      newNote,
+      oldTx.proofUrl,
+      "AKTIF",
+      oldTxId,
+    ]);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "TRANSACTION_CORRECT",
+      oldTxId,
+      "Transaksi pengganti " + newTxId
+    );
+    bumpRevision_();
+    return { new_tx_id: newTxId, idempotent_replay: false };
+  });
 }
 
 function handleAuditClear_(payload) {
@@ -596,21 +870,23 @@ function handleAuditClear_(payload) {
   const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
   const deletedRows = Math.max(auditSheet.getLastRow() - 1, 0);
 
-  resetSheet_(auditSheet, AUDIT_HEADERS);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "AUDIT_LOG_CLEARED",
-    "",
-    deletedRows + " catatan audit lama dihapus setelah backup " + backup.backup_name + "."
-  );
-  bumpRevision_();
-  return {
-    audit_cleared: true,
-    deleted_rows: deletedRows,
-    backup_name: backup.backup_name,
-    backup_url: backup.backup_url,
-  };
+  return withSheetRollback_([auditSheet], function () {
+    resetSheet_(auditSheet, AUDIT_HEADERS);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "AUDIT_LOG_CLEARED",
+      "",
+      deletedRows + " catatan audit lama dihapus setelah backup " + backup.backup_name + "."
+    );
+    bumpRevision_();
+    return {
+      audit_cleared: true,
+      deleted_rows: deletedRows,
+      backup_name: backup.backup_name,
+      backup_url: backup.backup_url,
+    };
+  });
 }
 
 function handleReset_(payload) {
@@ -622,28 +898,37 @@ function handleReset_(payload) {
 
   const requireBackup = getProperty_("REQUIRE_SERVER_BACKUP_BEFORE_RESET", "true")
     .toLowerCase() !== "false";
+  let backup = null;
   if (requireBackup) {
-    createServerBackup_();
+    backup = createServerBackup_();
   }
 
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
-  resetSheet_(spreadsheet.getSheetByName(SHEET_STOCK), STOCK_HEADERS);
-  spreadsheet
-    .getSheetByName(SHEET_STOCK)
-    .getRange(2, 1, DEFAULT_STOCK.length, STOCK_HEADERS.length)
-    .setValues(DEFAULT_STOCK);
-  resetSheet_(spreadsheet.getSheetByName(SHEET_HISTORY), HISTORY_HEADERS);
-  resetSheet_(spreadsheet.getSheetByName(SHEET_AUDIT), AUDIT_HEADERS);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "DATABASE_RESET",
-    "",
-    "Data operasional dikembalikan ke master awal."
-  );
-  bumpRevision_();
-  return { reset: true };
+  const stockSheet = spreadsheet.getSheetByName(SHEET_STOCK);
+  const historySheet = spreadsheet.getSheetByName(SHEET_HISTORY);
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([stockSheet, historySheet, auditSheet], function () {
+    resetSheet_(stockSheet, STOCK_HEADERS);
+    stockSheet
+      .getRange(2, 1, DEFAULT_STOCK.length, STOCK_HEADERS.length)
+      .setValues(DEFAULT_STOCK);
+    resetSheet_(historySheet, HISTORY_HEADERS);
+    resetSheet_(auditSheet, AUDIT_HEADERS);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "DATABASE_RESET",
+      "",
+      "Data operasional dikembalikan ke master awal."
+    );
+    bumpRevision_();
+    return {
+      reset: true,
+      backup_name: backup ? backup.backup_name : "",
+      backup_url: backup ? backup.backup_url : "",
+    };
+  });
 }
 
 function handleServerBackup_(payload) {
@@ -672,6 +957,7 @@ function handleInstallBackupTrigger_(payload) {
       .timeBased()
       .everyDays(1)
       .atHour(1)
+      .inTimezone("Asia/Jakarta")
       .create();
   }
   return { trigger_installed: true };
@@ -689,7 +975,10 @@ function handleRemoveBackupTrigger_(payload) {
 }
 
 function scheduledDailyBackup() {
-  createServerBackup_();
+  requestSpreadsheet_ = null;
+  return withScriptLock_(function () {
+    return createServerBackup_();
+  });
 }
 
 function handleAccountRegister_(payload) {
@@ -701,58 +990,139 @@ function handleAccountRegister_(payload) {
     throw new Error("Pendaftaran publik hanya dapat meminta Staff atau Admin.");
   }
   const verifier = String(payload.password_verifier || "").trim().toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(verifier)) {
+  if (!validPasswordVerifier_(verifier) && !/^[a-f0-9]{64}$/.test(verifier)) {
     throw new Error("Password verifier tidak valid.");
   }
 
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
   const sheet = spreadsheet.getSheetByName(SHEET_ACCOUNTS);
-  if (findAccount_(sheet, username)) {
+  const requestedId = payload.request_id
+    ? cleanText_(payload.request_id, 80, true)
+    : "ACC-" + Utilities.getUuid().replace(/-/g, "").slice(0, 16).toUpperCase();
+  const existingAccount = findAccount_(sheet, username);
+  if (existingAccount && existingAccount.requestId === requestedId) {
+    if (
+      !sameText_(existingAccount.fullName, fullName) ||
+      !sameText_(existingAccount.position, position) ||
+      existingAccount.requestedRole !== requestedRole ||
+      !constantTimeEqual_(existingAccount.passwordVerifier, verifier)
+    ) {
+      throw new Error("ID permintaan akun sudah digunakan untuk payload berbeda.");
+    }
+    return {
+      request_id: existingAccount.requestId,
+      status: existingAccount.status,
+      idempotent_replay: true,
+    };
+  }
+  if (existingAccount || findAccount_(sheet, requestedId)) {
     throw new Error("Username sudah digunakan.");
   }
 
-  const requestId = "ACC-" + Utilities.getUuid().replace(/-/g, "").slice(0, 16).toUpperCase();
+  const requestId = requestedId;
   const now = nowText_();
-  sheet.appendRow([
-    requestId,
-    fullName,
-    username,
-    verifier,
-    position,
-    requestedRole,
-    "",
-    "PENDING",
-    now,
-    now,
-    "",
-  ]);
-  writeAudit_(
-    spreadsheet,
-    { username: "Public Registration", role: "Staff" },
-    "ACCOUNT_REGISTER",
-    requestId,
-    username + " meminta role " + requestedRole
-  );
-  bumpRevision_();
-  return { request_id: requestId, status: "PENDING" };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([sheet, auditSheet], function () {
+    sheet.appendRow([
+      requestId,
+      fullName,
+      username,
+      verifier,
+      position,
+      requestedRole,
+      "",
+      "PENDING",
+      now,
+      now,
+      "",
+    ]);
+    writeAudit_(
+      spreadsheet,
+      { username: "Public Registration", role: "Staff" },
+      "ACCOUNT_REGISTER",
+      requestId,
+      username + " meminta role " + requestedRole
+    );
+    bumpRevision_();
+    return {
+      request_id: requestId,
+      status: "PENDING",
+      idempotent_replay: false,
+    };
+  });
 }
 
 function handleAccountAuth_(payload) {
   const username = normalizeUsername_(payload.username);
+  const retryAfter = accountAuthRetryAfter_(username);
+  if (retryAfter > 0) {
+    return {
+      authenticated: false,
+      status: "LOCKED",
+      retry_after: retryAfter,
+    };
+  }
   const verifier = String(payload.password_verifier || "").trim().toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(verifier)) {
-    return { authenticated: false, status: "INVALID" };
+  const legacyVerifier = String(
+    payload.legacy_password_verifier || ""
+  ).trim().toLowerCase();
+  const suppliedIsPbkdf2 = validPasswordVerifier_(verifier);
+  const suppliedIsLegacy = /^[a-f0-9]{64}$/.test(verifier);
+  if (!suppliedIsPbkdf2 && !suppliedIsLegacy) {
+    return accountAuthFailure_(username);
   }
   const spreadsheet = getSpreadsheet_();
   ensureSchema_(spreadsheet);
+  const accountSheet = spreadsheet.getSheetByName(SHEET_ACCOUNTS);
   const account = findAccount_(
-    spreadsheet.getSheetByName(SHEET_ACCOUNTS),
+    accountSheet,
     username
   );
-  if (!account || !constantTimeEqual_(account.passwordVerifier, verifier)) {
-    return { authenticated: false, status: "INVALID" };
+  if (!account) {
+    return accountAuthFailure_(username);
   }
+  let passwordUpgraded = false;
+  const storedIsPbkdf2 = validPasswordVerifier_(account.passwordVerifier);
+  let passwordMatches =
+    storedIsPbkdf2 &&
+    suppliedIsPbkdf2 &&
+    constantTimeEqual_(account.passwordVerifier, verifier);
+  if (
+    !storedIsPbkdf2 &&
+    suppliedIsLegacy &&
+    /^[a-f0-9]{64}$/.test(account.passwordVerifier)
+  ) {
+    passwordMatches = constantTimeEqual_(account.passwordVerifier, verifier);
+  }
+  if (
+    !passwordMatches &&
+    canUpgradeLegacyVerifier_(
+      account.passwordVerifier,
+      legacyVerifier,
+      verifier
+    )
+  ) {
+    const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+    withSheetRollback_([accountSheet, auditSheet], function () {
+      accountSheet.getRange(account.row, 4).setValue(verifier);
+      accountSheet.getRange(account.row, 10).setValue(nowText_());
+      writeAudit_(
+        spreadsheet,
+        { username: account.username, role: account.role || "Staff" },
+        "ACCOUNT_PASSWORD_UPGRADED",
+        account.requestId,
+        "Verifier akun dimigrasikan ke PBKDF2."
+      );
+      bumpRevision_();
+    });
+    passwordMatches = true;
+    passwordUpgraded = true;
+  }
+  if (!passwordMatches) {
+    return accountAuthFailure_(username);
+  }
+  clearAccountAuthFailures_(username);
   if (account.status !== "ACTIVE") {
     return { authenticated: false, status: account.status };
   }
@@ -762,6 +1132,7 @@ function handleAccountAuth_(payload) {
     username: account.username,
     full_name: account.fullName,
     role: account.role,
+    password_upgraded: passwordUpgraded,
   };
 }
 
@@ -807,6 +1178,9 @@ function handleAccountList_(payload) {
         created_at: row[8],
         updated_at: row[9],
         approved_by: row[10],
+        verifier_scheme: validPasswordVerifier_(String(row[3] || "").toLowerCase())
+          ? "PBKDF2"
+          : "LEGACY",
       };
     }),
   };
@@ -824,18 +1198,21 @@ function handleAccountApprove_(payload) {
   if (!account) {
     throw new Error("Akun tidak ditemukan.");
   }
-  sheet.getRange(account.row, 7, 1, 5).setValues([
-    [role, "ACTIVE", account.createdAt, nowText_(), actor.username],
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "ACCOUNT_APPROVE",
-    account.requestId,
-    username + " sebagai " + role
-  );
-  bumpRevision_();
-  return { username: username, role: role, status: "ACTIVE" };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([sheet, auditSheet], function () {
+    sheet.getRange(account.row, 7, 1, 5).setValues([
+      [role, "ACTIVE", account.createdAt, nowText_(), actor.username],
+    ]);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "ACCOUNT_APPROVE",
+      account.requestId,
+      username + " sebagai " + role
+    );
+    bumpRevision_();
+    return { username: username, role: role, status: "ACTIVE" };
+  });
 }
 
 function handleAccountReject_(payload) {
@@ -849,18 +1226,21 @@ function handleAccountReject_(payload) {
   if (!account) {
     throw new Error("Akun tidak ditemukan.");
   }
-  sheet.getRange(account.row, 7, 1, 5).setValues([
-    ["", "REJECTED", account.createdAt, nowText_(), actor.username],
-  ]);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "ACCOUNT_REJECT",
-    account.requestId,
-    username
-  );
-  bumpRevision_();
-  return { username: username, status: "REJECTED" };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([sheet, auditSheet], function () {
+    sheet.getRange(account.row, 7, 1, 5).setValues([
+      ["", "REJECTED", account.createdAt, nowText_(), actor.username],
+    ]);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "ACCOUNT_REJECT",
+      account.requestId,
+      username
+    );
+    bumpRevision_();
+    return { username: username, status: "REJECTED" };
+  });
 }
 
 function handleAccountUpdate_(payload) {
@@ -891,19 +1271,22 @@ function handleAccountUpdate_(payload) {
     throw new Error("Developer aktif terakhir tidak dapat diturunkan atau dinonaktifkan.");
   }
 
-  sheet.getRange(account.row, 7).setValue(role);
-  sheet.getRange(account.row, 8).setValue(status);
-  sheet.getRange(account.row, 10).setValue(nowText_());
-  sheet.getRange(account.row, 11).setValue(actor.username);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "ACCOUNT_UPDATE",
-    account.requestId,
-    username + " -> " + role + "/" + status
-  );
-  bumpRevision_();
-  return { username: username, role: role, status: status };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([sheet, auditSheet], function () {
+    sheet.getRange(account.row, 7).setValue(role);
+    sheet.getRange(account.row, 8).setValue(status);
+    sheet.getRange(account.row, 10).setValue(nowText_());
+    sheet.getRange(account.row, 11).setValue(actor.username);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "ACCOUNT_UPDATE",
+      account.requestId,
+      username + " -> " + role + "/" + status
+    );
+    bumpRevision_();
+    return { username: username, role: role, status: status };
+  });
 }
 
 function handleAccountDelete_(payload) {
@@ -933,23 +1316,23 @@ function handleAccountDelete_(payload) {
   }
 
   const requestId = account.requestId;
-  sheet.deleteRow(account.row);
-  writeAudit_(
-    spreadsheet,
-    actor,
-    "ACCOUNT_DELETE_PERMANENT",
-    requestId,
-    "Record akun dan password verifier dihapus: " + username
-  );
-  bumpRevision_();
-  return { username: username, deleted: true, status: "DELETED" };
+  const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+  return withSheetRollback_([sheet, auditSheet], function () {
+    sheet.deleteRow(account.row);
+    writeAudit_(
+      spreadsheet,
+      actor,
+      "ACCOUNT_DELETE_PERMANENT",
+      requestId,
+      "Record akun dan password verifier dihapus: " + username
+    );
+    bumpRevision_();
+    return { username: username, deleted: true, status: "DELETED" };
+  });
 }
 
 function resolveHealthIdentity_(payload) {
-  const username = String(payload.actor || "").trim();
-  if (!username) {
-    throw new Error("Identitas pengguna tidak tersedia.");
-  }
+  const username = cleanText_(payload.actor, 80, true);
   return {
     username: username,
     role: normalizeRole_(payload.role),
@@ -958,10 +1341,7 @@ function resolveHealthIdentity_(payload) {
 }
 
 function resolveActor_(payload, existingSpreadsheet, schemaReady) {
-  const username = String(payload.actor || "").trim();
-  if (!username) {
-    throw new Error("Identitas pengguna tidak tersedia.");
-  }
+  const username = cleanText_(payload.actor, 80, true);
   const source = String(payload.auth_source || "local").toLowerCase();
   let role = normalizeRole_(payload.role);
 
@@ -974,21 +1354,23 @@ function resolveActor_(payload, existingSpreadsheet, schemaReady) {
     username
   );
 
-  if (source === "dynamic" || account) {
+  if (source === "dynamic") {
     if (!account || account.status !== "ACTIVE") {
       throw new Error("Akun telah dinonaktifkan atau dihapus.");
     }
     role = normalizeRole_(account.role);
-  } else {
+  } else if (source === "local") {
     const trusted = trustedLocalRoles_();
-    const keys = Object.keys(trusted);
-    if (keys.length) {
-      const trustedRole = trusted[String(username).trim().toLowerCase()];
-      if (!trustedRole) {
-        throw new Error("Akun lokal tidak terdaftar pada backend.");
-      }
-      role = normalizeRole_(trustedRole);
+    if (!Object.keys(trusted).length) {
+      throw new Error("LOCAL_ACCOUNT_ROLES_JSON wajib diisi pada backend production.");
     }
+    const trustedRole = trusted[String(username).trim().toLowerCase()];
+    if (!trustedRole) {
+      throw new Error("Akun lokal tidak terdaftar pada backend.");
+    }
+    role = normalizeRole_(trustedRole);
+  } else {
+    throw new Error("Sumber autentikasi tidak valid.");
   }
 
   return { username: username, role: role, source: source };
@@ -1034,17 +1416,23 @@ function parseJsonBody_(e) {
 
 function verifySignedRequest_(payload) {
   const expectedApiKey = getRequiredProperty_("API_SHARED_KEY");
+  const signingKey = getRequiredProperty_("AUTH_SIGNING_KEY");
+  if (expectedApiKey.length < 32 || signingKey.length < 32) {
+    throw new Error("API_SHARED_KEY dan AUTH_SIGNING_KEY minimal 32 karakter.");
+  }
+  if (constantTimeEqual_(expectedApiKey, signingKey)) {
+    throw new Error("API_SHARED_KEY dan AUTH_SIGNING_KEY harus berbeda.");
+  }
   if (!constantTimeEqual_(String(payload.api_key || ""), expectedApiKey)) {
     throw new Error("API key tidak valid.");
   }
 
   const requireHmac =
-    getProperty_("REQUIRE_HMAC", "true").toLowerCase() !== "false";
+    getRequiredProperty_("REQUIRE_HMAC").toLowerCase() === "true";
   if (!requireHmac) {
-    return;
+    throw new Error("REQUIRE_HMAC wajib true pada backend production.");
   }
 
-  const signingKey = getRequiredProperty_("AUTH_SIGNING_KEY");
   const timestamp = Number(payload.auth_ts);
   if (!Number.isFinite(timestamp)) {
     throw new Error("Timestamp autentikasi tidak valid.");
@@ -1176,7 +1564,12 @@ function constantTimeEqual_(left, right) {
 }
 
 function getSpreadsheet_() {
-  return SpreadsheetApp.openById(getRequiredProperty_("SPREADSHEET_ID"));
+  if (!requestSpreadsheet_) {
+    requestSpreadsheet_ = SpreadsheetApp.openById(
+      getRequiredProperty_("SPREADSHEET_ID")
+    );
+  }
+  return requestSpreadsheet_;
 }
 
 function ensureSchema_(spreadsheet) {
@@ -1280,11 +1673,30 @@ function findHistoryRow_(sheet, txId) {
         date: rows[index][2],
         type: String(rows[index][3] || "").toUpperCase(),
         item: String(rows[index][4] || ""),
-        amount: positiveInt_(rows[index][5], "Jumlah transaksi"),
+        // Penyesuaian stok dapat menyimpan selisih nol atau negatif.
+        amount: intValue_(rows[index][5], "Jumlah transaksi"),
         note: String(rows[index][6] || ""),
         proofUrl: String(rows[index][7] || ""),
         status: String(rows[index][8] || "").toUpperCase(),
         reference: String(rows[index][9] || ""),
+      };
+    }
+  }
+  return null;
+}
+
+function findAuditRow_(sheet, txId, action) {
+  const wantedId = String(txId || "").trim();
+  const wantedAction = String(action || "").trim();
+  const rows = dataRows_(sheet, AUDIT_HEADERS);
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    if (
+      String(rows[index][3] || "").trim() === wantedAction &&
+      String(rows[index][4] || "").trim() === wantedId
+    ) {
+      return {
+        row: index + 2,
+        detail: String(rows[index][5] || ""),
       };
     }
   }
@@ -1329,10 +1741,10 @@ function countActiveDevelopers_(sheet) {
 function writeAudit_(spreadsheet, actor, action, txId, detail) {
   spreadsheet.getSheetByName(SHEET_AUDIT).appendRow([
     nowText_(),
-    actor.username,
-    actor.role,
-    action,
-    txId || "",
+    cleanText_(actor.username, 80, true),
+    normalizeRole_(actor.role),
+    cleanText_(action, 80, true),
+    txId ? cleanText_(txId, 80, true) : "",
     cleanText_(detail, 500, false),
   ]);
 }
@@ -1355,15 +1767,102 @@ function withScriptLock_(callback) {
   }
 }
 
+function withSheetRollback_(sheets, callback, cleanupCallback) {
+  const snapshots = [];
+  let totalCells = 0;
+  sheets.forEach(function (sheet) {
+    const snapshot = snapshotSheet_(sheet);
+    totalCells += snapshot.rows * snapshot.columns;
+    if (totalCells > MAX_ROLLBACK_CELLS) {
+      throw new Error(
+        "Data operasional melewati batas mutasi aman. Arsipkan riwayat/audit lalu coba lagi."
+      );
+    }
+    snapshots.push(snapshot);
+  });
+
+  try {
+    return callback();
+  } catch (error) {
+    const rollbackErrors = [];
+    snapshots.forEach(function (snapshot) {
+      try {
+        restoreSheetSnapshot_(snapshot);
+      } catch (rollbackError) {
+        rollbackErrors.push(safeError_(rollbackError));
+      }
+    });
+    if (cleanupCallback) {
+      try {
+        cleanupCallback();
+      } catch (cleanupError) {
+        console.error("[WMS cleanup] " + safeError_(cleanupError));
+      }
+    }
+    if (rollbackErrors.length) {
+      console.error("[WMS rollback] " + rollbackErrors.join("; "));
+      throw new Error(
+        "Operasi gagal dan rollback otomatis tidak lengkap. Jangan ulangi sebelum memeriksa riwayat dan audit."
+      );
+    }
+    throw error;
+  }
+}
+
+function snapshotSheet_(sheet) {
+  const rows = Math.max(sheet.getLastRow(), 1);
+  const columns = Math.max(sheet.getLastColumn(), 1);
+  const range = sheet.getRange(1, 1, rows, columns);
+  const values = range.getValues();
+  const formulas = range.getFormulas();
+  return {
+    sheet: sheet,
+    rows: rows,
+    columns: columns,
+    values: values.map(function (row, rowIndex) {
+      return row.map(function (value, columnIndex) {
+        return formulas[rowIndex][columnIndex] || value;
+      });
+    }),
+  };
+}
+
+function restoreSheetSnapshot_(snapshot) {
+  const sheet = snapshot.sheet;
+  const rows = Math.max(sheet.getLastRow(), snapshot.rows, 1);
+  const columns = Math.max(sheet.getLastColumn(), snapshot.columns, 1);
+  sheet.getRange(1, 1, rows, columns).clearContent();
+  sheet
+    .getRange(1, 1, snapshot.rows, snapshot.columns)
+    .setValues(snapshot.values);
+  SpreadsheetApp.flush();
+}
+
 function createServerBackup_() {
   const spreadsheet = getSpreadsheet_();
+  SpreadsheetApp.flush();
   const source = DriveApp.getFileById(spreadsheet.getId());
-  const folderId = getProperty_("DRIVE_FOLDER_ID", "");
-  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  const folderId = getRequiredProperty_("DRIVE_FOLDER_ID");
+  const folder = DriveApp.getFolderById(folderId);
   const name =
     "WMS_BACKUP_" +
     Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyyMMdd_HHmmss");
   const copy = source.makeCopy(name, folder);
+  const backupSpreadsheet = SpreadsheetApp.openById(copy.getId());
+  [SHEET_STOCK, SHEET_HISTORY, SHEET_AUDIT, SHEET_ACCOUNTS].forEach(
+    function (sheetName) {
+      const sourceSheet = spreadsheet.getSheetByName(sheetName);
+      const backupSheet = backupSpreadsheet.getSheetByName(sheetName);
+      if (
+        !sourceSheet ||
+        !backupSheet ||
+        sourceSheet.getLastRow() !== backupSheet.getLastRow()
+      ) {
+        copy.setTrashed(true);
+        throw new Error("Verifikasi backup gagal pada sheet " + sheetName + ".");
+      }
+    }
+  );
   const time = nowText_();
   const properties = PropertiesService.getScriptProperties();
   properties.setProperties({
@@ -1389,18 +1888,44 @@ function saveEvidence_(payload) {
   if (!encoded) {
     return "";
   }
+  if (String(payload.image_mime || "").toLowerCase() !== "image/jpeg") {
+    throw new Error("Bukti transaksi wajib berupa JPEG yang sudah divalidasi.");
+  }
+  if (encoded.length > 8 * 1024 * 1024 + 1024) {
+    throw new Error("Ukuran bukti melebihi batas aman.");
+  }
   const bytes = Utilities.base64Decode(encoded);
   if (bytes.length > 6 * 1024 * 1024) {
     throw new Error("Ukuran bukti melebihi 6 MB.");
   }
-  const folderId = getProperty_("DRIVE_FOLDER_ID", "");
-  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  if (
+    bytes.length < 4 ||
+    (bytes[0] & 255) !== 255 ||
+    (bytes[1] & 255) !== 216 ||
+    (bytes[2] & 255) !== 255 ||
+    (bytes[bytes.length - 2] & 255) !== 255 ||
+    (bytes[bytes.length - 1] & 255) !== 217
+  ) {
+    throw new Error("Isi bukti bukan file JPEG yang valid.");
+  }
+  const folderId = getRequiredProperty_("DRIVE_FOLDER_ID");
+  const folder = DriveApp.getFolderById(folderId);
   const fileName = cleanText_(payload.image_name || "bukti.jpg", 120, true).replace(
     /[^A-Za-z0-9._-]/g,
     "_"
   );
+  if (!/\.jpe?g$/i.test(fileName)) {
+    throw new Error("Nama bukti harus memakai ekstensi .jpg atau .jpeg.");
+  }
   const blob = Utilities.newBlob(bytes, "image/jpeg", fileName);
   return folder.createFile(blob).getUrl();
+}
+
+function trashEvidence_(fileUrl) {
+  const match = String(fileUrl || "").match(/[-A-Za-z0-9_]{20,}/);
+  if (match) {
+    DriveApp.getFileById(match[0]).setTrashed(true);
+  }
 }
 
 function stockAlert_(name, quantity, minimum) {
@@ -1427,6 +1952,92 @@ function normalizeUsername_(value) {
     throw new Error("Username tidak valid.");
   }
   return username;
+}
+
+function validPasswordVerifier_(value) {
+  const match = String(value || "").match(
+    /^pbkdf2_sha256\$(\d+)\$[a-f0-9]{32}\$[a-f0-9]{64}$/
+  );
+  return Boolean(
+    match &&
+      Number(match[1]) >= 200000 &&
+      Number(match[1]) <= MAX_PBKDF2_ITERATIONS
+  );
+}
+
+function canUpgradeLegacyVerifier_(stored, legacySupplied, replacement) {
+  const storedText = String(stored || "").toLowerCase();
+  const legacyText = String(legacySupplied || "").toLowerCase();
+  return (
+    /^[a-f0-9]{64}$/.test(storedText) &&
+    /^[a-f0-9]{64}$/.test(legacyText) &&
+    validPasswordVerifier_(String(replacement || "").toLowerCase()) &&
+    constantTimeEqual_(storedText, legacyText)
+  );
+}
+
+function accountAuthCacheKey_(username) {
+  // Username sudah dinormalisasi menjadi maksimal 32 karakter aman untuk cache key.
+  return "account_auth_" + String(username).toLowerCase();
+}
+
+function readAccountAuthState_(username, nowSeconds) {
+  const cache = CacheService.getScriptCache();
+  const key = accountAuthCacheKey_(username);
+  let state = null;
+  try {
+    state = JSON.parse(cache.get(key) || "null");
+  } catch (error) {
+    state = null;
+  }
+  if (!state || Number(state.window_started_at) <= 0) {
+    return { attempts: 0, window_started_at: nowSeconds, locked_until: 0 };
+  }
+  if (
+    Number(state.locked_until || 0) <= nowSeconds &&
+    nowSeconds - Number(state.window_started_at) >= ACCOUNT_AUTH_WINDOW_SECONDS
+  ) {
+    cache.remove(key);
+    return { attempts: 0, window_started_at: nowSeconds, locked_until: 0 };
+  }
+  return state;
+}
+
+function accountAuthRetryAfter_(username) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const state = readAccountAuthState_(username, nowSeconds);
+  return Math.max(0, Math.ceil(Number(state.locked_until || 0) - nowSeconds));
+}
+
+function accountAuthFailure_(username) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const cache = CacheService.getScriptCache();
+  const key = accountAuthCacheKey_(username);
+  const state = readAccountAuthState_(username, nowSeconds);
+  state.attempts = Number(state.attempts || 0) + 1;
+  if (state.attempts >= ACCOUNT_AUTH_MAX_ATTEMPTS) {
+    state.attempts = 0;
+    state.window_started_at = nowSeconds;
+    state.locked_until = nowSeconds + ACCOUNT_AUTH_LOCK_SECONDS;
+  }
+  cache.put(
+    key,
+    JSON.stringify(state),
+    ACCOUNT_AUTH_WINDOW_SECONDS + ACCOUNT_AUTH_LOCK_SECONDS
+  );
+  const retryAfter = Math.max(
+    0,
+    Math.ceil(Number(state.locked_until || 0) - nowSeconds)
+  );
+  return {
+    authenticated: false,
+    status: retryAfter > 0 ? "LOCKED" : "INVALID",
+    retry_after: retryAfter,
+  };
+}
+
+function clearAccountAuthFailures_(username) {
+  CacheService.getScriptCache().remove(accountAuthCacheKey_(username));
 }
 
 function normalizeRole_(value) {
@@ -1466,6 +2077,9 @@ function cleanText_(value, maxLength, required) {
   if (text.length > maxLength) {
     throw new Error("Input melebihi batas " + maxLength + " karakter.");
   }
+  if (text !== "-" && /^[=+\-@]/.test(text)) {
+    throw new Error("Input tidak boleh diawali karakter formula spreadsheet.");
+  }
   return text || "-";
 }
 
@@ -1474,7 +2088,11 @@ function intValue_(value, label) {
   if (!/^-?\d+(?:\.0+)?$/.test(text)) {
     throw new Error(label + " bukan angka bulat yang valid.");
   }
-  return Number(text);
+  const result = Number(text);
+  if (!Number.isSafeInteger(result) || Math.abs(result) > MAX_QUANTITY) {
+    throw new Error(label + " melewati batas aman " + MAX_QUANTITY + ".");
+  }
+  return result;
 }
 
 function nonNegativeInt_(value, label) {
@@ -1519,12 +2137,36 @@ function getRequiredProperty_(name) {
   return value;
 }
 
+function accountApprovalConfigured_() {
+  const token = getProperty_("ACCOUNT_TELEGRAM_BOT_TOKEN", "");
+  const chatId = getProperty_("ACCOUNT_TELEGRAM_CHAT_ID", "");
+  const approverId = getProperty_("TELEGRAM_APPROVER_USER_ID", "");
+  const webhookSecret = getProperty_("TELEGRAM_WEBHOOK_SECRET", "");
+  return (
+    /^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token) &&
+    /^-?\d+$/.test(chatId) &&
+    /^\d+$/.test(approverId) &&
+    webhookSecret.length >= 32
+  );
+}
+
+function requireAccountApprovalConfig_() {
+  if (!accountApprovalConfigured_()) {
+    throw new Error(
+      "Konfigurasi approval Telegram tidak valid; periksa token, chat ID, approver ID, dan webhook secret minimal 32 karakter."
+    );
+  }
+}
+
 function safeError_(error) {
   let text = String(error && error.message ? error.message : error || "Operasi gagal.");
   [
     getProperty_("API_SHARED_KEY", ""),
     getProperty_("AUTH_SIGNING_KEY", ""),
     getProperty_("ACCOUNT_TELEGRAM_BOT_TOKEN", ""),
+    getProperty_("TELEGRAM_WEBHOOK_SECRET", ""),
+    getProperty_("SPREADSHEET_ID", ""),
+    getProperty_("DRIVE_FOLDER_ID", ""),
   ].forEach(function (secret) {
     if (secret) {
       text = text.split(secret).join("***REDACTED***");
@@ -1541,6 +2183,8 @@ function jsonResponse_(data) {
 
 function setupTelegramApprovalWebhook() {
   const token = getRequiredProperty_("ACCOUNT_TELEGRAM_BOT_TOKEN");
+  getRequiredProperty_("ACCOUNT_TELEGRAM_CHAT_ID");
+  getRequiredProperty_("TELEGRAM_APPROVER_USER_ID");
   let secret = getProperty_("TELEGRAM_WEBHOOK_SECRET", "");
   if (!secret) {
     secret = Utilities.getUuid().replace(/-/g, "") +
@@ -1550,6 +2194,7 @@ function setupTelegramApprovalWebhook() {
       secret
     );
   }
+  requireAccountApprovalConfig_();
   const serviceUrl = ScriptApp.getService().getUrl();
   if (!serviceUrl) {
     throw new Error("Deploy Web App terlebih dahulu.");
@@ -1593,11 +2238,16 @@ function handleTelegramWebhook_(e) {
       return jsonResponse_({ ok: true, ignored: true });
     }
 
-    const approverId = getProperty_("TELEGRAM_APPROVER_USER_ID", "");
+    const expectedChatId = getRequiredProperty_("ACCOUNT_TELEGRAM_CHAT_ID");
     if (
-      approverId &&
-      String(callback.from && callback.from.id) !== String(approverId)
+      String(callback.message && callback.message.chat && callback.message.chat.id) !==
+      String(expectedChatId)
     ) {
+      answerTelegramCallback_(callback.id, "Chat approval tidak diizinkan.");
+      return jsonResponse_({ ok: true, ignored: true });
+    }
+    const approverId = getRequiredProperty_("TELEGRAM_APPROVER_USER_ID");
+    if (String(callback.from && callback.from.id) !== String(approverId)) {
       answerTelegramCallback_(
         callback.id,
         "Anda tidak memiliki izin menyetujui akun."
@@ -1629,35 +2279,44 @@ function handleTelegramWebhook_(e) {
         throw new Error("Permintaan akun tidak ditemukan.");
       }
       if (account.status !== "PENDING") {
-        throw new Error("Permintaan akun sudah diproses.");
+        return (
+          "Permintaan @" +
+          account.username +
+          " sudah diproses (" +
+          account.status +
+          ")."
+        );
       }
       const actor = { username: "Telegram Approver", role: "Developer" };
-      if (decision === "REJECT") {
+      const auditSheet = spreadsheet.getSheetByName(SHEET_AUDIT);
+      return withSheetRollback_([sheet, auditSheet], function () {
+        if (decision === "REJECT") {
+          sheet.getRange(account.row, 7, 1, 5).setValues([
+            ["", "REJECTED", account.createdAt, nowText_(), actor.username],
+          ]);
+          writeAudit_(
+            spreadsheet,
+            actor,
+            "ACCOUNT_REJECT",
+            account.requestId,
+            account.username
+          );
+          bumpRevision_();
+          return "Permintaan @" + account.username + " ditolak.";
+        }
         sheet.getRange(account.row, 7, 1, 5).setValues([
-          ["", "REJECTED", account.createdAt, nowText_(), actor.username],
+          [decision, "ACTIVE", account.createdAt, nowText_(), actor.username],
         ]);
         writeAudit_(
           spreadsheet,
           actor,
-          "ACCOUNT_REJECT",
+          "ACCOUNT_APPROVE",
           account.requestId,
-          account.username
+          account.username + " sebagai " + decision
         );
         bumpRevision_();
-        return "Permintaan @" + account.username + " ditolak.";
-      }
-      sheet.getRange(account.row, 7, 1, 5).setValues([
-        [decision, "ACTIVE", account.createdAt, nowText_(), actor.username],
-      ]);
-      writeAudit_(
-        spreadsheet,
-        actor,
-        "ACCOUNT_APPROVE",
-        account.requestId,
-        account.username + " sebagai " + decision
-      );
-      bumpRevision_();
-      return "Akun @" + account.username + " aktif sebagai " + decision + ".";
+        return "Akun @" + account.username + " aktif sebagai " + decision + ".";
+      });
     });
 
     answerTelegramCallback_(callback.id, result);

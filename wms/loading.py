@@ -255,6 +255,12 @@ def show_loading_screen(
 
 
 def hide_loading_screen(placeholder):
-    """Hapus overlay dengan aman; menerima ``None`` agar mudah dipakai di finally."""
+    """Tutup overlay dengan delta HTML eksplisit agar tidak tertinggal di browser."""
     if placeholder is not None:
-        placeholder.empty()
+        # Streamlit Community Cloud kadang tidak menerapkan ``empty()`` ketika
+        # placeholder dibuat dan dihapus dalam render yang sama. Mengganti isinya
+        # dengan kill-switch CSS menghasilkan delta nyata dan selalu membuka UI.
+        placeholder.markdown(
+            "<style>.mirai-loading-screen{display:none!important}</style>",
+            unsafe_allow_html=True,
+        )

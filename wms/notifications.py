@@ -11,6 +11,7 @@ from .config import (
     NOTIFICATION_LOG_LIMIT,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
+    TELEGRAM_OPERATION_TIMEOUT_SECONDS,
     TELEGRAM_RETRY_ATTEMPTS,
 )
 from .utils import redact_sensitive, waktu_display
@@ -80,6 +81,8 @@ def send_telegram_detailed(
     *,
     bot_token=None,
     chat_id=None,
+    attempts=None,
+    timeout_seconds=20,
 ):
     """Kirim Telegram secara terukur; caller menerima status dan penyebab kegagalan."""
     active_token = TELEGRAM_BOT_TOKEN if bot_token is None else str(bot_token)
@@ -89,40 +92,38 @@ def send_telegram_detailed(
     if not active_chat_id:
         return False, "TELEGRAM_CHAT_ID belum diisi."
 
+    active_attempts = TELEGRAM_RETRY_ATTEMPTS if attempts is None else int(attempts)
+    active_attempts = max(1, min(TELEGRAM_RETRY_ATTEMPTS, active_attempts))
+    active_timeout = max(5, min(40, int(timeout_seconds)))
     last_error = ""
-    for attempt in range(1, TELEGRAM_RETRY_ATTEMPTS + 1):
+    for attempt in range(1, active_attempts + 1):
         try:
             if image_bytes:
                 url = f"https://api.telegram.org/bot{active_token}/sendPhoto"
                 res = requests.post(
                     url,
-                    data={"chat_id": active_chat_id, "caption": message},
+                    data={
+                        "chat_id": active_chat_id,
+                        "caption": str(message).replace("*", ""),
+                    },
                     files={"photo": ("bukti.jpg", image_bytes, "image/jpeg")},
-                    timeout=20,
+                    timeout=active_timeout,
                 )
             else:
                 url = f"https://api.telegram.org/bot{active_token}/sendMessage"
                 payload = {
                     "chat_id": active_chat_id,
-                    "text": message,
-                    "parse_mode": "Markdown",
+                    # Plain text avoids Telegram entity parsing failures caused
+                    # by user-controlled names, notes, and underscores.
+                    "text": str(message).replace("*", ""),
                 }
                 if reply_markup:
                     payload["reply_markup"] = reply_markup
                 res = requests.post(
                     url,
                     json=payload,
-                    timeout=20,
+                    timeout=active_timeout,
                 )
-                # Keterangan/nama barang dapat mengandung karakter Markdown.
-                # Jika Telegram menolak entity Markdown, kirim ulang sebagai plain text.
-                if res.status_code == 400:
-                    detail_lower = telegram_response_detail(res).lower()
-                    if "parse" in detail_lower or "entity" in detail_lower:
-                        plain_payload = {"chat_id": active_chat_id, "text": message}
-                        if reply_markup:
-                            plain_payload["reply_markup"] = reply_markup
-                        res = requests.post(url, json=plain_payload, timeout=20)
 
             if res.ok:
                 return True, "Notifikasi berhasil dikirim ke Telegram."
@@ -139,7 +140,7 @@ def send_telegram_detailed(
             last_error = telegram_safe_exception(exc)
             break
 
-        if attempt < TELEGRAM_RETRY_ATTEMPTS:
+        if attempt < active_attempts:
             time.sleep(min(4.0, 0.8 * attempt))
 
     safe_error = redact_sensitive(last_error or "Telegram menolak notifikasi.")
@@ -183,6 +184,8 @@ def send_account_request_notification(
         reply_markup=keyboard,
         bot_token=ACCOUNT_TELEGRAM_BOT_TOKEN,
         chat_id=ACCOUNT_TELEGRAM_CHAT_ID,
+        attempts=2,
+        timeout_seconds=10,
     )
     record_notification(f"Permintaan akun {username}", ok, detail)
     return ok, detail
@@ -201,8 +204,13 @@ def record_notification(context: str, ok: bool, detail: str):
 
 
 def deliver_notification(message: str, context: str, image_bytes=None):
-    """Notifikasi operasional dijalankan sinkron agar statusnya dapat dilaporkan."""
-    ok, detail = send_telegram_detailed(message, image_bytes)
+    """Use one short attempt so a Telegram outage cannot freeze stock work."""
+    ok, detail = send_telegram_detailed(
+        message,
+        image_bytes,
+        attempts=1,
+        timeout_seconds=TELEGRAM_OPERATION_TIMEOUT_SECONDS,
+    )
     record_notification(context, ok, detail)
     return ok, detail
 

@@ -3,11 +3,16 @@
 import hashlib
 import re
 import time
+from urllib.parse import urlparse
 
 import streamlit as st
 
 from .api import api_get, api_health, show_api_error
 from .config import (
+    ACCOUNT_TELEGRAM_BOT_TOKEN,
+    ACCOUNT_TELEGRAM_CHAT_ID,
+    ALLOW_LEGACY_PASSWORDS,
+    ALLOW_NO_LOGIN,
     API_SHARED_KEY,
     AUDIT_COLUMNS,
     AUTH_SIGNING_KEY,
@@ -17,11 +22,17 @@ from .config import (
     EXPECTED_BACKEND_VERSION,
     HEALTH_CACHE_SECONDS,
     MASTER_DEFAULT,
+    MIN_SECRET_LENGTH,
     OFFLINE_USE_DEFAULT_STOCK,
+    PRODUCTION_MODE,
     REQUIRE_HMAC,
+    REQUIRE_SERVER_BACKUP_BEFORE_RESET,
     RIWAYAT_COLUMNS,
     SERVER_EMPTY_USE_DEFAULT_STOCK,
     STOK_DEFAULT,
+    SYNC_ROW_WARNING_THRESHOLD,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
     URL_GSHEET_API,
     WRITE_BLOCK_WHEN_OFFLINE,
 )
@@ -239,10 +250,35 @@ def refresh_data(force=False, quiet=False):
             )
         if server_duration_ms > 0:
             st.session_state.last_server_duration_ms = server_duration_ms
+        raw_counts = raw.get("row_counts", {}) if isinstance(raw, dict) else {}
+        row_counts = {
+            name: max(0, safe_int(raw_counts.get(name, 0)))
+            for name in ("stok", "riwayat", "audit")
+        }
+        st.session_state.server_row_counts = row_counts
+        st.session_state.sync_scale_warning = any(
+            row_counts[name] >= SYNC_ROW_WARNING_THRESHOLD
+            for name in ("riwayat", "audit")
+        )
+        raw_account_security = (
+            raw.get("account_security", {}) if isinstance(raw, dict) else {}
+        )
+        if not isinstance(raw_account_security, dict):
+            raw_account_security = {}
+        st.session_state.dynamic_account_security = {
+            name: max(0, safe_int(raw_account_security.get(name, 0)))
+            for name in ("pbkdf2", "legacy", "active_legacy")
+        }
         st.session_state.health_cache = {
             "ok": True,
             "backend_version": backend_version,
             "data_revision": revision,
+            "capabilities": (
+                dict(raw.get("capabilities", {}))
+                if isinstance(raw, dict)
+                and isinstance(raw.get("capabilities"), dict)
+                else {}
+            ),
         }
         st.session_state.last_health_epoch = time.time()
         st.session_state.last_health_check = waktu_display()
@@ -339,34 +375,170 @@ def sync_if_changed(force_health=False):
 
 def require_online_operation():
     """Verifikasi server terbaru sebelum mutation; snapshot tidak pernah dianggap cukup untuk menulis."""
-    if not WRITE_BLOCK_WHEN_OFFLINE:
-        return
-
     verified = False
+    health = {}
     try:
-        get_server_health(force=True)
+        health = get_server_health(force=True)
         verified = True
     except Exception:
         # Health ringan gagal: full read menjadi verifikasi cadangan.
         verified = refresh_data(force=True, quiet=True)
+        health = st.session_state.get("health_cache", {})
 
-    if not verified:
+    if WRITE_BLOCK_WHEN_OFFLINE and not verified:
         st.error(
             "⛔ Server belum dapat diverifikasi. Sistem mempertahankan data terakhir, "
             "tetapi perubahan stok ditahan agar tidak terjadi data ganda atau kehilangan data."
         )
         st.stop()
 
+    contract_issues = backend_contract_issues(health)
+    if contract_issues:
+        st.error(
+            "⛔ Perubahan ditahan karena backend belum memenuhi kontrak produksi: "
+            + "; ".join(contract_issues)
+            + ". Deploy Code_Accounts.gs yang sesuai terlebih dahulu."
+        )
+        st.stop()
+
+
+def backend_contract_issues(health: dict) -> list[str]:
+    """Return safe, human-readable reasons why mutations must stay blocked."""
+    health = health if isinstance(health, dict) else {}
+    version = str(health.get("backend_version", "") or "").strip()
+    if version != EXPECTED_BACKEND_VERSION:
+        return [
+            f"versi backend {version or 'tidak diketahui'} (wajib {EXPECTED_BACKEND_VERSION})"
+        ]
+
+    capabilities = health.get("capabilities")
+    if not isinstance(capabilities, dict):
+        return ["capability keamanan backend tidak tersedia"]
+
+    required_capabilities = {
+        "hmac_required": "HMAC wajib",
+        "account_auth_rate_limit": "rate-limit autentikasi akun",
+        "idempotent_mutations": "idempotensi transaksi",
+        "formula_guard": "proteksi formula spreadsheet",
+        "mutation_rollback": "rollback mutasi",
+        "backup_before_reset": "backup wajib sebelum reset",
+        "drive_folder_configured": "folder Drive khusus",
+        "local_roles_enforced": "pemetaan role akun lokal",
+        "account_approval_configured": "persetujuan akun Telegram",
+    }
+    return [
+        label
+        for key, label in required_capabilities.items()
+        if capabilities.get(key) is not True
+    ]
+
+
+def _looks_placeholder(value: str) -> bool:
+    normalized = str(value or "").strip().casefold()
+    markers = (
+        "ganti-dengan",
+        "deployment_id",
+        "changeme",
+        "change-me",
+        "your-",
+        "example",
+    )
+    return not normalized or any(marker in normalized for marker in markers)
+
+
+def _valid_telegram_token(value: str) -> bool:
+    return bool(re.fullmatch(r"\d{5,}:[A-Za-z0-9_-]{20,}", str(value or "").strip()))
+
+
+def _valid_telegram_chat(value: str, *, numeric_only=False) -> bool:
+    text = str(value or "").strip()
+    if re.fullmatch(r"-?\d+", text):
+        return True
+    return not numeric_only and bool(re.fullmatch(r"@[A-Za-z0-9_]{5,32}", text))
+
+
+def runtime_security_issues() -> list[str]:
+    """Audit konfigurasi frontend tanpa mengungkapkan nilai secret."""
+    issues = []
+    parsed_url = urlparse(str(URL_GSHEET_API or "").strip())
+    if not URL_GSHEET_API:
+        issues.append("URL_GSHEET_API belum diisi")
+    elif (
+        parsed_url.scheme != "https"
+        or parsed_url.netloc != "script.google.com"
+        or not parsed_url.path.endswith("/exec")
+        or _looks_placeholder(URL_GSHEET_API)
+    ):
+        issues.append("URL_GSHEET_API harus URL HTTPS Apps Script berakhiran /exec")
+
+    for name, value in (
+        ("API_SHARED_KEY", API_SHARED_KEY),
+        ("AUTH_SIGNING_KEY", AUTH_SIGNING_KEY),
+    ):
+        if _looks_placeholder(value) or len(str(value or "")) < MIN_SECRET_LENGTH:
+            issues.append(f"{name} harus acak dan minimal {MIN_SECRET_LENGTH} karakter")
+    if API_SHARED_KEY and AUTH_SIGNING_KEY and API_SHARED_KEY == AUTH_SIGNING_KEY:
+        issues.append("API_SHARED_KEY dan AUTH_SIGNING_KEY harus berbeda")
+
+    if not REQUIRE_HMAC:
+        issues.append("REQUIRE_HMAC wajib true")
+    if ALLOW_NO_LOGIN:
+        issues.append("ALLOW_NO_LOGIN wajib false")
+    if ALLOW_LEGACY_PASSWORDS:
+        issues.append("ALLOW_LEGACY_PASSWORDS wajib false")
+    if not WRITE_BLOCK_WHEN_OFFLINE:
+        issues.append("WRITE_BLOCK_WHEN_OFFLINE wajib true")
+    if not REQUIRE_SERVER_BACKUP_BEFORE_RESET:
+        issues.append("REQUIRE_SERVER_BACKUP_BEFORE_RESET wajib true")
+    if not AUTO_SYNC_ENABLED:
+        issues.append("AUTO_SYNC_ENABLED wajib true")
+
+    if PRODUCTION_MODE:
+        for name, value in (
+            ("TELEGRAM_BOT_TOKEN", TELEGRAM_BOT_TOKEN),
+            ("ACCOUNT_TELEGRAM_BOT_TOKEN", ACCOUNT_TELEGRAM_BOT_TOKEN),
+        ):
+            if not _valid_telegram_token(value):
+                issues.append(f"{name} tidak valid")
+        if not _valid_telegram_chat(TELEGRAM_CHAT_ID):
+            issues.append("TELEGRAM_CHAT_ID tidak valid")
+        if not _valid_telegram_chat(
+            ACCOUNT_TELEGRAM_CHAT_ID, numeric_only=True
+        ):
+            issues.append("ACCOUNT_TELEGRAM_CHAT_ID harus ID chat numerik")
+
+        from .auth import account_security_report, get_users_config
+
+        users = get_users_config()
+        if not users:
+            issues.append("minimal satu akun lokal USERS wajib tersedia")
+        seen_usernames = set()
+        has_developer = False
+        for username, raw_config in users.items():
+            normalized_username = str(username or "").strip().casefold()
+            if not re.fullmatch(r"[a-z0-9._-]{1,32}", normalized_username):
+                issues.append(f"username akun lokal {username} tidak valid")
+            if normalized_username in seen_usernames:
+                issues.append("username akun lokal duplikat case-insensitive")
+            seen_usernames.add(normalized_username)
+            try:
+                configured_role = str(dict(raw_config).get("role", "")).casefold()
+            except (TypeError, ValueError):
+                configured_role = ""
+            if configured_role not in {"developer", "boss", "admin", "staff"}:
+                issues.append(f"role akun lokal {username} tidak valid")
+            has_developer = has_developer or configured_role == "developer"
+        if users and not has_developer:
+            issues.append("minimal satu akun lokal Developer wajib tersedia")
+        for username, status in account_security_report():
+            if status != "PBKDF2":
+                issues.append(f"akun lokal {username} belum memakai PBKDF2")
+    return issues
+
 
 def validate_runtime_security():
     """Fail-closed untuk konfigurasi yang seharusnya wajib pada deployment production."""
-    missing = []
-    if not URL_GSHEET_API:
-        missing.append("URL_GSHEET_API")
-    if not API_SHARED_KEY:
-        missing.append("API_SHARED_KEY")
-    if REQUIRE_HMAC and not AUTH_SIGNING_KEY:
-        missing.append("AUTH_SIGNING_KEY")
-    if missing:
-        st.error("⛔ Konfigurasi production belum lengkap: " + ", ".join(missing))
+    issues = runtime_security_issues()
+    if issues:
+        st.error("⛔ Konfigurasi production belum aman: " + "; ".join(issues))
         st.stop()

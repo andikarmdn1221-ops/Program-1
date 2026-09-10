@@ -1,4 +1,7 @@
+import io
+
 import pytest
+from PIL import Image
 
 from wms import accounts
 from wms.data import (
@@ -9,9 +12,11 @@ from wms.data import (
 from wms.utils import (
     clean_item_name,
     clean_note,
+    compress_image,
     safe_int,
     spreadsheet_safe_value,
     status_stok,
+    to_image_payload,
 )
 
 
@@ -29,8 +34,15 @@ def test_password_verifier_is_deterministic_and_never_plaintext(monkeypatch):
     monkeypatch.setattr(accounts, "AUTH_SIGNING_KEY", "unit-test-signing-key")
     verifier = accounts.password_verifier("rahasia-ku", "andika_01")
     assert verifier == accounts.password_verifier("rahasia-ku", "andika_01")
+    monkeypatch.setattr(accounts, "AUTH_SIGNING_KEY", "rotated-signing-key")
+    assert verifier == accounts.password_verifier("rahasia-ku", "andika_01")
     assert "rahasia-ku" not in verifier
-    assert len(verifier) == 64
+    algorithm, iterations, salt, digest = verifier.split("$")
+    assert algorithm == "pbkdf2_sha256"
+    assert int(iterations) >= 200_000
+    assert len(salt) == 32
+    assert len(digest) == 64
+    assert accounts.legacy_password_verifier("rahasia-ku", "andika_01") != verifier
 
 
 @pytest.mark.parametrize("password", ["pendek", "x" * 129])
@@ -52,6 +64,14 @@ def test_common_input_validation():
     assert status_stok(0, 5) == "HABIS"
     assert status_stok(4, 5) == "KRITIS"
     assert status_stok(6, 5) == "AMAN"
+
+
+@pytest.mark.parametrize("value", ["=SUM(A1:A2)", "+cmd", "-formula", "@link"])
+def test_formula_prefix_is_rejected_before_database_write(value):
+    with pytest.raises(ValueError, match="formula"):
+        clean_item_name(value)
+    with pytest.raises(ValueError, match="formula"):
+        clean_note(value)
 
 
 def test_stock_normalization_enforces_inventory_invariants():
@@ -97,3 +117,24 @@ def test_headerless_legacy_rows_do_not_lose_first_record():
 def test_spreadsheet_formula_prefix_is_neutralized(prefix):
     value = prefix + "SUM(A1:A2)"
     assert spreadsheet_safe_value(value) == "'" + value
+
+
+def test_uploaded_image_is_verified_and_normalized_to_jpeg():
+    uploaded = io.BytesIO()
+    Image.new("RGBA", (20, 10), (255, 0, 0, 128)).save(uploaded, format="PNG")
+    uploaded.name = "bukti asli.png"
+
+    compressed = compress_image(uploaded)
+    payload = to_image_payload(uploaded, compressed)
+
+    assert compressed.startswith(b"\xff\xd8\xff")
+    assert compressed.endswith(b"\xff\xd9")
+    assert payload["image_mime"] == "image/jpeg"
+    assert payload["image_name"].endswith("_bukti_asli.jpg")
+
+
+def test_non_image_proof_is_rejected():
+    uploaded = io.BytesIO(b"not-an-image")
+    uploaded.name = "bukti.jpg"
+    with pytest.raises(ValueError, match="tidak valid"):
+        compress_image(uploaded)

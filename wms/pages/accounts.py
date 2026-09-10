@@ -45,6 +45,15 @@ def render_accounts_page():
     managed = [
         row for row in accounts if str(row.get("status", "")).upper() != "PENDING"
     ]
+    legacy_accounts = [
+        row for row in accounts if row.get("verifier_scheme") != "PBKDF2"
+    ]
+    if legacy_accounts:
+        st.warning(
+            f"{len(legacy_accounts)} akun dinamis masih memakai verifier lama. "
+            "Akun aktif akan dimigrasikan otomatis ke PBKDF2 saat login berhasil; "
+            "hapus permintaan lama yang tidak lagi diperlukan sebelum rilis."
+        )
 
     st.subheader(f"⏳ Menunggu Persetujuan ({len(pending)})")
     if not pending:
@@ -107,6 +116,7 @@ def render_accounts_page():
             "Jabatan": row.get("position", ""),
             "Role": row.get("role", ""),
             "Status": row.get("status", ""),
+            "Password": row.get("verifier_scheme", "TIDAK DIKETAHUI"),
         }
         for row in managed
     ]
